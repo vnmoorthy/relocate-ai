@@ -46,16 +46,18 @@ def _load_agents_registry() -> dict[str, dict[str, Any]]:
 
 
 def pick_specialists(spec: dict[str, Any]) -> list[Persona]:
-    """Choose which of the 11 specialists to dispatch for this move spec.
+    """Choose which of the 16 specialists to dispatch for this move spec.
 
     Conditional rules (from persona.requires_*):
       - requires_pets    AND not has_pets    → skip
       - requires_children AND not has_children → skip
       - requires_car     AND not has_car     → skip
+      - requires_visa    AND not has_visa    → skip (USCIS AR-11 only for visa holders)
     """
     has_pets = bool(spec.get("has_pets"))
     has_children = bool(spec.get("has_children"))
     has_car = spec.get("has_car", True)  # default yes (most customers)
+    has_visa = bool(spec.get("has_visa"))  # default no (most are citizens)
 
     chosen: list[Persona] = []
     for p in all_specialists():
@@ -64,6 +66,8 @@ def pick_specialists(spec: dict[str, Any]) -> list[Persona]:
         if p.requires_children and not has_children:
             continue
         if p.requires_car and not has_car:
+            continue
+        if p.requires_visa and not has_visa:
             continue
         chosen.append(p)
     return chosen

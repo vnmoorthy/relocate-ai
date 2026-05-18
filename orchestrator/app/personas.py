@@ -210,6 +210,7 @@ class Persona:
     requires_pets: bool = False
     requires_children: bool = False
     requires_car: bool = False
+    requires_visa: bool = False  # international caller — has US visa / green card
 
     @property
     def system_prompt(self) -> str:
@@ -479,6 +480,132 @@ PERSONAS: list[Persona] = [
             "'pickup_ready_eta': str}."
             "\n\nIf BROWSER_USE_API_KEY is missing, fall back to AgentMail to "
             "customer.service@cvs.com requesting transfer of the same RX list."
+        ),
+    ),
+    # ────────────────────────────────────────────────────────────────────
+    # 13. Flight booking — Browser Use against Google Flights
+    #     Returns top-3 picks with click-to-book deeplinks. Final purchase
+    #     requires the user (card + passenger info) — that's the legal cap.
+    # ────────────────────────────────────────────────────────────────────
+    Persona(
+        agent_id="flight_book",
+        name="Flight search",
+        category="flight",
+        voice_mode="browser",
+        counterparty_url="https://www.google.com/travel/flights",
+        requires_browser_use=True,
+        body=(
+            "Browser-Use task: search Google Flights for one-way "
+            "{origin_airport} → {destination_airport}, departing {move_date}, "
+            "for {household_size} passenger(s). Return the top 3 results sorted by "
+            "price + duration tradeoff. Each: airline, depart time, arrive time, "
+            "duration, stops, fare, and the booking deeplink. The user clicks "
+            "the deeplink to actually purchase (passport/payment requires them). "
+            "Return: {'picks': [{airline, fare_usd, depart_time, arrive_time, "
+            "duration, stops, book_url}, ...]}."
+        ),
+    ),
+    # ────────────────────────────────────────────────────────────────────
+    # 14. Water board — Browser Use against city utility portal
+    #     For SF: SF Public Utilities Commission account closure.
+    # ────────────────────────────────────────────────────────────────────
+    Persona(
+        agent_id="water_board",
+        name="Water shutoff",
+        category="utility-water",
+        voice_mode="browser",
+        counterparty_url="https://myaccount-water.sfwater.org/",
+        requires_browser_use=True,
+        body=(
+            "Browser-Use task: log into SFPUC MyAccount with credentials "
+            "{sfpuc_username} / {sfpuc_password}. Navigate to 'Stop Service'. "
+            "Enter service address {origin_address}, requested stop date "
+            "{move_date}. Submit and capture confirmation. Return: "
+            "{'confirmation_number': str, 'stop_date': str, 'final_meter_read': str}. "
+            "If credentials are missing, fall back to AgentMail to "
+            "customerservice@sfwater.org with the closure request."
+        ),
+    ),
+    # ────────────────────────────────────────────────────────────────────
+    # 15. USCIS AR-11 — Browser Use to pre-fill the federal form
+    #     CRITICAL: Final submit requires the alien's signed declaration
+    #     under penalty of perjury. The agent fills to the signature step
+    #     and emails the customer a click-to-sign link. NEVER auto-submits.
+    # ────────────────────────────────────────────────────────────────────
+    Persona(
+        agent_id="uscis_ar11",
+        name="USCIS AR-11 prep",
+        category="immigration",
+        voice_mode="browser",
+        counterparty_url="https://www.uscis.gov/ar-11",
+        requires_browser_use=True,
+        requires_visa=True,
+        body=(
+            "Browser-Use task: open uscis.gov/ar-11. Fill: A-number "
+            "{a_number}, full name {user_name}, DOB {user_dob}, "
+            "old address {origin_address}, new address {destination_address}, "
+            "effective date {move_date}. STOP at the signature/declaration "
+            "step. Capture the form's session token + the resume URL. "
+            "Return: {'resume_url': str, 'session_token': str, "
+            "'requires_user_action': 'Sign under penalty of perjury within 10 days of move'}. "
+            "The orchestrator emails the resume_url to the customer. "
+            "Federal law (8 USC §1305) requires the alien — not an agent — to sign."
+        ),
+    ),
+    # ────────────────────────────────────────────────────────────────────
+    # 16. ID card update — Lob certified mail of CA DMV DL-13A form
+    #     CA DL holders must report address change within 10 days; the
+    #     written form bypasses the online portal's identity blocker.
+    # ────────────────────────────────────────────────────────────────────
+    Persona(
+        agent_id="id_card_update",
+        name="ID card update (DL-13A)",
+        category="dmv-id",
+        voice_mode="mail",
+        counterparty_address={
+            "name": "California DMV — Address Change Unit",
+            "address_line1": "PO Box 942869",
+            "address_city": "Sacramento",
+            "address_state": "CA",
+            "address_zip": "94269-0001",
+            "address_country": "US",
+        },
+        requires_lob=True,
+        requires_car=True,
+        body=(
+            "Lob task: print and mail DL-13A 'Change of Address' to the CA "
+            "DMV Address Change Unit. Fields: DL number {ca_dl_number}, "
+            "name {user_name}, DOB {user_dob}, old address {origin_address}, "
+            "new address {destination_address}, signature placeholder for the "
+            "customer to sign after we mail (CA accepts post-sign on the wet "
+            "copy). USPS Certified Mail with return-receipt. Capture tracking. "
+            "Return: {'tracking_number': str, 'delivered_eta': str, "
+            "'requires_user_action': 'Sign the wet copy we mailed within 24h of receipt'}."
+        ),
+    ),
+    # ────────────────────────────────────────────────────────────────────
+    # 17. Bank notification — AgentMail with a pre-scripted phone playbook
+    #     Banks legally require account-holder verification (SSN + 2FA) the
+    #     agent cannot perform. The artifact is a structured email with the
+    #     exact wording the customer reads on a 90-second call to their bank.
+    # ────────────────────────────────────────────────────────────────────
+    Persona(
+        agent_id="bank_notify",
+        name="Bank address script",
+        category="bank",
+        voice_mode="email",
+        counterparty_email="{user_email}",
+        body=(
+            "AgentMail task: send {user_email} a one-page address-change "
+            "playbook. Contents: their bank's number (we don't know it — "
+            "ask in the body), the script ('I'm calling to update my "
+            "mailing address. New address: {destination_address}, effective "
+            "{move_date}. I'll provide my SSN and 2FA when prompted.'), "
+            "the typical confirmation-number format, and a reply-to-this-email "
+            "hook so we capture the outcome into Supermemory. Subject: "
+            "'Your 90-second bank address-change script'. The customer "
+            "completes the call themselves — bank security requires their "
+            "voice + SSN. Artifact = the email message_id."
         ),
     ),
 ]

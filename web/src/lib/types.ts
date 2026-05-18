@@ -68,41 +68,56 @@ export interface SponsorEvent {
   type: "sponsor_event";
   event_id: string;
   sponsor: "stripe" | "agentmail" | "browser_use" | "sponge" | "supermemory" | "moss" | "lob";
-  action: string; // e.g., "charge_held", "receipt_sent", "form_submitted"
+  action: string;
   detail?: string;
   ts: number;
 }
 
-// v2: emitted every time the buyer extracts a new field from the caller.
-// Lets the dashboard show a live "fields-collected" progress strip.
+// Emitted each time the buyer extracts a new field. Lets the dashboard show
+// a live "fields-collected" progress strip.
 export interface FieldsCollectedEvent {
   type: "fields_collected";
   event_id: string;
   turn: number;
-  fields: string[];                       // names of fields collected this turn
-  values: Record<string, string | number | boolean>;  // truncated values for display
+  fields: string[];
+  values: Record<string, string | number | boolean>;
   ts: number;
 }
 
-// v2 roster — 12 agents (1 buyer + 11 specialists). See AGENT_COUNT.md.
-// Removed in v2: wells_fargo, subscriptions, ca_dmv, ca_voter (see AUDIT.md
-// for the four-question test verdicts).
+// v2 roster — 17 agents (1 buyer + 16 specialists).
+//
+// Honesty note on "100% real":
+//  - browser/email/mail mode agents complete autonomously (real artifact)
+//  - some agents (uscis_ar11, id_card_update, bank_notify) hand off the FINAL
+//    click to the customer because federal/state law or bank security require
+//    the account holder's signature or SSN. Those agents drive the form to
+//    the signature step and deliver a click-to-sign link as their artifact.
+//
+// Removed in v2: wells_fargo direct-login (replaced by bank_notify script),
+// subscriptions (consumer credentials too fragile),
+// ca_voter (CA DL identity bar).
+//
 // Order = clockwise burst sequence starting at the top (-90°).
 export type AgentMode = "voice" | "browser" | "email" | "mail";
 
 export const ALL_AGENTS = [
   { id: "buyer", name: "Concierge", category: "concierge", mode: "voice" as AgentMode, live: true },
   { id: "pge_shutoff", name: "PG&E Shutoff", category: "utility", mode: "browser" as AgentMode, live: true },
+  { id: "water_board", name: "Water Shutoff", category: "utility", mode: "browser" as AgentMode, live: true },
   { id: "comcast_cancel", name: "Comcast Cancel", category: "utility", mode: "mail" as AgentMode, live: true },
   { id: "geico_address", name: "Geico", category: "insurance", mode: "browser" as AgentMode, live: true },
   { id: "spectrum_austin", name: "Spectrum Austin", category: "utility", mode: "browser" as AgentMode, live: true },
   { id: "usps_coa", name: "USPS COA", category: "postal", mode: "browser" as AgentMode, live: true },
   { id: "mover_quote", name: "Mover Quotes", category: "mover", mode: "email" as AgentMode, live: true },
+  { id: "flight_book", name: "Flight Search", category: "flight", mode: "browser" as AgentMode, live: true },
   { id: "school_district", name: "AISD Enrollment", category: "school", mode: "email" as AgentMode, live: true },
   { id: "pcp_transfer", name: "PCP Transfer", category: "medical", mode: "email" as AgentMode, live: true },
   { id: "vet_transfer", name: "Vet Transfer", category: "vet", mode: "email" as AgentMode, live: true },
   { id: "gym_cancel", name: "Gym Cancel", category: "gym", mode: "email" as AgentMode, live: true },
   { id: "pharmacy", name: "Pharmacy", category: "pharmacy", mode: "browser" as AgentMode, live: true },
+  { id: "uscis_ar11", name: "USCIS AR-11", category: "immigration", mode: "browser" as AgentMode, live: true },
+  { id: "id_card_update", name: "DMV ID Update", category: "dmv-id", mode: "mail" as AgentMode, live: true },
+  { id: "bank_notify", name: "Bank Script", category: "bank", mode: "email" as AgentMode, live: true },
 ] as const;
 
 // Backwards-compat alias for any old consumers.
