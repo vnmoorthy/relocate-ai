@@ -190,6 +190,48 @@ curl -X POST http://localhost:8000/api/test/buyer-trigger \
 
 Watch `http://localhost:3000`: 12 cells burst from the singularity. A real PDF lands in the email you specified. A real Supermemory document is written.
 
+## 🌐 Where this runs
+
+| Component | Where it lives | Public? |
+|---|---|---|
+| **Phone line +1 (618) 414-9537** | AgentPhone (hosted by AgentPhone) | ✅ Anyone can dial it |
+| **PAVO router + Gemma 2-2B** | Local on author's M3 Air (Ollama) | ⚠ Localhost-only |
+| **Orchestrator (FastAPI)** | Local on author's M3 Air | ⚠ Localhost-only, exposed via `localhost.run` tunnel for AgentPhone webhooks |
+| **Dashboard (this site)** | Local on author's M3 Air at `localhost:3000` | ⚠ Not yet deployed publicly |
+
+The **phone number works for anyone right now**. The dashboard is local-only until deployed.
+
+### Deploy the dashboard to Vercel in 2 minutes
+
+```bash
+# Option A — Vercel CLI
+cd web
+npx vercel             # follow prompts; root directory = web/
+npx vercel --prod      # ship the production deploy
+```
+
+Or import the GitHub repo at [vercel.com/new](https://vercel.com/new):
+1. Import `vnmoorthy/relocate-ai`
+2. Set **Root Directory** to `web`
+3. Framework preset auto-detects as Next.js
+4. Add env var: `NEXT_PUBLIC_WS_URL=wss://<your-orchestrator-host>/ws/dashboard`
+5. Deploy
+
+The dashboard is a thin WebSocket client — once it has a reachable orchestrator URL, it works from anywhere.
+
+### Deploy the orchestrator (FastAPI + PAVO)
+
+The orchestrator currently runs on the author's M3 Air with `localhost.run` for the AgentPhone webhook tunnel. For a permanent home:
+
+| Host | Fit | Notes |
+|---|---|---|
+| **Fly.io** | ✅ Best for FastAPI + Ollama GPU | Has GPU instances for the local-LLM tier |
+| **Railway** | ✅ Good for FastAPI alone | If you skip the local LLM and route everything to cloud |
+| **Render** | ✅ Simple Python deploy | Same as Railway, no GPU |
+| **Lambda Cloud** | ✅ Original PAVO server home | A10 instance with vLLM serving Gemma |
+
+For the hackathon demo: kept local because the SSH tunnel is cheaper than a cloud deploy and AgentPhone webhooks reach `localhost.run` fine.
+
 ## Repo layout
 
 ```
