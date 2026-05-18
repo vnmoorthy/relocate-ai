@@ -106,8 +106,9 @@ def test_every_persona_has_a_handler():
             f"persona {p.agent_id} has unsupported voice_mode={p.voice_mode}"
 
 
-def test_shipping_count_is_twelve():
-    """v2 ships 12 agents. If this needs to change, edit AGENT_COUNT.md too."""
-    assert len(PERSONAS) == 12, \
-        f"Expected 12 shipping agents, got {len(PERSONAS)}. " \
-        "If intentional, update test_shipping_count_is_twelve + AGENT_COUNT.md."
+def test_shipping_count_is_seventeen():
+    """v2.1 ships 17 agents (1 buyer + 16 specialists). If this needs to change,
+    edit AGENT_COUNT.md + this test + ALL_AGENTS in web/src/lib/types.ts."""
+    assert len(PERSONAS) == 17, \
+        f"Expected 17 shipping agents, got {len(PERSONAS)}. " \
+        "If intentional, update test_shipping_count_is_seventeen + AGENT_COUNT.md."

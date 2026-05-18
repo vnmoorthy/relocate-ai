@@ -15,19 +15,21 @@ interface Props {
 
 type Status = "real" | "stub" | "error" | "idle";
 
+// v2 sponsor strip — only sponsors actually wired into a shipping agent.
+// Status is the *default* (when no live event has fired yet); a live event
+// promotes the card to "just-fired" pulse via the recentlyFired mechanism.
 const SPONSORS: Array<{
   id: string;
   name: string;
   role: string;
   status: Status;
 }> = [
-  { id: "agentphone", name: "AgentPhone", role: "Telephony", status: "real" },
-  { id: "deepmind", name: "Google DeepMind", role: "Gemma + Gemini", status: "real" },
-  { id: "agentmail", name: "AgentMail", role: "Email receipt", status: "real" },
-  { id: "supermemory", name: "Supermemory", role: "Relocate history", status: "real" },
-  { id: "sponge", name: "sponge", role: "Agent payments", status: "error" },
-  { id: "browser_use", name: "Browser Use", role: "USPS COA", status: "stub" },
-  { id: "stripe", name: "Stripe", role: "Mover deposit", status: "stub" },
+  { id: "agentphone", name: "AgentPhone", role: "Inbound voice", status: "real" },
+  { id: "deepmind", name: "Google DeepMind", role: "Gemma + Gemini (PAVO)", status: "real" },
+  { id: "agentmail", name: "AgentMail", role: "Email artifacts (6 agents)", status: "real" },
+  { id: "browser_use", name: "Browser Use", role: "Web forms (8 agents)", status: "real" },
+  { id: "lob", name: "Lob", role: "Certified mail (2 agents)", status: "real" },
+  { id: "supermemory", name: "Supermemory", role: "Persist + recall", status: "real" },
   { id: "moss", name: "Moss", role: "Runbook RAG", status: "stub" },
 ];
 

@@ -35,9 +35,11 @@ interface Props {
  *
  * Pre-call: only the glowing singularity is visible — phone number + tap-to-call CTA.
  *
- * On first event: 12 agent cells burst out from the core and arrange on a single
- * circular orbit around the singularity. All 12 cells are the same size, same affordances —
- * they all do real work (subject to conditional dispatch in marketplace.pick_specialists).
+ * On first event: every agent cell (ALL_AGENTS.length, currently 17) bursts
+ * out from the core and arranges on a single elliptical orbit around the
+ * singularity. All cells are the same size, same affordances — they all do
+ * real work (subject to conditional dispatch in marketplace.pick_specialists).
+ * Card geometry scales down when N grows so cells never overlap.
  *
  * During the call: every routing decision spawns a tier-colored particle that flies
  * from the originating cell back to the core (mint=Gemma-local, amber=Gemini Flash,
@@ -60,17 +62,30 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
     return () => ro.disconnect();
   }, []);
 
-  // Uniform cell geometry — all 12 cells the same size.
-  const cardW = 168;
-  const cardH = 96;
+  // Uniform cell geometry — sized so cells never overlap on the ellipse, no
+  // matter how many agents are in the roster. We compute a width that fits
+  // the tightest arc (top/bottom of ellipse, where curvature is highest) with
+  // an 18px breathing gap.
+  const N = ALL_AGENTS.length;
+  // Reserve a margin so cells fit fully inside the stage.
+  const MARGIN = 24;
+  // Start from the previous baseline (12 cells → 168×96) and scale by N.
+  // Conservative formula: card width = min(168, (perimeter / N) - GAP).
+  // Perimeter approx via Ramanujan I: π * (3(rx+ry) - sqrt((3rx+ry)(rx+3ry))).
+  // For first render (stageSize=0), fall back to baseline.
   const cx = stageSize.w / 2;
   const cy = stageSize.h / 2;
-
-  // Elliptical orbit: stages are wider than they are tall, so a circle wastes
-  // horizontal room. Use the full width for rx, full height for ry.
-  const N = ALL_AGENTS.length; // 12
-  const rx = Math.max(0, (stageSize.w - cardW - 24) / 2);
-  const ry = Math.max(0, (stageSize.h - cardH - 24) / 2);
+  let rx0 = Math.max(0, (stageSize.w - 168 - MARGIN) / 2);
+  let ry0 = Math.max(0, (stageSize.h - 96 - MARGIN) / 2);
+  const peri = stageSize.w > 0
+    ? Math.PI * (3 * (rx0 + ry0) - Math.sqrt((3 * rx0 + ry0) * (rx0 + 3 * ry0)))
+    : 12 * 200;
+  const GAP = 18;
+  const widthForFit = Math.max(120, Math.floor(peri / N) - GAP);
+  const cardW = Math.min(168, widthForFit);
+  const cardH = Math.round(cardW * (96 / 168));     // preserve aspect ratio
+  const rx = Math.max(0, (stageSize.w - cardW - MARGIN) / 2);
+  const ry = Math.max(0, (stageSize.h - cardH - MARGIN) / 2);
 
   const positions = useMemo(() => {
     return ALL_AGENTS.map((_, i) => {
@@ -237,7 +252,7 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
                 <span>CALL NOW</span>
               </a>
               <span className="text-[9px] tracking-[0.15em] uppercase text-[var(--ink-500)] mt-2 text-center leading-tight">
-                one phone call ·<br />12 agents handle your move
+                one phone call ·<br />{ALL_AGENTS.length - 1} agents handle your move
               </span>
             </div>
           ) : (
@@ -263,7 +278,7 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
         </div>
       </div>
 
-      {/* All 12 cells — uniform size, single orbit, real transcripts and states */}
+      {/* All N cells (currently 17) — uniform size, single orbit, real transcripts and states */}
       {callStarted &&
         ALL_AGENTS.map((agent, i) => {
           const pos = positions[i];

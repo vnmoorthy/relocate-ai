@@ -221,6 +221,80 @@ async def submit_spectrum_order(*, event_id: str, spec: dict) -> dict:
     )
 
 
+async def submit_flight_search(*, event_id: str, spec: dict) -> dict:
+    """Agent #13 — flight_book. Google Flights, top 3 picks with deeplinks."""
+    origin_airport = spec.get("origin_airport", "SFO")
+    destination_airport = spec.get("destination_airport", "AUS")
+    move_date = spec.get("move_date", "")
+    passengers = spec.get("household_size", 1)
+    task = (
+        f"Go to https://www.google.com/travel/flights and search one-way "
+        f"{origin_airport} → {destination_airport} departing {move_date} for "
+        f"{passengers} passenger(s). Capture the top 3 results ranked by a "
+        "price + duration tradeoff (cheaper + faster wins). For each: "
+        "airline, fare in USD, depart_time, arrive_time, duration, stops, "
+        "and the click-through booking deeplink. Return: "
+        "{'picks': [{airline, fare_usd, depart_time, arrive_time, duration, "
+        "stops, book_url}, ...]}."
+    )
+    return await _run_task(
+        event_id=event_id,
+        agent_id="flight_book",
+        task_description=task,
+        expected_keys=["picks"],
+    )
+
+
+async def submit_water_shutoff(*, event_id: str, spec: dict) -> dict:
+    """Agent #14 — water_board. SFPUC MyAccount stop-service."""
+    origin = spec.get("origin_address", "")
+    move_date = spec.get("move_date", "")
+    username = spec.get("sfpuc_username", "")
+    password = spec.get("sfpuc_password", "")
+    task = (
+        f"Go to https://myaccount-water.sfwater.org/ and sign in with "
+        f"username {username} and password {password}. Navigate to 'Stop "
+        f"Service'. Enter service address {origin}, requested stop date "
+        f"{move_date}. Submit. Capture: confirmation number, stop date, "
+        "and the scheduled final-meter-read window."
+    )
+    return await _run_task(
+        event_id=event_id,
+        agent_id="water_board",
+        task_description=task,
+        expected_keys=["confirmation_number", "stop_date", "final_meter_read"],
+    )
+
+
+async def submit_uscis_ar11(*, event_id: str, spec: dict) -> dict:
+    """Agent #15 — uscis_ar11. Pre-fill federal AR-11 to the signature step.
+    Federal law (8 USC §1305) requires the alien to sign — we stop short of
+    submit and return a resume URL for the customer to sign within 10 days."""
+    a_number = spec.get("a_number", "")
+    user_name = spec.get("user_name", "")
+    user_dob = spec.get("user_dob", "")
+    origin = spec.get("origin_address", "")
+    dest = spec.get("destination_address", "")
+    move_date = spec.get("move_date", "")
+    task = (
+        "Go to https://www.uscis.gov/ar-11. Fill the address-change form "
+        f"with: A-number {a_number}, full name {user_name}, DOB {user_dob}, "
+        f"old address {origin}, new address {dest}, effective date "
+        f"{move_date}. STOP at the signature/declaration step — DO NOT click "
+        "submit. Capture: the session token, the resume URL (the page URL "
+        "the customer can return to in order to sign), and a one-line "
+        "'requires_user_action' note. Return: "
+        "{'resume_url': str, 'session_token': str, 'requires_user_action': str}."
+    )
+    return await _run_task(
+        event_id=event_id,
+        agent_id="uscis_ar11",
+        task_description=task,
+        expected_keys=["resume_url", "session_token", "requires_user_action"],
+        max_steps=20,  # short — we stop at signature step
+    )
+
+
 async def submit_cvs_transfer(*, event_id: str, spec: dict) -> dict:
     """Agent #12 (primary) — CVS RX transfer via cvs.com/pharmacy/transfer."""
     name = spec.get("user_name", "")

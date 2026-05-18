@@ -11,6 +11,9 @@ export interface DashboardState {
   pavoCents: number;
   baselineCents: number;
   sponsorEvents: Array<{ sponsor: string; action: string; detail?: string; ts: number }>;
+  // v2: live field-collection state from the buyer. Keys are field names from
+  // buyer_schema.BUYER_FIELDS; values are truncated display strings/numbers/bools.
+  collectedFields: Record<string, string | number | boolean>;
   connected: boolean;
   eventId: string | null;
   // True when we couldn't reach a real orchestrator and are playing the demo
@@ -25,17 +28,27 @@ const INITIAL: DashboardState = {
   pavoCents: 0,
   baselineCents: 0,
   sponsorEvents: [],
+  collectedFields: {},
   connected: false,
   eventId: null,
   demoMode: false,
 };
 
-// After this many ms with no successful WS connection, we give up and start
-// the demo replay loop. Kept short on the static deploy (3s) so visitors
-// don't sit on a dead screen.
-const FALLBACK_DELAY_MS = 3000;
-// Loop the replay every N ms once it finishes, so the swarm keeps animating.
-const REPLAY_LOOP_GAP_MS = 4000;
+// How long to wait for a real WebSocket before falling back to demo replay.
+// Short so visitors on the static deploy never see a blank stage.
+const FALLBACK_DELAY_MS = 800;
+// Loop interval after the timeline ends. Cells stay in their "closed" state
+// across the gap (we don't reset state), so the swarm never looks empty.
+const REPLAY_LOOP_GAP_MS = 1500;
+
+/** Heuristic: the WS URL is a placeholder (will never connect) — skip the
+ *  WebSocket attempt entirely and go straight to demo replay. */
+function isPlaceholderWsUrl(url: string): boolean {
+  if (!url) return true;
+  if (url.includes("example.com") || url.includes("CHANGE_ME") || url.includes("REPLACE_ME")) return true;
+  // Anything that isn't ws:// or wss:// is malformed.
+  return !url.startsWith("ws://") && !url.startsWith("wss://");
+}
 
 export function useDashboardWS(wsUrl: string): DashboardState {
   const [state, setState] = useState<DashboardState>(INITIAL);
@@ -67,12 +80,12 @@ export function useDashboardWS(wsUrl: string): DashboardState {
         }, at_ms);
         replayTimers.push(handle);
       }
-      // Loop: clear state and replay again after the last event + a gap.
+      // Loop: re-arm without resetting state. New dispatch events overwrite
+      // agent_state="closed" → "dispatched" → ... seamlessly, so the swarm
+      // never blanks out between iterations.
       const last_ms = timeline.length ? timeline[timeline.length - 1].at_ms : 0;
       const loopHandle = window.setTimeout(() => {
         if (cancelled || everConnected) return;
-        setState({ ...INITIAL, demoMode: true, connected: true });
-        // Re-arm
         startReplay();
       }, last_ms + REPLAY_LOOP_GAP_MS);
       replayTimers.push(loopHandle);
@@ -123,7 +136,17 @@ export function useDashboardWS(wsUrl: string): DashboardState {
       };
     };
 
-    // Fire demo replay if we don't get a real connection in FALLBACK_DELAY_MS.
+    // If the URL is obviously a placeholder (static deploy), skip the WS
+    // attempt entirely and start the replay on the next tick.
+    if (isPlaceholderWsUrl(wsUrl)) {
+      const h = window.setTimeout(startReplay, 50);
+      replayTimers.push(h);
+      return () => {
+        cancelled = true;
+        clearReplay();
+      };
+    }
+
     fallbackHandle = window.setTimeout(() => {
       if (!everConnected && !cancelled) startReplay();
     }, FALLBACK_DELAY_MS);
@@ -180,6 +203,14 @@ function applyEvent(s: DashboardState, ev: WSEvent): DashboardState {
         ...s.sponsorEvents,
       ].slice(0, 12);
       return { ...s, sponsorEvents: next };
+    }
+    case "fields_collected": {
+      // Merge — never overwrite previously-collected values.
+      const next = { ...s.collectedFields };
+      for (const [k, v] of Object.entries(ev.values)) {
+        if (!(k in next)) next[k] = v;
+      }
+      return { ...s, collectedFields: next, eventId: s.eventId ?? ev.event_id };
     }
     default:
       return s;

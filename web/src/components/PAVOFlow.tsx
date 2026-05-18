@@ -133,9 +133,11 @@ export function PAVOFlow({ decisions }: Props) {
                   />
                 ))}
               </div>
-              <div className="flex items-center justify-between text-[10px] font-mono-tight text-[var(--ink-500)]">
-                <span>{t.cost}</span>
-                <span>{tierCount === 0 ? "idle" : tierCount === 1 ? "1 turn" : `${tierCount} turns`}</span>
+              <div className="flex items-center justify-between gap-2 text-[10px] font-mono-tight text-[var(--ink-500)] whitespace-nowrap">
+                <span className="truncate">{t.cost}</span>
+                <span className="shrink-0">
+                  {tierCount === 0 ? "idle" : tierCount === 1 ? "1 turn" : `${tierCount} turns`}
+                </span>
               </div>
             </div>
           );
