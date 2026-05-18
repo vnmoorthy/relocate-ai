@@ -1,31 +1,59 @@
 @import "tailwindcss";
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Relocate — design tokens
+   Inspired by Linear / Framer / Vercel: restrained palette, generous
+   whitespace, refined typography. Dark mode by default (data-heavy product),
+   but the neon has been dialed back to a single muted teal accent.
+   ────────────────────────────────────────────────────────────────────────── */
 :root {
-  --bg-deep: #050507;
-  --bg-panel: #0c0c10;
-  --bg-elev: #14141a;
-  --border-soft: #1f1f28;
-  --border-mid: #2a2a36;
+  /* Surfaces */
+  --bg-base: #0A0A0B;        /* near-black, slightly warm */
+  --bg-elev-1: #121215;      /* card */
+  --bg-elev-2: #18181C;      /* hover / inset */
+  --bg-glow: #0E1311;        /* subtle radial gradient base */
 
-  --ink-100: #f5f5f7;
-  --ink-300: #b4b4be;
-  --ink-500: #6e6e7a;
-  --ink-700: #3a3a44;
+  /* Borders */
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-default: rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(255, 255, 255, 0.16);
 
-  --mint: #00ffa3;
-  --mint-dim: rgba(0, 255, 163, 0.16);
-  --cyan: #5cf4ff;
-  --amber: #ffc94a;
-  --magenta: #ff4dc1;
-  --red: #ff5c5c;
+  /* Text */
+  --text-primary: #FAFAFA;
+  --text-secondary: #A1A1A8;
+  --text-tertiary: #6B6B73;
+  --text-quaternary: #45454D;
 
-  --tier-local: #00ffa3;
-  --tier-flash: #ffc94a;
-  --tier-opus: #ff4dc1;
-  --tier-mock: #6e6e7a;
+  /* Brand: a refined mint, less LED, more designer */
+  --brand: #00D49A;
+  --brand-dim: rgba(0, 212, 154, 0.16);
+  --brand-glow: rgba(0, 212, 154, 0.40);
 
-  --background: var(--bg-deep);
-  --foreground: var(--ink-100);
+  /* Tier semantics */
+  --tier-local: #00D49A;     /* refined mint */
+  --tier-cloud-mid: #FBBF24; /* refined amber */
+  --tier-cloud-hard: #F472B6;/* refined rose */
+  --tier-mock: #6B6B73;      /* zinc */
+
+  /* Backwards-compat aliases — existing components still reference these */
+  --bg-deep: var(--bg-base);
+  --bg-panel: var(--bg-elev-1);
+  --bg-elev: var(--bg-elev-2);
+  --border-soft: var(--border-subtle);
+  --border-mid: var(--border-default);
+  --ink-100: var(--text-primary);
+  --ink-300: var(--text-secondary);
+  --ink-500: var(--text-tertiary);
+  --ink-700: var(--text-quaternary);
+  --mint: var(--brand);
+  --mint-dim: var(--brand-dim);
+  --cyan: #818CF8;
+  --amber: var(--tier-cloud-mid);
+  --magenta: var(--tier-cloud-hard);
+  --red: #F87171;
+
+  --background: var(--bg-base);
+  --foreground: var(--text-primary);
 }
 
 @theme inline {
@@ -36,149 +64,164 @@
 }
 
 html, body {
-  background: var(--bg-deep);
-  color: var(--ink-100);
+  background: var(--bg-base);
+  color: var(--text-primary);
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui;
   font-feature-settings: "ss01", "cv11", "tnum";
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
 }
 
-/* Cinematic aurora + starfield background. Three layers:
-   1. Soft moving aurora blobs (mint + cyan)
-   2. Subtle pinprick starfield via radial-gradient noise
-   3. Vignette + scanline overlay for depth */
+/* Single subtle backdrop — radial gradient + soft noise. No more scanlines,
+   starfield-drift, or aurora hue rotation. Restraint > spectacle. */
 body {
   background:
-    /* Aurora 1: mint, drifts top-left */
-    radial-gradient(900px 600px at 18% -8%, rgba(0, 255, 163, 0.10), transparent 60%),
-    /* Aurora 2: cyan, drifts bottom-right */
-    radial-gradient(1000px 700px at 92% 108%, rgba(92, 244, 255, 0.08), transparent 65%),
-    /* Aurora 3: magenta, faint upper-right */
-    radial-gradient(700px 500px at 90% 5%, rgba(255, 77, 193, 0.05), transparent 60%),
-    /* Base */
-    var(--bg-deep);
+    radial-gradient(1400px 800px at 50% -20%, rgba(0, 212, 154, 0.06), transparent 55%),
+    radial-gradient(1000px 700px at 10% 100%, rgba(129, 140, 248, 0.04), transparent 60%),
+    var(--bg-base);
   min-height: 100vh;
   position: relative;
 }
 
-/* Starfield — pixelated stars scattered across the viewport */
+/* Subtle grid mesh — barely visible, adds depth */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   background-image:
-    radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.65), transparent),
-    radial-gradient(1px 1px at 60% 20%, rgba(255,255,255,0.40), transparent),
-    radial-gradient(1px 1px at 80% 75%, rgba(255,255,255,0.55), transparent),
-    radial-gradient(1px 1px at 15% 85%, rgba(255,255,255,0.45), transparent),
-    radial-gradient(1px 1px at 45% 50%, rgba(0,255,163,0.55), transparent),
-    radial-gradient(1.5px 1.5px at 75% 35%, rgba(92,244,255,0.45), transparent),
-    radial-gradient(1px 1px at 30% 65%, rgba(255,255,255,0.30), transparent),
-    radial-gradient(1.5px 1.5px at 88% 45%, rgba(255,255,255,0.50), transparent),
-    radial-gradient(1px 1px at 5% 50%, rgba(255,77,193,0.40), transparent),
-    radial-gradient(1px 1px at 50% 90%, rgba(255,255,255,0.35), transparent);
-  background-size: 100% 100%;
+    linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+  background-size: 80px 80px;
+  background-position: center;
+  mask-image: radial-gradient(ellipse 80% 60% at center, black, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at center, black, transparent 100%);
   pointer-events: none;
   z-index: 0;
-  animation: starfieldDrift 80s linear infinite;
 }
 
-/* Slow drift on the starfield so it feels alive */
-@keyframes starfieldDrift {
-  0% { transform: translate(0, 0); }
-  50% { transform: translate(-2vw, -1vh); }
-  100% { transform: translate(0, 0); }
-}
-
-/* Scanline + vignette */
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  background:
-    /* Scanlines */
-    repeating-linear-gradient(
-      0deg,
-      transparent 0px,
-      transparent 2px,
-      rgba(255,255,255,0.012) 3px,
-      transparent 4px
-    ),
-    /* Vignette */
-    radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.45) 100%);
-  pointer-events: none;
-  z-index: 1;
-  mix-blend-mode: overlay;
-}
-
-/* Ensure app content sits above the body backdrops */
 main {
   position: relative;
   z-index: 2;
 }
 
-/* === Reusable utility classes (Tailwind v4 layered) === */
+/* ──────────────────────────────────────────────────────────────────────────
+   Typography utilities
+   ────────────────────────────────────────────────────────────────────────── */
 .font-display {
   font-family: var(--font-geist-sans);
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
 }
-
 .font-mono-tight {
   font-family: var(--font-geist-mono);
   font-feature-settings: "tnum", "ss01";
   letter-spacing: -0.01em;
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Panels & cards
+   ────────────────────────────────────────────────────────────────────────── */
 .panel {
-  background: var(--bg-panel);
-  border: 1px solid var(--border-soft);
-  border-radius: 14px;
+  background: var(--bg-elev-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
 }
-
 .panel-elev {
-  background: linear-gradient(180deg, var(--bg-elev) 0%, var(--bg-panel) 100%);
-  border: 1px solid var(--border-mid);
-  border-radius: 14px;
+  background: linear-gradient(180deg, var(--bg-elev-2) 0%, var(--bg-elev-1) 100%);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Buttons (Framer/Linear pill style)
+   Wrapped in @layer components so Tailwind v4 cascade preserves these rules.
+   ────────────────────────────────────────────────────────────────────────── */
+@layer components {
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.875rem 1.5rem;
+    border-radius: 999px;
+    background: var(--text-primary);
+    color: var(--bg-base);
+    font-family: var(--font-geist-sans);
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: -0.005em;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .btn-primary:hover {
+    background: var(--brand);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 32px rgba(0, 212, 154, 0.35);
+  }
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.875rem 1.5rem;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-primary);
+    border: 1px solid var(--border-strong);
+    font-family: var(--font-geist-sans);
+    font-weight: 500;
+    font-size: 14px;
+    transition: all 0.15s ease;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .btn-secondary:hover {
+    background: var(--bg-elev-1);
+    border-color: var(--text-secondary);
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Tier badges (restrained, not glowing)
+   ────────────────────────────────────────────────────────────────────────── */
 .tier-pill-local {
   color: var(--tier-local);
-  background: rgba(0, 255, 163, 0.08);
-  border: 1px solid rgba(0, 255, 163, 0.30);
+  background: rgba(0, 212, 154, 0.08);
+  border: 1px solid rgba(0, 212, 154, 0.25);
 }
 .tier-pill-flash {
-  color: var(--tier-flash);
-  background: rgba(255, 201, 74, 0.10);
-  border: 1px solid rgba(255, 201, 74, 0.30);
+  color: var(--tier-cloud-mid);
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.25);
 }
 .tier-pill-opus {
-  color: var(--tier-opus);
-  background: rgba(255, 77, 193, 0.10);
-  border: 1px solid rgba(255, 77, 193, 0.30);
+  color: var(--tier-cloud-hard);
+  background: rgba(244, 114, 182, 0.08);
+  border: 1px solid rgba(244, 114, 182, 0.25);
 }
 .tier-pill-mock {
   color: var(--tier-mock);
-  background: rgba(110, 110, 122, 0.10);
-  border: 1px solid rgba(110, 110, 122, 0.30);
+  background: rgba(107, 107, 115, 0.08);
+  border: 1px solid rgba(107, 107, 115, 0.25);
 }
 
-/* === Animations === */
+/* ──────────────────────────────────────────────────────────────────────────
+   Animations — restrained. Mostly state-change transitions, not constant pulse.
+   ────────────────────────────────────────────────────────────────────────── */
 @keyframes glowPulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 255, 163, 0.0); }
-  50% { box-shadow: 0 0 24px 2px rgba(0, 255, 163, 0.35); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 212, 154, 0); }
+  50% { box-shadow: 0 0 24px 1px rgba(0, 212, 154, 0.20); }
 }
 .live-pulse {
-  animation: glowPulse 1.8s ease-in-out infinite;
+  animation: glowPulse 3s ease-in-out infinite;
 }
 
 @keyframes redPulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 92, 92, 0.0); opacity: 1; }
-  50% { box-shadow: 0 0 14px 1px rgba(255, 92, 92, 0.45); opacity: 0.85; }
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(248, 113, 113, 0); }
+  50% { opacity: 0.7; box-shadow: 0 0 12px 1px rgba(248, 113, 113, 0.35); }
 }
 .live-dot {
-  animation: redPulse 1.4s ease-in-out infinite;
+  animation: redPulse 1.8s ease-in-out infinite;
 }
 
 @keyframes particleFlow {
@@ -196,16 +239,7 @@ main {
   content: "▍";
   margin-left: 1px;
   animation: blinkCursor 1.05s steps(1) infinite;
-  color: var(--mint);
-}
-
-@keyframes barFill {
-  from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
-}
-.bar-fill {
-  transform-origin: left;
-  animation: barFill 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  color: var(--brand);
 }
 
 @keyframes risein {
@@ -216,77 +250,29 @@ main {
 
 /* Scrollbar polish */
 .scrollbar-clean::-webkit-scrollbar { width: 4px; height: 4px; }
-.scrollbar-clean::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 999px; }
+.scrollbar-clean::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; }
 .scrollbar-clean::-webkit-scrollbar-track { background: transparent; }
 
-/* PAVO tier lane SVG container — used by PAVOFlow */
-.pavo-lane {
-  position: relative;
-  height: 56px;
-  background: linear-gradient(90deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.05) 50%, rgba(255,255,255,0.02) 100%);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.pavo-particle {
-  position: absolute;
-  top: 50%;
-  margin-top: -4px;
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  animation: particleFlow 2.6s linear forwards;
-}
-
-/* === Swarm-from-singularity === */
+/* ──────────────────────────────────────────────────────────────────────────
+   Swarm stage
+   ────────────────────────────────────────────────────────────────────────── */
 .swarm-stage {
   position: relative;
-  background: transparent;
-  border-radius: 18px;
-  border: 1px solid rgba(0, 255, 163, 0.12);
+  background: var(--bg-elev-1);
+  border-radius: 20px;
+  border: 1px solid var(--border-subtle);
   overflow: hidden;
-  box-shadow:
-    inset 0 0 80px 8px rgba(0, 255, 163, 0.05),
-    0 0 60px 0 rgba(0, 0, 0, 0.6);
 }
 
 .swarm-bg {
   background:
-    /* Central glow under the singularity */
-    radial-gradient(circle at 50% 50%, rgba(0,255,163,0.16), transparent 28%),
-    radial-gradient(circle at 50% 50%, rgba(0,255,163,0.06), transparent 50%),
-    /* Side gradient washes */
-    radial-gradient(1000px 600px at 10% 30%, rgba(92,244,255,0.06), transparent 60%),
-    radial-gradient(800px 500px at 90% 70%, rgba(255,77,193,0.05), transparent 60%);
-  pointer-events: none;
-  animation: auroraDrift 18s ease-in-out infinite alternate;
-}
-
-@keyframes auroraDrift {
-  0%   { filter: hue-rotate(0deg) brightness(1); }
-  50%  { filter: hue-rotate(8deg) brightness(1.08); }
-  100% { filter: hue-rotate(-6deg) brightness(0.95); }
-}
-
-/* Soft grid mesh overlay */
-.swarm-stage::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
-  background-size: 60px 60px;
-  background-position: center center;
-  mask-image: radial-gradient(circle at 50% 45%, rgba(0,0,0,0.6), transparent 70%);
-  -webkit-mask-image: radial-gradient(circle at 50% 45%, rgba(0,0,0,0.6), transparent 70%);
+    radial-gradient(circle at 50% 50%, rgba(0, 212, 154, 0.10), transparent 30%),
+    radial-gradient(circle at 50% 50%, rgba(0, 212, 154, 0.03), transparent 55%);
   pointer-events: none;
 }
 
-/* Singularity core: 3 concentric rings + glowing dot */
-.swarm-core {
-  pointer-events: none;
-}
+/* Singularity core */
+.swarm-core { pointer-events: none; }
 .swarm-core-ring {
   position: absolute;
   border-radius: 999px;
@@ -296,24 +282,25 @@ main {
   transform: translate(-50%, -50%);
 }
 .swarm-core-ring-outer {
-  width: 220px;
-  height: 220px;
-  border-color: rgba(0,255,163,0.18);
-  animation: spinSlow 26s linear infinite;
-  background: radial-gradient(circle, transparent 65%, rgba(0,255,163,0.04) 100%);
+  width: 280px;
+  height: 280px;
+  border-color: rgba(0, 212, 154, 0.12);
+  animation: spinSlow 60s linear infinite;
 }
 .swarm-core-ring-mid {
-  width: 150px;
-  height: 150px;
-  border-color: rgba(0,255,163,0.30);
-  animation: spinSlow 14s linear infinite reverse;
+  width: 200px;
+  height: 200px;
+  border-color: rgba(0, 212, 154, 0.20);
+  animation: spinSlow 40s linear infinite reverse;
 }
 .swarm-core-ring-inner {
-  width: 86px;
-  height: 86px;
-  border-color: rgba(0,255,163,0.55);
-  box-shadow: 0 0 40px 4px rgba(0,255,163,0.32), inset 0 0 22px 2px rgba(0,255,163,0.15);
-  animation: corePulse 2.4s ease-in-out infinite;
+  width: 120px;
+  height: 120px;
+  border-color: rgba(0, 212, 154, 0.40);
+  box-shadow:
+    0 0 32px 2px rgba(0, 212, 154, 0.22),
+    inset 0 0 18px 2px rgba(0, 212, 154, 0.10);
+  animation: corePulse 4s ease-in-out infinite;
 }
 .swarm-core-center {
   position: absolute;
@@ -321,7 +308,7 @@ main {
   left: 50%;
   transform: translate(-50%, -50%);
   text-align: center;
-  width: 120px;
+  width: 240px;
 }
 
 @keyframes spinSlow {
@@ -330,32 +317,36 @@ main {
 }
 @keyframes corePulse {
   0%, 100% {
-    box-shadow: 0 0 40px 4px rgba(0,255,163,0.30), inset 0 0 22px 2px rgba(0,255,163,0.15);
+    box-shadow:
+      0 0 32px 2px rgba(0, 212, 154, 0.22),
+      inset 0 0 18px 2px rgba(0, 212, 154, 0.10);
   }
   50% {
-    box-shadow: 0 0 70px 12px rgba(0,255,163,0.55), inset 0 0 36px 4px rgba(0,255,163,0.30);
+    box-shadow:
+      0 0 48px 6px rgba(0, 212, 154, 0.38),
+      inset 0 0 28px 3px rgba(0, 212, 154, 0.18);
   }
 }
 
-/* Connection line breathing animation */
+/* Connection line — subtle, not aggressive */
 .swarm-line-active {
-  animation: lineBreathe 2.4s ease-in-out infinite;
+  animation: lineBreathe 3s ease-in-out infinite;
 }
 @keyframes lineBreathe {
   0%, 100% { opacity: 0.45; }
-  50% { opacity: 1; }
+  50% { opacity: 0.85; }
 }
 
-/* Spawn-from-singularity animation: cell starts at center (offset by --from-x/--from-y) scaled to 0 */
+/* Spawn animation */
 @keyframes swarmSpawn {
   0% {
     transform: translate(var(--from-x), var(--from-y)) scale(0.15);
     opacity: 0;
-    filter: blur(8px) brightness(2);
+    filter: blur(8px) brightness(1.6);
   }
   35% {
     opacity: 0.7;
-    filter: blur(4px) brightness(1.4);
+    filter: blur(3px) brightness(1.2);
   }
   100% {
     transform: translate(0, 0) scale(1);
@@ -364,7 +355,6 @@ main {
   }
 }
 
-/* Return-flow particle following an SVG path from cell to core */
 @keyframes swarmReturn {
   0% {
     offset-distance: 0%;
@@ -386,27 +376,42 @@ main {
   }
 }
 
-/* Buyer cell — slight cyan glow because it's the inbound side */
+/* Buyer cell — subtle indigo glow */
 .swarm-cell-buyer {
-  animation: buyerDockPulse 3s ease-in-out infinite;
+  animation: buyerDockPulse 5s ease-in-out infinite;
 }
 @keyframes buyerDockPulse {
-  0%, 100% { filter: drop-shadow(0 0 0px rgba(92,244,255,0)); }
-  50% { filter: drop-shadow(0 0 14px rgba(92,244,255,0.30)); }
+  0%, 100% { filter: drop-shadow(0 0 0px rgba(129, 140, 248, 0)); }
+  50% { filter: drop-shadow(0 0 10px rgba(129, 140, 248, 0.20)); }
 }
 
-/* === Focus rings (a11y) === */
+/* PAVO routing flow lane */
+.pavo-lane {
+  position: relative;
+  height: 48px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.04) 50%, rgba(255,255,255,0.02) 100%);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.pavo-particle {
+  position: absolute;
+  top: 50%;
+  margin-top: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  animation: particleFlow 2.6s linear forwards;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   A11y: focus rings + reduced-motion respect
+   ────────────────────────────────────────────────────────────────────────── */
 a:focus-visible, button:focus-visible {
-  outline: 2px solid var(--mint);
+  outline: 2px solid var(--brand);
   outline-offset: 2px;
   border-radius: 6px;
 }
 
-/* === Respect prefers-reduced-motion (a11y) ===
- * The swarm visualization relies heavily on motion; for users who prefer reduced
- * motion, freeze infinite animations and shorten one-shot transitions. We still
- * show the burst (cells need to appear) but the staggered animation collapses
- * into an instant fade-in. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001s !important;
@@ -417,7 +422,52 @@ a:focus-visible, button:focus-visible {
   .swarm-core-ring-inner, .swarm-cell-buyer, .swarm-line-active, .cursor-blink::after {
     animation: none !important;
   }
-  .swarm-bg, .swarm-stage::before {
-    background: var(--bg-panel);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Marketing-page sections (hero, how-it-works, footer)
+   ────────────────────────────────────────────────────────────────────────── */
+@layer components {
+  .section-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.875rem;
+    border: 1px solid var(--border-default);
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    background: var(--bg-elev-1);
+    width: fit-content;
   }
+  .section-eyebrow .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--brand);
+    box-shadow: 0 0 8px 1px var(--brand-glow);
+    flex-shrink: 0;
+  }
+}
+
+.hero-title {
+  font-family: var(--font-geist-sans);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 0.95;
+  background: linear-gradient(180deg, #FFFFFF 0%, #C9C9CF 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.hero-tagline {
+  color: var(--text-secondary);
+  font-size: 18px;
+  line-height: 1.5;
+  font-weight: 400;
+  max-width: 640px;
 }

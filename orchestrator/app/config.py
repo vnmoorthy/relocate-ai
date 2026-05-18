@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     moss_project_id: str = ""
     moss_project_key: str = ""
     moss_index_name: str = "move-runbooks"
+    # Lob.com — certified mail for comcast_cancel. Live key is fine here; charges
+    # are real (~$1.40 per letter) and the e2e test gates on letter_id.
+    lob_api_key: str = ""
     # Gemini (Google DeepMind sponsor) — third LLM tier in PAVO routing.
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash"

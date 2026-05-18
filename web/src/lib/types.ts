@@ -66,29 +66,31 @@ export interface EventCompleteEvent {
 export interface SponsorEvent {
   type: "sponsor_event";
   event_id: string;
-  sponsor: "stripe" | "agentmail" | "browser_use" | "sponge" | "supermemory" | "moss";
+  sponsor: "stripe" | "agentmail" | "browser_use" | "sponge" | "supermemory" | "moss" | "lob";
   action: string; // e.g., "charge_held", "receipt_sent", "form_submitted"
   detail?: string;
   ts: number;
 }
 
-// All 12 agents — strict-completion roster (down from 16 after auditing which
-// tasks can be 100% real). Removed agents required SSN/bank-login/DMV-identity
-// verification that can't be legally automated.
+// v2 roster — 12 agents (1 buyer + 11 specialists). See AGENT_COUNT.md.
+// Removed in v2: wells_fargo, subscriptions, ca_dmv, ca_voter (see AUDIT.md
+// for the four-question test verdicts).
 // Order = clockwise burst sequence starting at the top (-90°).
+export type AgentMode = "voice" | "browser" | "email" | "mail";
+
 export const ALL_AGENTS = [
-  { id: "buyer", name: "Concierge", category: "concierge", live: true },
-  { id: "pge_shutoff", name: "PG&E Shutoff", category: "utility", live: true },
-  { id: "comcast_cancel", name: "Comcast Cancel", category: "utility", live: true },
-  { id: "geico_address", name: "Geico", category: "insurance", live: true },
-  { id: "spectrum_austin", name: "Spectrum Austin", category: "utility", live: true },
-  { id: "usps_coa", name: "USPS COA", category: "postal", live: true },
-  { id: "mover_quote", name: "Mover Quotes", category: "mover", live: true },
-  { id: "school_district", name: "AISD Enrollment", category: "school", live: true },
-  { id: "pcp_transfer", name: "PCP Transfer", category: "medical", live: true },
-  { id: "vet_transfer", name: "Vet Transfer", category: "vet", live: true },
-  { id: "gym_cancel", name: "Gym Cancel", category: "gym", live: true },
-  { id: "pharmacy", name: "Pharmacy", category: "pharmacy", live: true },
+  { id: "buyer", name: "Concierge", category: "concierge", mode: "voice" as AgentMode, live: true },
+  { id: "pge_shutoff", name: "PG&E Shutoff", category: "utility", mode: "browser" as AgentMode, live: true },
+  { id: "comcast_cancel", name: "Comcast Cancel", category: "utility", mode: "mail" as AgentMode, live: true },
+  { id: "geico_address", name: "Geico", category: "insurance", mode: "browser" as AgentMode, live: true },
+  { id: "spectrum_austin", name: "Spectrum Austin", category: "utility", mode: "browser" as AgentMode, live: true },
+  { id: "usps_coa", name: "USPS COA", category: "postal", mode: "browser" as AgentMode, live: true },
+  { id: "mover_quote", name: "Mover Quotes", category: "mover", mode: "email" as AgentMode, live: true },
+  { id: "school_district", name: "AISD Enrollment", category: "school", mode: "email" as AgentMode, live: true },
+  { id: "pcp_transfer", name: "PCP Transfer", category: "medical", mode: "email" as AgentMode, live: true },
+  { id: "vet_transfer", name: "Vet Transfer", category: "vet", mode: "email" as AgentMode, live: true },
+  { id: "gym_cancel", name: "Gym Cancel", category: "gym", mode: "email" as AgentMode, live: true },
+  { id: "pharmacy", name: "Pharmacy", category: "pharmacy", mode: "browser" as AgentMode, live: true },
 ] as const;
 
 // Backwards-compat alias for any old consumers.

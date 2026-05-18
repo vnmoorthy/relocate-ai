@@ -74,7 +74,6 @@ async def main() -> None:
             "agent_id": persona.agent_id,
             "agentphone_id": ap_id,
             "category": persona.category,
-            "status": persona.status,
             "voice_mode": persona.voice_mode,
         }
 
