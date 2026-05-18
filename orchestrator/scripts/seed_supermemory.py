@@ -33,7 +33,7 @@ async def main() -> None:
         {
             "label": "prior_move_2025",
             "content": (
-                "User: Moorthy V. (vnarasingamoorthy@gmail.com, phone +16184149537). "
+                "User: Narasinga Moorthy Veilu Kantha Perumal (vnarasingamoorthy@gmail.com, phone +16184149537). "
                 "Prior move completed on 2025-09-12: Berkeley CA -> San Francisco CA, "
                 "2-bedroom, no pets, 1 adult. "
                 "Carriers used: PG&E (electric), Comcast (internet), Geico (auto insurance), "
@@ -48,7 +48,7 @@ async def main() -> None:
             "metadata": {
                 "user_phone": BUYER_PHONE,
                 "user_email": "vnarasingamoorthy@gmail.com",
-                "user_name": "Moorthy V.",
+                "user_name": "Narasinga Moorthy Veilu Kantha Perumal",
                 "event_type": "prior_move",
                 "completed_at": "2025-09-12",
                 "origin": "Berkeley CA",
@@ -59,7 +59,7 @@ async def main() -> None:
         {
             "label": "preferences",
             "content": (
-                "User Moorthy V. (phone +16184149537) preferences from prior moves: "
+                "User Narasinga Moorthy Veilu Kantha Perumal (phone +16184149537) preferences from prior moves: "
                 "prefers Comcast retention department over general line. "
                 "Geico policies should be updated at least 2 weeks before move date. "
                 "USPS COA always filed first (forwarding kicks in 7-10 business days). "
@@ -68,7 +68,7 @@ async def main() -> None:
             ),
             "metadata": {
                 "user_phone": BUYER_PHONE,
-                "user_name": "Moorthy V.",
+                "user_name": "Narasinga Moorthy Veilu Kantha Perumal",
                 "event_type": "preferences",
             },
         },

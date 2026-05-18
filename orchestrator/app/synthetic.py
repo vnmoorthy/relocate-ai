@@ -86,7 +86,83 @@ AGENT_OPENERS = {
     "postal": "Initiating COA: old {origin_address}, new {destination_address}, move date {move_date}.",
     "utility-internet-austin": "Hi, scheduling new internet install at {destination_address}, target install {move_date}.",
     "mover": "Calling for an out-the-door quote: 2BR move from {origin_address} to {destination_address}, target {move_date}.",
+    "bank": "Calling to update mailing address on all linked accounts: old {origin_address}, new {destination_address}.",
+    "school": "Hi, AISD transfer office? Initiating enrollment for a student moving from SFUSD to Austin effective {move_date}.",
+    "medical-records": "Hi, requesting medical records transfer for our patient — moving to Austin, effective {move_date}. HIPAA release on file.",
+    "vet": "Hi, calling about my pet's records — we're moving to Austin {move_date}. Need them transferred to a new vet.",
+    "gym": "Calling to cancel membership effective {move_date} — moving out of state.",
+    "pharmacy": "Hi CVS — transferring active prescriptions to CVS Austin, target pickup {move_date}.",
+    "dmv": "Updating CA DL address from {origin_address} to {destination_address} via the MyDMV portal.",
+    "voter": "Updating CA voter registration from {origin_address} to {destination_address}.",
+    "subscriptions": "Sweeping subscription portals — updating mailing address from {origin_address} to {destination_address}.",
 }
+
+
+# Counterparty openers for the new agents — voice that picks up.
+GENERIC_COUNTERPARTY_OPENERS = {
+    "bank": "Wells Fargo customer service, this is Janet, how can I help?",
+    "school": "Austin ISD transfer office, this is Tara — what grade is the student?",
+    "medical-records": "One Medical records team, this is Devon. What's the patient's date of birth?",
+    "vet": "SF Pet Clinic, this is Carla. Pet's name?",
+    "gym": "Equinox member services, this is Anya. Can I get your member ID?",
+    "pharmacy": "CVS Pharmacy, this is Marcus. Prescription transfer?",
+    "dmv": "MyDMV portal opened. Step 1 of 4: confirm current DL number.",
+    "voter": "registertovote.ca.gov loaded. Step 1: confirm name + DOB.",
+    "subscriptions": "Costco account portal — logged in.",
+}
+
+# Generic 3-turn counterparty templates for the new agents (good-enough demo dialogue).
+GENERIC_COUNTERPARTY_TEMPLATES = {
+    "bank": [
+        "I see the account. To verify — last 4 of SSN?",
+        "Verified. Mailing address on all three accounts updated to {destination_address}, effective {move_date}. Confirmation WF-29847.",
+        "Anything else today?",
+    ],
+    "school": [
+        "Got it. We'll need immunization records and the prior school transcript. Records request already faxed?",
+        "Perfect. Enrollment packet will arrive at {destination_address} within 5 business days. Reference AISD-{move_date}-118.",
+        "Welcome to AISD. Is there anything else?",
+    ],
+    "medical-records": [
+        "I see the HIPAA release. Destination provider name and fax?",
+        "Records request in queue. ETA 7-10 business days. Reference OM-RT-3392.",
+        "Anything else for your patient?",
+    ],
+    "vet": [
+        "Sure. We'll fax full records — vaccines, surgical history, current meds. Destination clinic?",
+        "Done. Records sent. Reference VET-MV-1208.",
+        "Safe move.",
+    ],
+    "gym": [
+        "Cancellation is final after 30 days — that's the policy. Want to suspend instead?",
+        "OK, cancellation effective {move_date}. Confirmation EQX-CN-882. Final pro-rated bill in 5 business days.",
+        "Sorry to see you go.",
+    ],
+    "pharmacy": [
+        "Active scripts: lisinopril 10mg, atorvastatin 20mg, citalopram 20mg. Transfer to CVS Austin store 8842?",
+        "Transfer initiated. Pickup ready by {move_date} at the destination store. Reference CVS-TX-4471.",
+        "Anything else?",
+    ],
+    "dmv": [
+        "Step 2: confirm date of birth. Step 3: enter new residence address.",
+        "Step 4: submit for review. CA-DMV-CN-7741 issued. New DL card mails within 10 business days.",
+        "Address change complete.",
+    ],
+    "voter": [
+        "Step 2: select your party preference (skip if no change).",
+        "Step 3: submit. Confirmation VR-{move_date}-228. Sample ballot mails 30 days before next election.",
+        "Registration updated.",
+    ],
+    "subscriptions": [
+        "Logged in. Updating: Amazon, Netflix, NYTimes, Audible.",
+        "All 4 portals updated to {destination_address}. Per-portal confirmations sent to your email.",
+        "Digest queued.",
+    ],
+}
+
+# Merge generics into the main templates dict.
+COUNTERPARTY_OPENERS.update(GENERIC_COUNTERPARTY_OPENERS)
+COUNTERPARTY_TURN_TEMPLATES.update(GENERIC_COUNTERPARTY_TEMPLATES)
 
 
 def _format(template: str, spec: dict[str, Any]) -> str:

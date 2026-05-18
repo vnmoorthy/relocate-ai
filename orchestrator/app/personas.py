@@ -1,7 +1,7 @@
 """16 agent personas: 1 buyer + 15 specialists.
 
 7 fire LIVE during the 90-second demo (status="live"). The other 9 are deployed
-in the orchestrator but do NOT fire on stage (status="backlog"); they run as
+in the orchestrator but do NOT fire on stage (status="live"); they run as
 part of the same event and results land asynchronously over the next hour.
 
 Voice quality choices (all ElevenLabs — far more human than Polly):
@@ -83,16 +83,28 @@ PERSONAS: list[Persona] = [
             "If 'KNOWN HISTORY FOR THIS CALLER' appears in this prompt, acknowledge it warmly on your FIRST line — "
             "e.g. 'I see you moved Berkeley to SF last September — same carriers?' That's the recall moment, do it "
             "before anything else.\n\n"
-            "Your job is to extract these fields, then dispatch:\n"
-            "  origin_address, destination_address, move_date, household_size (bedrooms), has_pets, has_children.\n\n"
-            "Ask only what you need — don't grill the customer. If they say 'two-bedroom, no pets', that's "
-            "household_size=2 and has_pets=False — don't ask again. Infer aggressively. One or two clarifying "
-            "questions max.\n\n"
+            "EXTRACT these fields (skip any the caller already gave; the dispatch fan-out uses them to decide which "
+            "of our 16 specialist agents fire):\n"
+            "  origin_address (street + city), destination_address, move_date (YYYY-MM-DD),\n"
+            "  household_size (bedrooms), has_pets (bool), has_children (bool), has_car (bool).\n\n"
+            "TIMELINE AWARENESS — adapt your follow-up questions to how soon the move is:\n"
+            "  - If <2 weeks: focus on URGENT tasks. Confirm packing status, mover bookings, "
+            "utility shutoff windows.\n"
+            "  - If 2-6 weeks: ask about movers, school enrollment timing, insurance switch.\n"
+            "  - If >6 weeks: ask about long-lead tasks too — pharmacy transfer, vet records, "
+            "subscription forwarding. Plenty of runway.\n\n"
+            "CONDITIONAL DISPATCH HINTS — these inform which specialists fire:\n"
+            "  - has_pets=true  → vet records transfer agent activates\n"
+            "  - has_children=true → school district enrollment agent activates\n"
+            "  - has_car=true → DMV and Geico address update agents activate\n\n"
+            "Be warm but efficient. Three turns max from greeting to dispatch. Infer aggressively — if they say "
+            "'two-bedroom, just me and the dog, three weeks', that's household_size=2, has_pets=true, has_children=false, "
+            "move_date=today+3 weeks. Don't re-ask.\n\n"
             "When you have enough to dispatch, say (verbatim): 'On it. I'll text you each task as it closes. Hang "
-            "up whenever you want.' Then on the next line emit a JSON block like:\n"
-            "{\"origin_address\": \"...\", \"destination_address\": \"...\", \"move_date\": \"YYYY-MM-DD\", "
-            "\"household_size\": N, \"has_pets\": bool, \"has_children\": bool}\n"
-            "The JSON is for the orchestrator — the user won't hear it because TTS skips JSON blocks."
+            "up whenever you want.' Then on the next line emit a JSON block:\n"
+            "{\"origin_address\":\"...\",\"destination_address\":\"...\",\"move_date\":\"YYYY-MM-DD\","
+            "\"household_size\":N,\"has_pets\":bool,\"has_children\":bool,\"has_car\":bool}\n"
+            "The JSON is for the orchestrator — TTS skips JSON blocks so the caller doesn't hear it."
         ),
     ),
     # A2 — PG&E Shutoff (LIVE, outbound voice)
@@ -211,7 +223,7 @@ PERSONAS: list[Persona] = [
         agent_id="ca_dmv",
         name="CA DMV address updater",
         category="dmv",
-        status="backlog",
+        status="live",
         voice=None,
         counterparty_phone=None,
         voice_mode="browser",
@@ -225,7 +237,7 @@ PERSONAS: list[Persona] = [
         agent_id="ca_voter",
         name="CA voter registration updater",
         category="voter",
-        status="backlog",
+        status="live",
         voice=None,
         counterparty_phone=None,
         voice_mode="browser",
@@ -239,7 +251,7 @@ PERSONAS: list[Persona] = [
         agent_id="wells_fargo",
         name="Wells Fargo address updater",
         category="bank",
-        status="backlog",
+        status="live",
         voice="11labs-Adrian",
         counterparty_phone="+18008693557",
         voice_mode="voice",
@@ -253,7 +265,7 @@ PERSONAS: list[Persona] = [
         agent_id="school_district",
         name="AISD enrollment caller",
         category="school",
-        status="backlog",
+        status="live",
         voice="11labs-Anna",
         counterparty_phone="+15124149500",
         voice_mode="voice",
@@ -267,7 +279,7 @@ PERSONAS: list[Persona] = [
         agent_id="pcp_transfer",
         name="PCP records transferrer",
         category="medical-records",
-        status="backlog",
+        status="live",
         voice="11labs-Andrew",
         counterparty_phone="+18888806963",
         voice_mode="voice",
@@ -281,7 +293,7 @@ PERSONAS: list[Persona] = [
         agent_id="vet_transfer",
         name="Vet records transferrer",
         category="vet",
-        status="backlog",
+        status="live",
         voice="11labs-Lily",
         counterparty_phone=None,
         voice_mode="voice",
@@ -294,7 +306,7 @@ PERSONAS: list[Persona] = [
         agent_id="gym_cancel",
         name="Gym cancellation caller",
         category="gym",
-        status="backlog",
+        status="live",
         voice="11labs-Mia",
         counterparty_phone=None,
         voice_mode="voice",
@@ -308,7 +320,7 @@ PERSONAS: list[Persona] = [
         agent_id="pharmacy",
         name="Pharmacy transferrer",
         category="pharmacy",
-        status="backlog",
+        status="live",
         voice="11labs-John",
         counterparty_phone="+18007462273",
         voice_mode="voice",
@@ -321,7 +333,7 @@ PERSONAS: list[Persona] = [
         agent_id="subscriptions",
         name="Subscriptions updater",
         category="subscriptions",
-        status="backlog",
+        status="live",
         voice=None,
         counterparty_phone=None,
         voice_mode="browser",

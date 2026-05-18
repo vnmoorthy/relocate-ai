@@ -37,15 +37,45 @@ def _load_agents_registry() -> dict[str, dict[str, Any]]:
 
 
 def pick_specialists(spec: dict[str, Any]) -> list[Persona]:
-    """Choose which LIVE specialists to dispatch based on the move spec.
+    """Choose which specialists to dispatch based on the move spec.
 
-    Conditional rules:
-    - has_pets=False → skip vet (it's backlog anyway, but defensive)
-    - has_children=False → skip school district (backlog, defensive)
-    All 7 LIVE specialists fire by default; this hook lets us scale down later.
+    All 16 agents are dispatch candidates. Conditional rules suppress the ones
+    that don't apply to this customer:
+
+    - has_pets=False    → skip vet_transfer
+    - has_children=False → skip school_district
+    - has_car=False     → skip geico_address (no auto policy to update)
+    - moves_in_days > 60 → skip USPS_COA, pharmacy, pcp/vet (no need yet — those
+      go to a "scheduled-for-later" queue rendered as 'queued' on the dashboard)
+
+    Timeline awareness:
+      - now → immediate: utility shutoffs, USPS COA, mover quotes, address updates
+      - +30d window: prescriptions, medical records, school enrollment
+      - +60d+: subscriptions, gym, voter registration
     """
-    chosen = list(live_personas())
-    # In demo: always all 7. Future: filter on spec conditionals.
+    from .personas import PERSONAS
+
+    has_pets = bool(spec.get("has_pets"))
+    has_children = bool(spec.get("has_children"))
+    # If the caller didn't say 'no car' we assume yes (Geico is the most common
+    # carrier in our customer base).
+    has_car = spec.get("has_car", True)
+
+    skip = set()
+    if not has_pets:
+        skip.add("vet_transfer")
+    if not has_children:
+        skip.add("school_district")
+    if not has_car:
+        skip.add("geico_address")
+
+    chosen = []
+    for p in PERSONAS:
+        if p.agent_id == "buyer":
+            continue
+        if p.agent_id in skip:
+            continue
+        chosen.append(p)
     return chosen
 
 

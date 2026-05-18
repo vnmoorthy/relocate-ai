@@ -33,14 +33,15 @@ interface Props {
 /**
  * Swarm-from-singularity stage.
  *
- * - Pre-call: only the glowing singularity is on screen, with the public phone
- *   number and a tap-to-call button.
- * - On first event: 16 agent cells burst out from the core in two concentric rings:
- *     - Inner ring (radius ~200px): 7 LIVE cells (buyer + 6 specialists currently on stage).
- *     - Outer ring (radius ~360px): 9 BACKLOG cells (the rest of the relocation fleet —
- *       DMV, voter, bank, school, PCP, vet, gym, pharmacy, subscriptions).
- * - During the call: every routing decision spawns a tier-colored particle that flies
- *   from the originating cell back to the core.
+ * Pre-call: only the glowing singularity is visible — phone number + tap-to-call CTA.
+ *
+ * On first event: 16 agent cells burst out from the core and arrange on a single
+ * circular orbit around the singularity. All 16 cells are the same size, same affordances —
+ * they all do real work (subject to conditional dispatch in marketplace.pick_specialists).
+ *
+ * During the call: every routing decision spawns a tier-colored particle that flies
+ * from the originating cell back to the core (mint=Gemma-local, amber=Gemini Flash,
+ * magenta=Claude Opus).
  */
 export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -59,63 +60,36 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
     return () => ro.disconnect();
   }, []);
 
-  // Inner ring: smaller cells, more transcript real estate (LIVE specialists).
-  const innerCardW = 208;
-  const innerCardH = 130;
-  // Outer ring: compact "chip" cards for backlog agents (just name + state).
-  const outerCardW = 156;
-  const outerCardH = 78;
-
+  // Uniform cell geometry — all 16 cells the same size.
+  const cardW = 168;
+  const cardH = 96;
   const cx = stageSize.w / 2;
   const cy = stageSize.h / 2;
 
-  const liveAgents = useMemo(() => {
-    const buyer = ALL_AGENTS.find((a) => a.id === "buyer");
-    const liveSpec = ALL_AGENTS.filter((a) => a.live && a.id !== "buyer");
-    return buyer ? [buyer, ...liveSpec] : [...liveSpec];
-  }, []);
-  const backlogAgents = useMemo(() => ALL_AGENTS.filter((a) => !a.live), []);
+  // Elliptical orbit: stages are wider than they are tall, so a circle wastes
+  // horizontal room. Use the full width for rx, full height for ry.
+  const N = ALL_AGENTS.length; // 16
+  const rx = Math.max(0, (stageSize.w - cardW - 24) / 2);
+  const ry = Math.max(0, (stageSize.h - cardH - 24) / 2);
 
-  // Compute ring radii based on stage size, with sensible floors.
-  // Inner ring (7 cells of width 208): chord 2r*sin(π/7) > 208 ⇒ r > 240. Floor 240.
-  // Outer ring (9 cells of width 156): chord 2r*sin(π/9) > 156 ⇒ r > 228. We push the
-  // outer to ~floor(maxAllowed) to give visual separation.
-  const innerR = 220;
-  const outerR = Math.max(
-    370,
-    Math.min((stageSize.w - outerCardW - 24) / 2, (stageSize.h - outerCardH - 24) / 2),
-  );
-
-  const innerPositions = useMemo(() => {
-    return liveAgents.map((_, i) => {
-      const n = liveAgents.length;
-      const angle = (-90 + (i * 360) / n) * (Math.PI / 180);
+  const positions = useMemo(() => {
+    return ALL_AGENTS.map((_, i) => {
+      // Index 0 (buyer) at the top (-90°), then clockwise.
+      const angle = (-90 + (i * 360) / N) * (Math.PI / 180);
+      const ex = cx + Math.cos(angle) * rx;
+      const ey = cy + Math.sin(angle) * ry;
       return {
-        x: cx + Math.cos(angle) * innerR - innerCardW / 2,
-        y: cy + Math.sin(angle) * innerR - innerCardH / 2,
-        cellCx: cx + Math.cos(angle) * innerR,
-        cellCy: cy + Math.sin(angle) * innerR,
+        x: ex - cardW / 2,
+        y: ey - cardH / 2,
+        cellCx: ex,
+        cellCy: ey,
       };
     });
-  }, [liveAgents, cx, cy, innerR]);
-
-  const outerPositions = useMemo(() => {
-    const n = backlogAgents.length;
-    return backlogAgents.map((_, i) => {
-      // Offset outer ring by half-step so cells stagger between inner-ring cells visually.
-      const angle = (-90 + (i + 0.5) * (360 / n)) * (Math.PI / 180);
-      return {
-        x: cx + Math.cos(angle) * outerR - outerCardW / 2,
-        y: cy + Math.sin(angle) * outerR - outerCardH / 2,
-        cellCx: cx + Math.cos(angle) * outerR,
-        cellCy: cy + Math.sin(angle) * outerR,
-      };
-    });
-  }, [backlogAgents, cx, cy, outerR]);
+  }, [cx, cy, rx, ry]);
 
   const callStarted = !!eventId;
 
-  // Mark every agent as first-seen on call start (so they spawn-burst from center).
+  // Spawn-once tracker. On first eventId arriving, mark all agents as "spawning" at once.
   const firstSeenRef = useRef<Record<string, number>>({});
   Object.keys(agentStates).forEach((id) => {
     if (firstSeenRef.current[id] === undefined) {
@@ -151,7 +125,7 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
     return () => window.clearTimeout(t);
   }, [routingDecisions]);
 
-  // Decisions + local share
+  // Decision counter + local share
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
     for (const d of routingDecisions) c[d.tier] = (c[d.tier] ?? 0) + 1;
@@ -162,23 +136,18 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
     ? Math.round(((counts["gemma-local"] ?? 0) / totalDecisions) * 100)
     : 0;
 
-  const positionFor = (agentId: string) => {
-    const li = liveAgents.findIndex((a) => a.id === agentId);
-    if (li >= 0) return innerPositions[li];
-    const bi = backlogAgents.findIndex((a) => a.id === agentId);
-    if (bi >= 0) return outerPositions[bi];
-    return null;
-  };
-
   return (
     <div ref={containerRef} className="relative w-full h-full overflow-hidden swarm-stage">
       <div className="absolute inset-0 swarm-bg" />
 
       {/* Connection lines (only after call started) */}
       {callStarted && (
-        <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 1 }}>
-          {liveAgents.map((agent, i) => {
-            const p = innerPositions[i];
+        <svg
+          className="absolute inset-0 w-full h-full pointer-events-none"
+          style={{ zIndex: 1 }}
+        >
+          {ALL_AGENTS.map((agent, i) => {
+            const p = positions[i];
             if (!p) return null;
             const state = agentStates[agent.id]?.state;
             const active = state === "in-progress" || state === "calling";
@@ -198,37 +167,24 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
                 x2={p.cellCx}
                 y2={p.cellCy}
                 stroke={stroke}
-                strokeWidth={active ? 1.5 : 0.7}
+                strokeWidth={active ? 1.5 : 0.6}
                 strokeDasharray={isBuyer ? "0" : "3 5"}
                 className={active ? "swarm-line-active" : ""}
-              />
-            );
-          })}
-          {/* Outer ring: thinner, fainter lines from core */}
-          {backlogAgents.map((agent, i) => {
-            const p = outerPositions[i];
-            if (!p) return null;
-            return (
-              <line
-                key={agent.id}
-                x1={cx}
-                y1={cy}
-                x2={p.cellCx}
-                y2={p.cellCy}
-                stroke="rgba(0,255,163,0.05)"
-                strokeWidth={0.5}
-                strokeDasharray="2 6"
               />
             );
           })}
         </svg>
       )}
 
-      {/* Return particles */}
-      <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 2 }}>
+      {/* Return-flow particles (cell → core, tier-colored) */}
+      <svg
+        className="absolute inset-0 w-full h-full pointer-events-none"
+        style={{ zIndex: 2 }}
+      >
         {returnParticles.map((p) => {
-          const pos = positionFor(p.agent_id);
-          if (!pos) return null;
+          const idx = ALL_AGENTS.findIndex((s) => s.id === p.agent_id);
+          if (idx === -1 || !positions[idx]) return null;
+          const start = positions[idx];
           const color = tierColor(p.tier);
           return (
             <circle
@@ -236,7 +192,7 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
               r={3.5}
               fill={color}
               style={{
-                offsetPath: `path("M ${pos.cellCx} ${pos.cellCy} L ${cx} ${cy}")`,
+                offsetPath: `path("M ${start.cellCx} ${start.cellCy} L ${cx} ${cy}")`,
                 animation: `swarmReturn 1.4s ease-out forwards`,
                 filter: `drop-shadow(0 0 8px ${color})`,
               }}
@@ -307,13 +263,13 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
         </div>
       </div>
 
-      {/* INNER RING — LIVE agents with full transcripts */}
+      {/* All 16 cells — uniform size, single orbit, real transcripts and states */}
       {callStarted &&
-        liveAgents.map((agent, i) => {
-          const pos = innerPositions[i];
+        ALL_AGENTS.map((agent, i) => {
+          const pos = positions[i];
           if (!pos) return null;
           const hasSpawned = !!firstSeenRef.current[agent.id];
-          const delay = i * 70;
+          const delay = i * 55;
           return (
             <div
               key={agent.id}
@@ -321,14 +277,14 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
               style={{
                 left: pos.x,
                 top: pos.y,
-                width: innerCardW,
-                height: innerCardH,
+                width: cardW,
+                height: cardH,
                 zIndex: 4,
                 animation: hasSpawned
-                  ? `swarmSpawn 0.9s cubic-bezier(0.22, 1, 0.36, 1) ${delay}ms backwards`
+                  ? `swarmSpawn 0.95s cubic-bezier(0.22, 1, 0.36, 1) ${delay}ms backwards`
                   : "none",
-                ["--from-x" as any]: `${cx - pos.x - innerCardW / 2}px`,
-                ["--from-y" as any]: `${cy - pos.y - innerCardH / 2}px`,
+                ["--from-x" as any]: `${cx - pos.x - cardW / 2}px`,
+                ["--from-y" as any]: `${cy - pos.y - cardH / 2}px`,
               }}
             >
               <AgentCell
@@ -342,76 +298,6 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
             </div>
           );
         })}
-
-      {/* OUTER RING — BACKLOG agents as compact chips */}
-      {callStarted &&
-        backlogAgents.map((agent, i) => {
-          const pos = outerPositions[i];
-          if (!pos) return null;
-          const hasSpawned = !!firstSeenRef.current[agent.id];
-          // Outer chips spawn LATER (after the inner ring) so the visual ripples outward.
-          const delay = (liveAgents.length * 70) + i * 60;
-          const state = agentStates[agent.id]?.state ?? "queued";
-          return (
-            <div
-              key={agent.id}
-              className="absolute swarm-cell"
-              style={{
-                left: pos.x,
-                top: pos.y,
-                width: outerCardW,
-                height: outerCardH,
-                zIndex: 4,
-                animation: hasSpawned
-                  ? `swarmSpawn 0.85s cubic-bezier(0.22, 1, 0.36, 1) ${delay}ms backwards`
-                  : "none",
-                ["--from-x" as any]: `${cx - pos.x - outerCardW / 2}px`,
-                ["--from-y" as any]: `${cy - pos.y - outerCardH / 2}px`,
-              }}
-            >
-              <BacklogChip name={agent.name} category={agent.category} state={state} />
-            </div>
-          );
-        })}
-    </div>
-  );
-}
-
-/** Compact card for backlog agents — name + state only, designed to fit on the outer ring. */
-function BacklogChip({
-  name,
-  category,
-  state,
-}: {
-  name: string;
-  category: string;
-  state: string;
-}) {
-  const stateStyle: Record<string, { dot: string; text: string; pulse: boolean }> = {
-    queued: { dot: "bg-[var(--ink-500)]", text: "text-[var(--ink-500)]", pulse: false },
-    dispatched: { dot: "bg-[var(--ink-500)]", text: "text-[var(--ink-500)]", pulse: false },
-    calling: { dot: "bg-[var(--amber)]", text: "text-[var(--amber)]", pulse: false },
-    "in-progress": { dot: "bg-[var(--red)]", text: "text-[var(--red)]", pulse: true },
-    closed: { dot: "bg-[var(--mint)]", text: "text-[var(--mint)]", pulse: false },
-    error: { dot: "bg-[var(--red)]", text: "text-[var(--red)]", pulse: false },
-  };
-  const s = stateStyle[state] ?? stateStyle.queued;
-  return (
-    <div className="panel h-full px-3 py-2 flex flex-col justify-between">
-      <div>
-        <div className="font-display text-[12px] text-[var(--ink-100)] leading-tight truncate">
-          {name}
-        </div>
-        <div className="text-[8px] tracking-[0.18em] uppercase text-[var(--ink-500)] mt-0.5 truncate">
-          {category}
-        </div>
-      </div>
-      <div className="flex items-center gap-1.5">
-        <span className={`h-1 w-1 rounded-full ${s.dot} ${s.pulse ? "live-dot" : ""}`} />
-        <span className={`text-[8px] font-semibold tracking-[0.14em] uppercase ${s.text}`}>
-          {state === "queued" ? "queued" : state}
-        </span>
-      </div>
     </div>
   );
 }

@@ -201,8 +201,7 @@ Watch `http://localhost:3000`: 16 cells burst from the singularity. A real PDF l
 
 ## Credits
 
-- **Moorthy VeiluKanthaPerumal** — first author of [PAVO](https://huggingface.co/datasets/vnmoorthy/pavo-bench), University of Pennsylvania
-- **Mohammed Imthathullah** — co-author of PAVO, Google
+- **Narasinga Moorthy Veilu Kantha Perumal** — author, University of Pennsylvania
 - Sponsors: AgentPhone, Google DeepMind, Moss, Browser Use, AgentMail, Stripe, sponge, Supermemory
 
 ## License
@@ -214,3 +213,8 @@ PAVO router weights: proprietary.
 ---
 
 *"Moving sucks. Now it doesn't."*
+
+## References
+
+- PAVO paper (TMLR 2026) — *Pipeline-Aware Voice Orchestration with Demand-Conditioned Inference Routing* — [HuggingFace dataset](https://huggingface.co/datasets/vnmoorthy/pavo-bench)
+- 50,000-turn PAVO-Bench benchmark — CC-BY 4.0

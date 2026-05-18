@@ -460,6 +460,10 @@ def _try_extract_spec(text: str) -> dict[str, Any] | None:
         spec = json.loads(match.group(0))
         required = {"origin_address", "destination_address", "move_date"}
         if required.issubset(spec.keys()):
+            # Defaults for conditional-dispatch fields the buyer may not have asked.
+            spec.setdefault("has_pets", False)
+            spec.setdefault("has_children", False)
+            spec.setdefault("has_car", True)
             return spec
     except json.JSONDecodeError:
         return None
