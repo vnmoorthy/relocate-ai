@@ -1,0 +1,45 @@
+# Secrets — NEVER commit
+.env
+.env.local
+.env.bak
+**/.env
+**/.env.local
+**/.env.bak
+agents.json
+
+# Local-only handoff doc with real keys
+HANDOFF.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+.next/
+out/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+
+# macOS
+.DS_Store
+*.swp
+
+# Logs
+*.log
+/tmp/
+
+# Local-only
+.claude/
+.gstack/
+
+# Editor
+.vscode/
+.idea/
