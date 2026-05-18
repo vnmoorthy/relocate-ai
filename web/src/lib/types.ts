@@ -118,7 +118,7 @@ export const ALL_AGENTS = [
   { id: "gym_cancel", name: "Gym", category: "fitness", mode: "email" as AgentMode, live: true },
   { id: "pharmacy", name: "Pharmacy", category: "pharmacy", mode: "browser" as AgentMode, live: true },
   { id: "uscis_ar11", name: "USCIS", category: "immigration", mode: "browser" as AgentMode, live: true },
-  { id: "id_card_update", name: "DMV ID", category: "dmv", mode: "mail" as AgentMode, live: true },
+  { id: "id_card_update", name: "DMV", category: "dl card", mode: "mail" as AgentMode, live: true },
   { id: "bank_notify", name: "Bank", category: "bank", mode: "email" as AgentMode, live: true },
 ] as const;
 
