@@ -45,7 +45,7 @@ jobs:
         run: pnpm build
 
       - name: Add .nojekyll (so _next/ is served)
-        run: touch web/out/.nojekyll
+        run: touch out/.nojekyll
 
       - uses: actions/upload-pages-artifact@v3
         with:
