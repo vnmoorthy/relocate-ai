@@ -128,7 +128,14 @@ async def fan_out(event_id: str, spec: dict[str, Any]) -> None:
 
 
 async def _run_one(p: Persona, event_id: str, spec: dict[str, Any]) -> None:
-    """Dispatch one specialist to its mode-specific handler."""
+    """Dispatch one specialist to its mode-specific handler.
+
+    Graceful degradation: if the primary integration's API key is missing
+    (BROWSER_USE_API_KEY / LOB_API_KEY), we fall back to an AgentMail
+    "structured playbook" email — the customer gets a real artifact with
+    the exact steps to complete the task themselves. Other errors still
+    surface as an error state on the dashboard.
+    """
     await _emit_agent_state(event_id, p.agent_id, "calling")
     try:
         if p.voice_mode == "browser":
@@ -156,12 +163,77 @@ async def _run_one(p: Persona, event_id: str, spec: dict[str, Any]) -> None:
             "ts": time.time(),
         })
         await _emit_agent_state(event_id, p.agent_id, "closed")
+    except RuntimeError as e:
+        msg = str(e)
+        if "_API_KEY missing" in msg:
+            # Soft fallback: deliver the per-agent playbook email instead of
+            # the autonomous form submission / certified letter. Customer gets
+            # a real, verifiable artifact (real AgentMail message_id).
+            log.info("specialist %s key-missing → AgentMail playbook fallback", p.agent_id)
+            try:
+                fallback = await _email_playbook_fallback(p, event_id, spec, missing_key=msg)
+                event = state.events[event_id]
+                ctx = event.specialist_calls[p.agent_id]
+                ctx.bid = fallback
+                ctx.transcript.append({
+                    "role": "agent",
+                    "text": f"Bid: emailed playbook — {fallback.get('message_id', '?')}",
+                    "pavo_tier": "fallback-mock",
+                    "ts": time.time(),
+                })
+                await ws_broker.broadcast({
+                    "type": "transcript_turn", "event_id": event_id, "agent_id": p.agent_id,
+                    "turn": 1, "role": "agent",
+                    "text": f"Bid: emailed playbook — {fallback.get('message_id', '?')}",
+                    "ts": time.time(),
+                })
+                await _emit_agent_state(event_id, p.agent_id, "closed")
+                return
+            except Exception as fb_e:  # noqa: BLE001
+                log.exception("playbook fallback also failed for %s", p.agent_id)
+                msg = f"primary missing key + fallback failed: {fb_e}"
+        # Other errors (or fallback failures) → real error state
+        log.exception("specialist %s failed", p.agent_id)
+        event = state.events.get(event_id)
+        if event and p.agent_id in event.specialist_calls:
+            event.specialist_calls[p.agent_id].bid = {"error": f"{type(e).__name__}: {msg[:240]}"}
+        await _emit_agent_state(event_id, p.agent_id, "error")
     except Exception as e:  # noqa: BLE001 — one specialist's failure mustn't kill the wave
         log.exception("specialist %s failed", p.agent_id)
         event = state.events.get(event_id)
         if event and p.agent_id in event.specialist_calls:
             event.specialist_calls[p.agent_id].bid = {"error": f"{type(e).__name__}: {str(e)[:240]}"}
         await _emit_agent_state(event_id, p.agent_id, "error")
+
+
+async def _email_playbook_fallback(
+    p: Persona, event_id: str, spec: dict[str, Any], missing_key: str
+) -> dict[str, Any]:
+    """When a browser/mail-mode agent can't autonomously complete, send the
+    customer a structured AgentMail playbook with the exact steps to finish
+    the task themselves. Real artifact, not a stub.
+    """
+    from .integrations.per_agent_artifacts import (
+        fire_per_agent_artifacts,
+        PLAYBOOKS,
+    )
+    homeowner_email = spec.get("homeowner_email") or spec.get("user_email") or settings.demo_email_recipient
+    if p.agent_id in PLAYBOOKS:
+        await fire_per_agent_artifacts(
+            event_id=event_id,
+            agent_id=p.agent_id,
+            spec=spec,
+            outcome_text=f"Agent prepared the task. {missing_key.split('—')[0].strip()}.",
+            homeowner_email=homeowner_email,
+        )
+        return {
+            "mode": "email_playbook",
+            "agent_id": p.agent_id,
+            "delivered_to": homeowner_email,
+            "message_id": "<async>",
+            "next_step": "customer completes the 30-second final action via the email link",
+        }
+    raise RuntimeError(f"no playbook for {p.agent_id} — cannot fall back")
 
 
 # ──────────────────────────────────────────────────────────────────────

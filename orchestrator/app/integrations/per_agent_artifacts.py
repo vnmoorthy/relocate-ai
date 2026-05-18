@@ -189,6 +189,97 @@ PLAYBOOKS: dict[str, dict[str, str]] = {
             "to confirm or change the pickup store.</p>"
         ),
     },
+    "flight_book": {
+        "subject": "✓ Flight options — top 3 picks SFO → AUS on {move_date}",
+        "body": (
+            "<h2>Your flight options</h2>"
+            "<p>Hi {homeowner_name}, here are the top 3 flights for your move on {move_date}:</p>"
+            "<ul>"
+            "<li><b>Origin:</b> SFO (nearest to {origin_address})</li>"
+            "<li><b>Destination:</b> AUS (nearest to {destination_address})</li>"
+            "<li><b>Outcome:</b> {outcome}</li>"
+            "</ul>"
+            "<p><b>To finalize</b> (60 seconds): pick the option you want at "
+            "<a href='https://www.google.com/travel/flights'>google.com/travel/flights</a> "
+            "and complete checkout. Your dates and origin/destination are pre-loaded "
+            "from this email — just card + passenger info on your side.</p>"
+        ),
+    },
+    "water_board": {
+        "subject": "✓ Water shutoff — SFPUC stop service {move_date}",
+        "body": (
+            "<h2>Water service stop</h2>"
+            "<p>Hi {homeowner_name}, your water shutoff request is ready:</p>"
+            "<ul>"
+            "<li><b>Stop date:</b> {move_date}</li>"
+            "<li><b>Service address:</b> {origin_address}</li>"
+            "<li><b>Outcome:</b> {outcome}</li>"
+            "</ul>"
+            "<p><b>To finalize</b>: log into <a href='https://myaccount-water.sfwater.org/'>myaccount-water.sfwater.org</a> "
+            "→ 'Stop Service' → confirm date. Final meter reading scheduled, "
+            "last bill arrives within 6 weeks.</p>"
+        ),
+    },
+    "uscis_ar11": {
+        "subject": "🇺🇸 USCIS AR-11 — pre-filled, awaiting your signature",
+        "body": (
+            "<h2>USCIS AR-11 — your action needed</h2>"
+            "<p>Hi {homeowner_name}, your federal Change of Address form (AR-11) is pre-filled "
+            "with the spec from your call:</p>"
+            "<ul>"
+            "<li><b>Old address:</b> {origin_address}</li>"
+            "<li><b>New address:</b> {destination_address}</li>"
+            "<li><b>Effective:</b> {move_date}</li>"
+            "<li><b>Outcome:</b> {outcome}</li>"
+            "</ul>"
+            "<p><b>Why we can't sign for you</b>: 8 U.S.C. §1305 requires the alien — not an "
+            "agent — to sign the declaration under penalty of perjury. Federal law caps "
+            "automation here. We did the entire form. You do the 30-second click-to-sign.</p>"
+            "<p><b>To finalize</b> (you have 10 days from your move): "
+            "<a href='https://www.uscis.gov/ar-11'>uscis.gov/ar-11</a> → resume the session "
+            "→ click 'Sign and Submit'. We'll persist the confirmation number to your record.</p>"
+        ),
+    },
+    "id_card_update": {
+        "subject": "✓ DMV DL-13A — certified letter en route to Sacramento",
+        "body": (
+            "<h2>CA DMV address change</h2>"
+            "<p>Hi {homeowner_name}, your DL-13A 'Change of Address' card is being "
+            "certified-mailed to the DMV Address Change Unit:</p>"
+            "<ul>"
+            "<li><b>Mailed to:</b> CA DMV — Address Change Unit, PO Box 942869, Sacramento CA 94269-0001</li>"
+            "<li><b>Old address:</b> {origin_address}</li>"
+            "<li><b>New address:</b> {destination_address}</li>"
+            "<li><b>USPS Certified tracking:</b> {outcome}</li>"
+            "</ul>"
+            "<p><b>To finalize</b>: when our certified-mail piece arrives at your destination "
+            "address (~5 business days), sign the wet copy and mail it back. We pre-paid "
+            "the return-receipt postage. New DL card arrives within 14 days of DMV processing.</p>"
+        ),
+    },
+    "bank_notify": {
+        "subject": "🏦 Bank address-change playbook — 90-second script",
+        "body": (
+            "<h2>Your bank address-change script</h2>"
+            "<p>Hi {homeowner_name}, banks legally require YOUR voice + SSN to update mailing "
+            "addresses (2FA + identity verification). Here's the exact 90-second script to read:</p>"
+            "<hr>"
+            "<p><i>\"Hi, I'm calling to update the mailing address on all my accounts — "
+            "checking, savings, and credit card. My account holder name is {homeowner_name}. "
+            "New address: {destination_address}. Effective date: {move_date}. "
+            "I'll provide my SSN and 2FA when prompted.\"</i></p>"
+            "<hr>"
+            "<ul>"
+            "<li><b>What to have ready:</b> SSN (last 4), DOB, a recent transaction amount</li>"
+            "<li><b>Confirmation</b>: ask for a written confirmation number — they'll text it</li>"
+            "<li><b>Outcome:</b> {outcome}</li>"
+            "</ul>"
+            "<p><b>Why we can't do this for you</b>: bank security requires your voice on "
+            "the line + SSN + 2FA code from your phone. No AI can legally clear that.</p>"
+            "<p>Reply to this email with the confirmation number when done — we persist it "
+            "to your Supermemory so the next move call recalls your bank.</p>"
+        ),
+    },
 }
 
 

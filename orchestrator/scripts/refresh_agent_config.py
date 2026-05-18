@@ -37,7 +37,13 @@ async def main() -> None:
             if not entry:
                 print(f"  [skip] {persona.agent_id}: not in agents.json")
                 continue
-            ap_id = entry["agentphone_id"]
+            ap_id = entry.get("agentphone_id")
+            if not ap_id:
+                # v2 architecture: only the buyer is an AgentPhone voice agent.
+                # The other 16 are dispatched via Browser Use / AgentMail / Lob
+                # and have no AgentPhone-side config to push.
+                print(f"  [skip] {persona.agent_id}: no agentphone_id (mode={persona.voice_mode})")
+                continue
 
             body: dict = {
                 "systemPrompt": persona.system_prompt,

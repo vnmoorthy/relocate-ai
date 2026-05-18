@@ -62,45 +62,77 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
     return () => ro.disconnect();
   }, []);
 
-  // Uniform cell geometry — sized so cells never overlap on the ellipse, no
-  // matter how many agents are in the roster. We compute a width that fits
-  // the tightest arc (top/bottom of ellipse, where curvature is highest) with
-  // an 18px breathing gap.
+  // Uniform cell geometry — adaptive sizing that never overlaps. Algorithm:
+  //   1. Try single-ring layout. If that forces cardW below MIN_CARD_W, split
+  //      into two concentric rings (outer + inner). Each ring sizes itself.
+  //   2. The buyer (index 0) always anchors the OUTER ring at -90° (top).
+  //   3. Ramanujan I perimeter approximation for ellipses.
   const N = ALL_AGENTS.length;
-  // Reserve a margin so cells fit fully inside the stage.
   const MARGIN = 24;
-  // Start from the previous baseline (12 cells → 168×96) and scale by N.
-  // Conservative formula: card width = min(168, (perimeter / N) - GAP).
-  // Perimeter approx via Ramanujan I: π * (3(rx+ry) - sqrt((3rx+ry)(rx+3ry))).
-  // For first render (stageSize=0), fall back to baseline.
+  const GAP = 18;
+  const MAX_CARD_W = 168;
+  const MIN_CARD_W = 140;            // smaller looks cramped — switch to two-ring instead
+  const ASPECT = 96 / 168;           // preserve card aspect ratio
   const cx = stageSize.w / 2;
   const cy = stageSize.h / 2;
-  let rx0 = Math.max(0, (stageSize.w - 168 - MARGIN) / 2);
-  let ry0 = Math.max(0, (stageSize.h - 96 - MARGIN) / 2);
-  const peri = stageSize.w > 0
-    ? Math.PI * (3 * (rx0 + ry0) - Math.sqrt((3 * rx0 + ry0) * (rx0 + 3 * ry0)))
-    : 12 * 200;
-  const GAP = 18;
-  const widthForFit = Math.max(120, Math.floor(peri / N) - GAP);
-  const cardW = Math.min(168, widthForFit);
-  const cardH = Math.round(cardW * (96 / 168));     // preserve aspect ratio
-  const rx = Math.max(0, (stageSize.w - cardW - MARGIN) / 2);
-  const ry = Math.max(0, (stageSize.h - cardH - MARGIN) / 2);
 
+  // Geometry helper for one ring of cells on an ellipse.
+  const ringFor = (count: number, radiusScale: number) => {
+    const rx0 = Math.max(0, (stageSize.w * radiusScale - MAX_CARD_W - MARGIN) / 2);
+    const ry0 = Math.max(0, (stageSize.h * radiusScale - MAX_CARD_W * ASPECT - MARGIN) / 2);
+    const peri = stageSize.w > 0
+      ? Math.PI * (3 * (rx0 + ry0) - Math.sqrt((3 * rx0 + ry0) * (rx0 + 3 * ry0)))
+      : count * 200;
+    const widthForFit = Math.max(100, Math.floor(peri / count) - GAP);
+    const cardW = Math.min(MAX_CARD_W, widthForFit);
+    const cardH = Math.round(cardW * ASPECT);
+    const rx = Math.max(0, (stageSize.w * radiusScale - cardW - MARGIN) / 2);
+    const ry = Math.max(0, (stageSize.h * radiusScale - cardH - MARGIN) / 2);
+    return { cardW, cardH, rx, ry, peri };
+  };
+
+  // Try single ring first; if the cardW it'd need is below MIN_CARD_W, split.
+  const single = ringFor(N, 1.0);
+  const useTwoRings = stageSize.w > 0 && single.cardW < MIN_CARD_W;
+
+  // Two-ring partition: outer gets the first ceil(N/2), inner gets the rest.
+  // The buyer (index 0) stays on the outer ring at the top.
+  const outerCount = useTwoRings ? Math.ceil(N / 2) : N;
+  const innerCount = useTwoRings ? N - outerCount : 0;
+  const outer = useTwoRings ? ringFor(outerCount, 1.0) : single;
+  // Inner ring sized to 60% radius — wide enough to never collide with the outer
+  // ring at typical card sizes, tight enough to keep the singularity readable.
+  const inner = useTwoRings ? ringFor(Math.max(1, innerCount), 0.60) : null;
+
+  // Build positions for every agent. Outer indices: 0, 1, ..., outerCount-1
+  // → those map to ALL_AGENTS[0..outerCount-1]. Inner indices follow.
   const positions = useMemo(() => {
     return ALL_AGENTS.map((_, i) => {
-      // Index 0 (buyer) at the top (-90°), then clockwise.
-      const angle = (-90 + (i * 360) / N) * (Math.PI / 180);
-      const ex = cx + Math.cos(angle) * rx;
-      const ey = cy + Math.sin(angle) * ry;
+      const onOuter = i < outerCount;
+      const ring = onOuter ? outer : (inner ?? outer);
+      const idxInRing = onOuter ? i : (i - outerCount);
+      const countInRing = onOuter ? outerCount : (innerCount || 1);
+      // Buyer (i=0) at -90°; rest clockwise.
+      const angle = (-90 + (idxInRing * 360) / countInRing) * (Math.PI / 180);
+      const ex = cx + Math.cos(angle) * ring.rx;
+      const ey = cy + Math.sin(angle) * ring.ry;
       return {
-        x: ex - cardW / 2,
-        y: ey - cardH / 2,
+        x: ex - ring.cardW / 2,
+        y: ey - ring.cardH / 2,
         cellCx: ex,
         cellCy: ey,
+        cardW: ring.cardW,
+        cardH: ring.cardH,
+        onOuter,
       };
     });
-  }, [cx, cy, rx, ry]);
+  }, [cx, cy, outer.rx, outer.ry, outer.cardW, outer.cardH,
+      inner?.rx, inner?.ry, inner?.cardW, inner?.cardH,
+      outerCount, innerCount]);
+
+  // For SVG-line stroking and singularity sizing we use the outer ring's card.
+  const cardW = outer.cardW;
+  const cardH = outer.cardH;
 
   const callStarted = !!eventId;
 
@@ -150,6 +182,56 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
   const localShare = totalDecisions
     ? Math.round(((counts["gemma-local"] ?? 0) / totalDecisions) * 100)
     : 0;
+
+  // Below this stage width the elliptical swarm starts looking cramped no
+  // matter the ring count, so we fall back to a 2-column stacked grid.
+  // Anything >= MOBILE_SWARM_THRESHOLD renders the cinematic swarm.
+  const MOBILE_SWARM_THRESHOLD = 640;
+  const useMobileGrid = stageSize.w > 0 && stageSize.w < MOBILE_SWARM_THRESHOLD;
+
+  if (useMobileGrid) {
+    return (
+      <div ref={containerRef} className="relative w-full h-full overflow-hidden swarm-stage">
+        <div className="absolute inset-0 swarm-bg" />
+        <div className="relative z-10 h-full overflow-auto p-3">
+          <div className="text-center mb-4">
+            <div className="text-[9px] tracking-[0.24em] uppercase text-[var(--ink-500)]">
+              Relocate · live
+            </div>
+            <a
+              href={`tel:${PHONE_E164}`}
+              className="font-mono-tight text-[22px] font-bold text-[var(--mint)] block mt-1"
+            >
+              {PHONE_DISPLAY}
+            </a>
+            <a
+              href={`tel:${PHONE_E164}`}
+              className="mt-2 inline-flex items-center gap-1.5 bg-[var(--mint)] text-black font-display font-semibold text-[12px] tracking-[0.05em] px-4 py-1.5 rounded-full"
+            >
+              <span aria-hidden="true">📞</span>
+              <span>CALL NOW</span>
+            </a>
+          </div>
+          {callStarted && (
+            <div className="grid grid-cols-2 gap-2">
+              {ALL_AGENTS.map((agent) => (
+                <div key={agent.id} className="h-[110px]">
+                  <AgentCell
+                    agentId={agent.id}
+                    name={agent.name}
+                    category={agent.category}
+                    state={agentStates[agent.id]?.state}
+                    sinceTs={agentStates[agent.id]?.sinceTs}
+                    transcript={transcripts[agent.id] ?? []}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div ref={containerRef} className="relative w-full h-full overflow-hidden swarm-stage">
@@ -278,7 +360,7 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
         </div>
       </div>
 
-      {/* All N cells (currently 17) — uniform size, single orbit, real transcripts and states */}
+      {/* All N cells — adaptive sizing (single ring or two concentric rings) */}
       {callStarted &&
         ALL_AGENTS.map((agent, i) => {
           const pos = positions[i];
@@ -288,18 +370,20 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
           return (
             <div
               key={agent.id}
-              className={`absolute swarm-cell ${agent.id === "buyer" ? "swarm-cell-buyer" : ""}`}
+              className={`absolute swarm-cell ${agent.id === "buyer" ? "swarm-cell-buyer" : ""} ${
+                pos.onOuter ? "" : "swarm-cell-inner"
+              }`}
               style={{
                 left: pos.x,
                 top: pos.y,
-                width: cardW,
-                height: cardH,
-                zIndex: 4,
+                width: pos.cardW,
+                height: pos.cardH,
+                zIndex: pos.onOuter ? 4 : 5,
                 animation: hasSpawned
                   ? `swarmSpawn 0.95s cubic-bezier(0.22, 1, 0.36, 1) ${delay}ms backwards`
                   : "none",
-                ["--from-x" as any]: `${cx - pos.x - cardW / 2}px`,
-                ["--from-y" as any]: `${cy - pos.y - cardH / 2}px`,
+                ["--from-x" as any]: `${cx - pos.x - pos.cardW / 2}px`,
+                ["--from-y" as any]: `${cy - pos.y - pos.cardH / 2}px`,
               }}
             >
               <AgentCell
