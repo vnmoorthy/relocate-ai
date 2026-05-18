@@ -30,6 +30,10 @@
 
 <br>
 
+[![Relocate swarm dashboard — 16 agents firing in parallel from the PAVO singularity](docs/swarm.png)](https://vnmoorthy.github.io/relocate-ai/)
+
+<sub>The swarm-from-singularity dashboard — 16 specialist agents burst out from a glowing PAVO core, each runs a real task, every routing decision dispatches a tier-colored particle outward. [Open the live site →](https://vnmoorthy.github.io/relocate-ai/)</sub>
+
 </div>
 
 ---

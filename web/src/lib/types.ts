@@ -100,24 +100,26 @@ export interface FieldsCollectedEvent {
 // Order = clockwise burst sequence starting at the top (-90°).
 export type AgentMode = "voice" | "browser" | "email" | "mail";
 
+// Display names kept short (single-line at narrow card widths). Categories
+// stay full-word for the SUBTITLE row in the AgentCell.
 export const ALL_AGENTS = [
   { id: "buyer", name: "Concierge", category: "concierge", mode: "voice" as AgentMode, live: true },
-  { id: "pge_shutoff", name: "PG&E Shutoff", category: "utility", mode: "browser" as AgentMode, live: true },
-  { id: "water_board", name: "Water Shutoff", category: "utility", mode: "browser" as AgentMode, live: true },
-  { id: "comcast_cancel", name: "Comcast Cancel", category: "utility", mode: "mail" as AgentMode, live: true },
+  { id: "pge_shutoff", name: "PG&E", category: "electric", mode: "browser" as AgentMode, live: true },
+  { id: "water_board", name: "Water", category: "water", mode: "browser" as AgentMode, live: true },
+  { id: "comcast_cancel", name: "Comcast", category: "internet", mode: "mail" as AgentMode, live: true },
   { id: "geico_address", name: "Geico", category: "insurance", mode: "browser" as AgentMode, live: true },
-  { id: "spectrum_austin", name: "Spectrum Austin", category: "utility", mode: "browser" as AgentMode, live: true },
-  { id: "usps_coa", name: "USPS COA", category: "postal", mode: "browser" as AgentMode, live: true },
-  { id: "mover_quote", name: "Mover Quotes", category: "mover", mode: "email" as AgentMode, live: true },
-  { id: "flight_book", name: "Flight Search", category: "flight", mode: "browser" as AgentMode, live: true },
-  { id: "school_district", name: "AISD Enrollment", category: "school", mode: "email" as AgentMode, live: true },
-  { id: "pcp_transfer", name: "PCP Transfer", category: "medical", mode: "email" as AgentMode, live: true },
-  { id: "vet_transfer", name: "Vet Transfer", category: "vet", mode: "email" as AgentMode, live: true },
-  { id: "gym_cancel", name: "Gym Cancel", category: "gym", mode: "email" as AgentMode, live: true },
+  { id: "spectrum_austin", name: "Spectrum", category: "internet", mode: "browser" as AgentMode, live: true },
+  { id: "usps_coa", name: "USPS", category: "postal", mode: "browser" as AgentMode, live: true },
+  { id: "mover_quote", name: "Movers", category: "mover", mode: "email" as AgentMode, live: true },
+  { id: "flight_book", name: "Flights", category: "flight", mode: "browser" as AgentMode, live: true },
+  { id: "school_district", name: "AISD", category: "school", mode: "email" as AgentMode, live: true },
+  { id: "pcp_transfer", name: "PCP", category: "medical", mode: "email" as AgentMode, live: true },
+  { id: "vet_transfer", name: "Vet", category: "vet", mode: "email" as AgentMode, live: true },
+  { id: "gym_cancel", name: "Gym", category: "fitness", mode: "email" as AgentMode, live: true },
   { id: "pharmacy", name: "Pharmacy", category: "pharmacy", mode: "browser" as AgentMode, live: true },
-  { id: "uscis_ar11", name: "USCIS AR-11", category: "immigration", mode: "browser" as AgentMode, live: true },
-  { id: "id_card_update", name: "DMV ID Update", category: "dmv-id", mode: "mail" as AgentMode, live: true },
-  { id: "bank_notify", name: "Bank Script", category: "bank", mode: "email" as AgentMode, live: true },
+  { id: "uscis_ar11", name: "USCIS", category: "immigration", mode: "browser" as AgentMode, live: true },
+  { id: "id_card_update", name: "DMV ID", category: "dmv", mode: "mail" as AgentMode, live: true },
+  { id: "bank_notify", name: "Bank", category: "bank", mode: "email" as AgentMode, live: true },
 ] as const;
 
 // Backwards-compat alias for any old consumers.
