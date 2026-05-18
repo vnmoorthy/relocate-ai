@@ -16,7 +16,8 @@ export type WSEvent =
   | AgentStateEvent
   | CostUpdateEvent
   | EventCompleteEvent
-  | SponsorEvent;
+  | SponsorEvent
+  | FieldsCollectedEvent;
 
 export interface TranscriptTurnEvent {
   type: "transcript_turn";
@@ -69,6 +70,17 @@ export interface SponsorEvent {
   sponsor: "stripe" | "agentmail" | "browser_use" | "sponge" | "supermemory" | "moss" | "lob";
   action: string; // e.g., "charge_held", "receipt_sent", "form_submitted"
   detail?: string;
+  ts: number;
+}
+
+// v2: emitted every time the buyer extracts a new field from the caller.
+// Lets the dashboard show a live "fields-collected" progress strip.
+export interface FieldsCollectedEvent {
+  type: "fields_collected";
+  event_id: string;
+  turn: number;
+  fields: string[];                       // names of fields collected this turn
+  values: Record<string, string | number | boolean>;  // truncated values for display
   ts: number;
 }
 

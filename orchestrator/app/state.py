@@ -23,6 +23,13 @@ class BuyerCallContext:
     parsed_spec: dict[str, Any] | None = None  # extracted move spec
     dispatched: bool = False        # True once fan-out has fired (idempotency)
     started_at: float = field(default_factory=time.time)
+    # v2 field-collection state — the buyer emits partial JSON each turn;
+    # the orchestrator merges them here and dispatches on CORE-complete.
+    collected: dict[str, Any] = field(default_factory=dict)
+    # Track which fields came in on which turn for the dashboard timeline.
+    collection_history: list[dict[str, Any]] = field(default_factory=list)
+    # True after the post-call follow-up email is sent (idempotency).
+    followup_sent: bool = False
 
 
 @dataclass

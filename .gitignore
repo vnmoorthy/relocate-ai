@@ -7,8 +7,14 @@
 **/.env.bak
 agents.json
 
-# Local-only handoff doc with real keys
+# Local-only handoff docs (may contain real keys / internal notes)
 HANDOFF.md
+HANDOFF_V2.md
+VOICE_AGENT_HANDOFF.md
+NUCLEAR_FIX_PROMPT.md
+
+# Test evidence (per-event artifacts, not source)
+orchestrator/evidence/
 
 # Python
 __pycache__/

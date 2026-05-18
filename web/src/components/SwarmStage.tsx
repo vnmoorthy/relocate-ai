@@ -35,8 +35,8 @@ interface Props {
  *
  * Pre-call: only the glowing singularity is visible — phone number + tap-to-call CTA.
  *
- * On first event: 16 agent cells burst out from the core and arrange on a single
- * circular orbit around the singularity. All 16 cells are the same size, same affordances —
+ * On first event: 12 agent cells burst out from the core and arrange on a single
+ * circular orbit around the singularity. All 12 cells are the same size, same affordances —
  * they all do real work (subject to conditional dispatch in marketplace.pick_specialists).
  *
  * During the call: every routing decision spawns a tier-colored particle that flies
@@ -60,7 +60,7 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
     return () => ro.disconnect();
   }, []);
 
-  // Uniform cell geometry — all 16 cells the same size.
+  // Uniform cell geometry — all 12 cells the same size.
   const cardW = 168;
   const cardH = 96;
   const cx = stageSize.w / 2;
@@ -68,7 +68,7 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
 
   // Elliptical orbit: stages are wider than they are tall, so a circle wastes
   // horizontal room. Use the full width for rx, full height for ry.
-  const N = ALL_AGENTS.length; // 16
+  const N = ALL_AGENTS.length; // 12
   const rx = Math.max(0, (stageSize.w - cardW - 24) / 2);
   const ry = Math.max(0, (stageSize.h - cardH - 24) / 2);
 
@@ -263,7 +263,7 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
         </div>
       </div>
 
-      {/* All 16 cells — uniform size, single orbit, real transcripts and states */}
+      {/* All 12 cells — uniform size, single orbit, real transcripts and states */}
       {callStarted &&
         ALL_AGENTS.map((agent, i) => {
           const pos = positions[i];

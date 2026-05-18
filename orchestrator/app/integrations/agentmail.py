@@ -371,6 +371,84 @@ async def request_gym_cancellation(
     )
 
 
+async def send_buyer_followup_form(
+    *,
+    event_id: str,
+    to_email: str,
+    user_name: str,
+    missing_fields: list,            # list[BuyerField] — PII-gated fields still missing
+    blocked_agents: list[dict],      # [{agent_id, missing_fields: [str, ...]}]
+) -> dict | None:
+    """Post-call structured-form email to the caller.
+
+    Body is plain text + an HTML table the user can reply to or fill out via a
+    secure link (link URL placeholder; wire to your real intake page when ready).
+
+    The artifact is the AgentMail message_id, which gets persisted on the
+    BuyerCallContext + Supermemory for the next call to recall."""
+    if not to_email:
+        raise RuntimeError("buyer follow-up has no destination email")
+
+    subject = "Two minutes — the last few details to finish your move"
+
+    # Build the per-field section. We give each field a one-line "why we need it"
+    # so the user understands the ask.
+    field_lines = []
+    for f in missing_fields:
+        why = f.ask_phrasing.lstrip("(emailed) ").strip()
+        field_lines.append(f"  • {f.plain_label}\n      {why}\n      (example: {f.example})")
+
+    blocked_lines = []
+    for entry in blocked_agents:
+        names = ", ".join(entry["missing_fields"])
+        blocked_lines.append(f"  • {entry['agent_id']:18s} waiting on: {names}")
+
+    greeting = f"Hi {user_name.split()[0]}," if user_name else "Hi,"
+
+    body_text = f"""{greeting}
+
+Thanks for the call — the swarm is already running. Below are the last few \
+fields I deliberately didn't ask over the phone for safety (account numbers, \
+SSN digits, payment cards). Each one unblocks one of the specialists.
+
+Reply to this email with the fields you have on hand. For passwords / cards \
+/ SSN, use the secure session link at the bottom — those should NEVER be \
+typed into email.
+
+==============================================================
+FIELDS NEEDED (fill any you can; we'll chase the rest):
+==============================================================
+
+{chr(10).join(field_lines) if field_lines else "  (all collected — nothing pending)"}
+
+==============================================================
+WHICH SPECIALISTS ARE WAITING ON WHICH FIELDS:
+==============================================================
+
+{chr(10).join(blocked_lines) if blocked_lines else "  (no specialists blocked)"}
+
+==============================================================
+SECURE-ENTRY LINK (for passwords, SSN, card data — never reply with these):
+==============================================================
+
+  https://relocate.example/secure/{event_id}
+  (Expires in 24 hours. Encrypted, single-use, never logged.)
+
+You'll see each task close as it finishes. Reply any time.
+
+— Relocate
+"""
+
+    return await _send_via_agentmail(
+        event_id=event_id,
+        agent_id="buyer_followup",
+        to=to_email,
+        subject=subject,
+        body=body_text,
+        reply_to=to_email,
+    )
+
+
 async def request_pharmacy_transfer_fallback(
     *, event_id: str, spec: dict, user_email: str
 ) -> dict | None:

@@ -2,9 +2,9 @@
 
 **Memorize. Do not read from notes on stage.**
 
-The honest framing: the **routing infrastructure** is real, the **artifacts** are real, the **calls** are real. The utility-company conversations are real telephony with real audio but synthesized counterparties because PG&E/Comcast don't accept AI cancellations. We label what's REAL vs STUB on the dashboard. No theater.
+The honest framing (v2): **every shipping agent produces a real verifiable artifact** — a USPS confirmation number, a Lob certified-mail tracking number, an AgentMail message ID, a Browser Use task output. v1 claimed 16 agents but ~7 were partial or stubbed; v2 ships **12** agents (1 buyer + 11 specialists), all real. The 4 removed agents (`wells_fargo`, `subscriptions`, `ca_dmv`, `ca_voter`) hit identity bars (SSN, bank login, CA DL verification) that an AI can't legally clear without compromising real PII. See `AGENT_COUNT.md` + `orchestrator/AUDIT.md`.
 
-**Voice**: all 16 agents use ElevenLabs voices (Cleo for the concierge, Ryan/Brian/Grace/Jenny/James for specialists). Prompts written for spoken dialogue — contractions, short sentences, natural pacing. Sounds like a real person, not a chatbot.
+**Voice**: only the buyer concierge is voice in v2 (ElevenLabs "Cleo"). The 11 specialists fan out across Browser Use (5 agents), AgentMail (5 agents), and Lob certified mail (1 agent — Comcast, because Comcast has no working online cancel). Buyer prompts written for spoken dialogue — contractions, short sentences, natural pacing.
 
 **Visual**: dashboard is a "swarm-from-singularity" stage — when the buyer extracts the move spec, all 6 specialist cells **burst outward from the PAVO core** with staggered animation (110ms apart, cubic-bezier easing). Connection lines from each cell to the core breathe; every routing decision spawns a colored particle that flies from the cell back to the core (mint=Gemma-local, amber=Gemini-Flash, magenta=Claude-Opus). PAVO core in the dead center counts decisions and local-tier share.
 
@@ -111,7 +111,7 @@ Walk off. Total: 1:45.
 > *"$3.50 in direct COGS — $1.40 AgentPhone, $0.55 in PAVO inference, the rest is sponsor APIs. Margin: 96% on a $99 flat fee."*
 
 **"Why didn't this exist before?"**
-> *"Two things had to converge. Routing-layer research mature enough to publish — PAVO did that this year. AgentPhone shipping in February. Before AgentPhone, sixteen voice agents in parallel was a Twilio + custom-WebSocket nightmare."*
+> *"Two things had to converge. Routing-layer research mature enough to publish — PAVO did that this year. The browser + email + certified-mail substrate maturing — Browser Use, AgentMail, and Lob all shipped real APIs in the past 12 months. Before those, a dozen specialist agents running in parallel was a Twilio + custom-WebSocket nightmare."*
 
 **"What's actually real on stage?"**
 > *"The telephony is real. The routing layer is real. The artifacts the judge gets are real — pull out your phone and look at your inbox right now. The counterparty side of the utility calls is theater because utility IVRs don't accept AI cancellations. We're up-front about that on the dashboard — every sponsor is labeled REAL or STUB or ERR. We don't fake what we couldn't ship."*

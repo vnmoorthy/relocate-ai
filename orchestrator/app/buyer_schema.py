@@ -1,0 +1,416 @@
+"""Buyer field schema — the single source of truth for what the concierge collects.
+
+Every field the 11 specialists need from `spec` is declared here, classified by:
+  - tier: CORE (gates dispatch) | CONDITIONAL (gates which agents fire) |
+          OPTIONAL (collect on call if natural) | PII (always follow-up email)
+  - voice_safe: True if it's OK to say out loud over the phone
+  - agent_ids: which specialists need it
+  - ask_phrasing: how the buyer should ask, in plain spoken English
+  - validate: regex/callable that decides if a string value looks valid
+
+The buyer's system prompt is *partially generated* from this schema (the
+ASK_PHRASING_BLOCK below) so the prompt and the orchestrator can never drift.
+The orchestrator's `_handle_buyer_turn` uses `is_dispatch_ready()` to decide
+when to fire the swarm, and `pending_pii_fields()` to decide what to put in
+the post-call follow-up email.
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Callable, Literal
+
+
+FieldTier = Literal["core", "conditional", "optional", "pii"]
+
+
+@dataclass(frozen=True)
+class BuyerField:
+    name: str
+    tier: FieldTier
+    voice_safe: bool
+    agent_ids: tuple[str, ...]
+    ask_phrasing: str          # what the buyer might naturally say
+    plain_label: str           # what the follow-up email calls it
+    example: str               # used in few-shot prompt
+    validate: Callable[[str], bool] = lambda v: bool(v and v.strip())
+
+
+def _is_date(v: str) -> bool:
+    return bool(re.match(r"^\d{4}-\d{2}-\d{2}$", v.strip()))
+
+
+def _is_email(v: str) -> bool:
+    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", v.strip()))
+
+
+def _is_bool(v: str | bool) -> bool:
+    if isinstance(v, bool):
+        return True
+    return v.strip().lower() in ("true", "false", "yes", "no", "1", "0")
+
+
+def _is_address(v: str) -> bool:
+    # Heuristic: at least one digit (street number) + at least one comma or zip-like.
+    s = v.strip()
+    return bool(re.search(r"\d", s)) and (("," in s) or bool(re.search(r"\b\d{5}\b", s)))
+
+
+def _is_dob(v: str) -> bool:
+    return bool(re.match(r"^\d{4}-\d{2}-\d{2}$", v.strip()))
+
+
+def _digits(v: str, min_len: int) -> bool:
+    return bool(re.match(rf"^\d{{{min_len},}}$", re.sub(r"\D", "", v)))
+
+
+# ────────────────────────────────────────────────────────────────────
+# The full schema (declared in collection order — the buyer follows it)
+# ────────────────────────────────────────────────────────────────────
+
+
+BUYER_FIELDS: list[BuyerField] = [
+    # ─── CORE (4): dispatch happens after these ─────────────────────
+    BuyerField(
+        name="origin_address",
+        tier="core", voice_safe=True,
+        agent_ids=("pge_shutoff", "comcast_cancel", "geico_address", "usps_coa",
+                   "mover_quote", "pcp_transfer", "vet_transfer", "gym_cancel"),
+        ask_phrasing="Where are you moving from?",
+        plain_label="Origin address (street, city, ZIP)",
+        example="123 Main Street, San Francisco, CA 94103",
+        validate=_is_address,
+    ),
+    BuyerField(
+        name="destination_address",
+        tier="core", voice_safe=True,
+        agent_ids=("geico_address", "usps_coa", "spectrum_austin", "mover_quote",
+                   "school_district", "pcp_transfer", "vet_transfer", "pharmacy"),
+        ask_phrasing="And where to?",
+        plain_label="Destination address (street, city, ZIP)",
+        example="456 Oak Avenue, Austin, TX 78701",
+        validate=_is_address,
+    ),
+    BuyerField(
+        name="move_date",
+        tier="core", voice_safe=True,
+        agent_ids=("pge_shutoff", "comcast_cancel", "geico_address", "usps_coa",
+                   "spectrum_austin", "mover_quote", "school_district",
+                   "gym_cancel", "pharmacy"),
+        ask_phrasing="When's the move?",
+        plain_label="Move date",
+        example="2026-05-31",
+        validate=_is_date,
+    ),
+    BuyerField(
+        name="user_email",
+        tier="core", voice_safe=True,
+        agent_ids=("mover_quote", "school_district", "pcp_transfer", "vet_transfer",
+                   "gym_cancel", "pharmacy"),  # used as reply-to on every email
+        ask_phrasing="What's the best email to send everything to?",
+        plain_label="Reply-to email",
+        example="you@example.com",
+        validate=_is_email,
+    ),
+    # ─── CONDITIONAL (3): gate which agents fire ───────────────────
+    BuyerField(
+        name="has_pets",
+        tier="conditional", voice_safe=True,
+        agent_ids=("vet_transfer",),
+        ask_phrasing="Any pets?",
+        plain_label="Pets in the household?",
+        example="true",
+        validate=_is_bool,
+    ),
+    BuyerField(
+        name="has_children",
+        tier="conditional", voice_safe=True,
+        agent_ids=("school_district",),
+        ask_phrasing="Any kids in school?",
+        plain_label="Children needing school enrollment?",
+        example="false",
+        validate=_is_bool,
+    ),
+    BuyerField(
+        name="has_car",
+        tier="conditional", voice_safe=True,
+        agent_ids=("geico_address",),
+        ask_phrasing="Do you drive — meaning, an auto policy to update?",
+        plain_label="Auto policy to update?",
+        example="true",
+        validate=_is_bool,
+    ),
+    # ─── OPTIONAL (8): collect on call if it flows naturally ───────
+    BuyerField(
+        name="user_name",
+        tier="optional", voice_safe=True,
+        agent_ids=("comcast_cancel", "school_district", "pcp_transfer", "gym_cancel"),
+        ask_phrasing="And your name — first and last?",
+        plain_label="Your full name (for letters/emails)",
+        example="Jane Smith",
+    ),
+    BuyerField(
+        name="household_size",
+        tier="optional", voice_safe=True,
+        agent_ids=("mover_quote",),
+        ask_phrasing="What size place — one-bed, two-bed?",
+        plain_label="Bedrooms (mover quote precision)",
+        example="2",
+    ),
+    BuyerField(
+        name="pet_name",
+        tier="optional", voice_safe=True,
+        agent_ids=("vet_transfer",),
+        ask_phrasing="What's the pet's name?",
+        plain_label="Pet name",
+        example="Captain",
+    ),
+    BuyerField(
+        name="pet_species",
+        tier="optional", voice_safe=True,
+        agent_ids=("vet_transfer",),
+        ask_phrasing="Dog, cat, something else?",
+        plain_label="Pet species",
+        example="dog",
+    ),
+    BuyerField(
+        name="vet_email",
+        tier="optional", voice_safe=True,
+        agent_ids=("vet_transfer",),
+        ask_phrasing="Do you know your current vet's email — or want me to look it up later?",
+        plain_label="Current vet's email (records destination)",
+        example="info@sfpetclinic.com",
+        validate=_is_email,
+    ),
+    BuyerField(
+        name="child_name",
+        tier="optional", voice_safe=True,
+        agent_ids=("school_district",),
+        ask_phrasing="What's your kid's name and grade?",
+        plain_label="Child's name",
+        example="Sam",
+    ),
+    BuyerField(
+        name="child_grade",
+        tier="optional", voice_safe=True,
+        agent_ids=("school_district",),
+        ask_phrasing="What grade are they in?",
+        plain_label="Child's current grade",
+        example="3",
+    ),
+    BuyerField(
+        name="child_previous_school",
+        tier="optional", voice_safe=True,
+        agent_ids=("school_district",),
+        ask_phrasing="Which school are they at now?",
+        plain_label="Child's current school",
+        example="Alvarado Elementary, SFUSD",
+    ),
+    # ─── PII-GATED (11): never voice; follow-up email or secure form
+    BuyerField(
+        name="pge_account_number",
+        tier="pii", voice_safe=False,
+        agent_ids=("pge_shutoff",),
+        ask_phrasing="(emailed) Your PG&E account number — it's on any bill",
+        plain_label="PG&E account number (printed on your bill)",
+        example="1234567890",
+        validate=lambda v: _digits(v, 6),
+    ),
+    BuyerField(
+        name="pge_last4_ssn",
+        tier="pii", voice_safe=False,
+        agent_ids=("pge_shutoff",),
+        ask_phrasing="(emailed) Last 4 of SSN for PG&E identity verification",
+        plain_label="Last 4 of SSN on the PG&E account",
+        example="1234",
+        validate=lambda v: _digits(v, 4),
+    ),
+    BuyerField(
+        name="comcast_account_number",
+        tier="pii", voice_safe=False,
+        agent_ids=("comcast_cancel",),
+        ask_phrasing="(emailed) Your Comcast account number",
+        plain_label="Comcast account number",
+        example="8771203456789012",
+        validate=lambda v: _digits(v, 6),
+    ),
+    BuyerField(
+        name="geico_email",
+        tier="pii", voice_safe=False,
+        agent_ids=("geico_address",),
+        ask_phrasing="(emailed) Geico login email — we'll send a link to start, you log in once",
+        plain_label="Geico login email",
+        example="you@example.com",
+        validate=_is_email,
+    ),
+    BuyerField(
+        name="geico_password",
+        tier="pii", voice_safe=False,
+        agent_ids=("geico_address",),
+        ask_phrasing="(emailed via secure session — never typed in chat)",
+        plain_label="Geico password (secure session only)",
+        example="(never logged)",
+    ),
+    BuyerField(
+        name="equinox_member_id",
+        tier="pii", voice_safe=False,
+        agent_ids=("gym_cancel",),
+        ask_phrasing="(emailed) Your Equinox member ID — on the back of your card",
+        plain_label="Equinox member ID",
+        example="EQX-1234567",
+    ),
+    BuyerField(
+        name="source_pharmacy_name",
+        tier="pii", voice_safe=False,
+        agent_ids=("pharmacy",),
+        ask_phrasing="(emailed) Your current pharmacy name",
+        plain_label="Current pharmacy name",
+        example="Walgreens SF Castro",
+    ),
+    BuyerField(
+        name="source_pharmacy_phone",
+        tier="pii", voice_safe=False,
+        agent_ids=("pharmacy",),
+        ask_phrasing="(emailed) Your current pharmacy phone",
+        plain_label="Current pharmacy phone",
+        example="+14155550199",
+    ),
+    BuyerField(
+        name="rx_numbers",
+        tier="pii", voice_safe=False,
+        agent_ids=("pharmacy",),
+        ask_phrasing="(emailed) RX numbers to transfer (comma-separated)",
+        plain_label="Prescription numbers to transfer",
+        example="RX-100200300, RX-100200301",
+    ),
+    BuyerField(
+        name="user_dob",
+        tier="pii", voice_safe=False,
+        agent_ids=("pcp_transfer", "pharmacy"),
+        ask_phrasing="(emailed) Date of birth — for HIPAA records request",
+        plain_label="Date of birth (YYYY-MM-DD)",
+        example="1990-01-01",
+        validate=_is_dob,
+    ),
+    BuyerField(
+        name="usps_verify_card",
+        tier="pii", voice_safe=False,
+        agent_ids=("usps_coa",),
+        ask_phrasing="(emailed) USPS charges $1.10 to verify identity — use a prepaid Visa for safety",
+        plain_label="Card for USPS $1.10 verification (prepaid recommended)",
+        example="(secure entry only)",
+    ),
+]
+
+
+# ────────────────────────────────────────────────────────────────────
+# Helpers — what the orchestrator and prompt-builder both call
+# ────────────────────────────────────────────────────────────────────
+
+
+def by_name(name: str) -> BuyerField | None:
+    for f in BUYER_FIELDS:
+        if f.name == name:
+            return f
+    return None
+
+
+def fields_by_tier(tier: FieldTier) -> list[BuyerField]:
+    return [f for f in BUYER_FIELDS if f.tier == tier]
+
+
+def is_dispatch_ready(collected: dict) -> bool:
+    """We dispatch as soon as all 4 CORE fields are in (validated)."""
+    for f in fields_by_tier("core"):
+        v = collected.get(f.name)
+        if v is None or v == "" or v is False:
+            return False
+        if isinstance(v, str) and not f.validate(v):
+            return False
+    return True
+
+
+def voice_pending(collected: dict) -> list[BuyerField]:
+    """Voice-safe fields the buyer should still ask about, in priority order."""
+    out: list[BuyerField] = []
+    for f in BUYER_FIELDS:
+        if not f.voice_safe:
+            continue
+        if f.name in collected:
+            continue
+        # Skip optional pet/child fields when the conditional is False.
+        if f.name in ("pet_name", "pet_species", "vet_email") and not collected.get("has_pets"):
+            continue
+        if f.name in ("child_name", "child_grade", "child_previous_school") and not collected.get("has_children"):
+            continue
+        out.append(f)
+    return out
+
+
+def pending_pii_fields(collected: dict) -> list[BuyerField]:
+    """PII fields that still need a follow-up email."""
+    pii = fields_by_tier("pii")
+    return [f for f in pii if f.name not in collected]
+
+
+def affected_agents_for_field(field_name: str) -> tuple[str, ...]:
+    f = by_name(field_name)
+    return f.agent_ids if f else ()
+
+
+def fields_blocking(agent_id: str, collected: dict) -> list[str]:
+    """Which fields are still missing that this agent needs?"""
+    missing: list[str] = []
+    for f in BUYER_FIELDS:
+        if agent_id in f.agent_ids and f.name not in collected:
+            missing.append(f.name)
+    return missing
+
+
+# ────────────────────────────────────────────────────────────────────
+# Prompt-generation: build the schema doc embedded in the buyer prompt
+# ────────────────────────────────────────────────────────────────────
+
+
+def schema_block_for_prompt() -> str:
+    """Generate the FIELD COLLECTION ORDER section the buyer system prompt embeds.
+
+    Keeping the schema in code (not hand-written in the prompt) prevents drift
+    between what the buyer thinks it collects and what the orchestrator dispatches on.
+    """
+    lines = ["FIELD COLLECTION ORDER — collect in this priority:\n"]
+
+    lines.append("  CORE (always collect first — dispatch as soon as you have all four):")
+    for f in fields_by_tier("core"):
+        lines.append(f"    • {f.name:24s} — ask: \"{f.ask_phrasing}\"")
+    lines.append("")
+    lines.append("  CONDITIONAL (1 quick question each — these gate which agents fire):")
+    for f in fields_by_tier("conditional"):
+        lines.append(f"    • {f.name:24s} — ask: \"{f.ask_phrasing}\"")
+    lines.append("")
+    lines.append("  OPTIONAL on-call (collect if user stays on the line — skip rest if call ends):")
+    for f in fields_by_tier("optional"):
+        lines.append(f"    • {f.name:24s} — ask: \"{f.ask_phrasing}\"")
+    lines.append("")
+    lines.append("  PII-GATED (NEVER ask over voice — sent in a secure follow-up email instead):")
+    for f in fields_by_tier("pii"):
+        lines.append(f"    • {f.name:24s} — {f.ask_phrasing}")
+    return "\n".join(lines)
+
+
+def dispatch_json_example() -> str:
+    """A canonical JSON dispatch block the buyer should emit when CORE is in.
+
+    The buyer is taught to emit exactly this shape; TTS skips JSON blocks so
+    the caller never hears it.
+    """
+    example = {
+        f.name: (True if f.example == "true" else
+                 False if f.example == "false" else
+                 int(f.example) if f.example.isdigit() else
+                 f.example)
+        for f in BUYER_FIELDS
+        if f.voice_safe and f.example != "(never logged)" and f.example != "(secure entry only)"
+    }
+    import json as _json
+    return _json.dumps(example, indent=2)

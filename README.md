@@ -2,7 +2,7 @@
 
 # 🛰️ Relocate
 
-### AI Relocation OS · 16 agents on one phone call
+### AI Relocation OS · 12 agents on one phone call
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-00ffa3.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![PAVO Paper](https://img.shields.io/badge/PAVO-TMLR%202026-5cf4ff?style=flat-square)](https://huggingface.co/datasets/vnmoorthy/pavo-bench)
@@ -12,7 +12,7 @@
 [![Built with FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com)
 [![GitHub stars](https://img.shields.io/github/stars/vnmoorthy/relocate-ai?style=flat-square&color=ff4dc1)](https://github.com/vnmoorthy/relocate-ai/stargazers)
 
-**One phone call. Sixteen agents. The most stressful event in America, handled in ninety seconds.**
+**One phone call. Twelve agents. The most stressful event in America, handled in ninety seconds.**
 
 📞 **Try it now: [+1 (618) 414-9537](tel:+16184149537)**
 
@@ -26,7 +26,7 @@
 
 Moving is the **#1 most stressful life event in America** — 45% rank it above divorce. **25.87M Americans relocate every year.** Each move = 15+ coordinated tasks: utility shutoffs, USPS forwarding, DMV updates, insurance, banks, school enrollment, medical records, vet records, mover quotes, prescription transfers, subscription updates. Existing tools cover slices. Nobody runs a real-time AI agent swarm that fans out across all of it in parallel.
 
-Relocate does. Call **+1 (618) 414-9537**, talk for 30 seconds, and watch the dashboard light up as 16 specialists go to work — each one producing a real verifiable artifact (PDF, email message ID, Supermemory document, call recording, browser-form confirmation).
+Relocate does. Call **+1 (618) 414-9537**, talk for 30 seconds, and watch the dashboard light up as 11 specialists go to work — each one producing a real verifiable artifact (USPS confirmation number, Lob certified-mail tracking, AgentMail message IDs, Browser Use task outputs).
 
 [![Watch the swarm](https://img.shields.io/badge/▶️%20Watch%20the%20swarm-localhost%3A3000-00ffa3?style=for-the-badge)](http://localhost:3000)
 
@@ -34,12 +34,12 @@ Relocate does. Call **+1 (618) 414-9537**, talk for 30 seconds, and watch the da
 
 | | |
 |---|---|
-| 🌌 **Cinematic dashboard** | Swarm-from-singularity visualization; 16 cells burst from a pulsing PAVO core; tier-colored particles fly back per routing decision |
+| 🌌 **Cinematic dashboard** | Swarm-from-singularity visualization; 12 cells burst from a pulsing PAVO core; tier-colored particles fly back per routing decision |
 | 🧠 **PAVO routing** | Pipeline-Aware Voice Orchestration — peer-reviewed at TMLR 2026, model-agnostic, dataset open-source |
 | 🍏 **Local on Apple Silicon** | Gemma 2-2B runs on M3 Air via Ollama — cheap turns stay local, hard turns escalate to Gemini Flash / Claude Opus |
-| 📞 **Real telephony** | AgentPhone places the inbound + 6 outbound calls; 11 ElevenLabs voices (Cleo, Ryan, Brian, Grace, Jenny, James...) |
-| 📨 **Real artifacts** | AgentMail delivers a branded PDF receipt; Supermemory persists move history; next call recalls your prior carriers |
-| 🛡️ **Honest dashboard** | Every sponsor card labeled REAL / PARTIAL / STUB / ERR — no theater |
+| 📞 **Real telephony** | AgentPhone handles the inbound buyer call (ElevenLabs "Cleo"); the 11 specialists fan out across Browser Use, AgentMail, and Lob certified mail. |
+| 📨 **Real artifacts** | Every specialist produces a real verifiable artifact (USPS confirmation, Lob letter ID, AgentMail message IDs, Browser Use task outputs). AgentMail also delivers the branded PDF receipt; Supermemory persists move history. |
+| 🛡️ **Honest dashboard** | No STUB / PARTIAL / ERR badges in v2 — every shipping agent must produce a real artifact or it isn't in the roster. See `AGENT_COUNT.md`. |
 
 ---
 
@@ -55,42 +55,38 @@ The concierge (ElevenLabs voice "Cleo") picks up:
 
 > *"Relocate here — how can I help with your move?"*
 
-Tell her where you're going. She extracts your move spec (origin, destination, date, household size) and dispatches a **swarm of 16 specialist agents**.
+Tell her where you're going. She extracts your move spec (origin, destination, date, household size) and dispatches a **swarm of 11 specialist agents** (12 total counting the concierge). Every one of them produces a verifiable real-world artifact.
 
-| Agent | What it does | Real today? |
-|---|---|---|
-| **Concierge** | Inbound call, spec extraction, Supermemory recall of prior moves | ✅ REAL |
-| **PG&E shutoff** | Outbound call to PG&E customer service | ⚠ Telephony real, IVR doesn't accept AI cancel |
-| **Comcast cancel** | Outbound call to Comcast retention | ⚠ Telephony real, IVR doesn't accept AI cancel |
-| **Geico address** | Outbound call to Geico | ⚠ Telephony real, IVR doesn't accept AI |
-| **USPS COA** | Browser Use submission at moversguide.usps.com | ❌ Stub (needs Browser Use key) |
-| **Spectrum Austin** | Outbound call for new install scheduling | ⚠ Telephony real, IVR-dependent |
-| **Mover quotes** | Outbound calls to 3 movers + comparison | ⚠ Telephony real, depends on mover lines |
-| **Move-package PDF** | reportlab PDF emailed via AgentMail with attachment | ✅ REAL — lands in your inbox during the call |
-| **Move history persist** | Written to Supermemory; next call recalls you | ✅ REAL |
-| **9 backlog agents** | DMV, voter, bank, school, PCP, vet, gym, pharmacy, subscriptions | ❌ Queued for async post-call follow-up |
+| # | Agent | Mode | Endpoint | Artifact |
+|---|---|---|---|---|
+| 1 | **Concierge** (buyer) | voice (inbound) | AgentPhone | parsed spec + Supermemory recall + emailed PDF receipt |
+| 2 | **PG&E shutoff** | browser | pge.com/movingcenter | PG&E confirmation number |
+| 3 | **Comcast cancel** | mail (certified) | Lob → Comcast Customer Care | Lob letter ID + USPS tracking number |
+| 4 | **Geico address** | browser | geico.com/service | reference + updated declarations PDF |
+| 5 | **USPS COA** | browser | moversguide.usps.com | USPS confirmation number + $1.10 charge |
+| 6 | **Spectrum Austin** | browser | spectrum.com/internet/order | order number + work-order ID |
+| 7 | **Mover quotes (×3)** | email | AgentMail → U-Haul, PODS, Two Men | 3 outbound IDs (+ async replies) |
+| 8 | **AISD enrollment** | email | AgentMail → enroll@austinisd.org | message ID + AISD auto-reply |
+| 9 | **PCP records transfer** | email | AgentMail → records@onemedical.com | message ID + HIPAA release PDF attached |
+| 10 | **Vet records transfer** | email | AgentMail → customer's vet | message ID |
+| 11 | **Gym cancellation** | email | AgentMail → memberservices@equinox.com | message ID (45-day notice) |
+| 12 | **CVS RX transfer** | browser | cvs.com/pharmacy/transfer | confirmation + pickup ETA (or email fallback) |
 
-## The honest "really does work" audit
+> The v1 README listed 16 agents. v2 removes four — `wells_fargo`, `subscriptions`, `ca_dmv`, `ca_voter` — because none could clear the four-question test in `orchestrator/AUDIT.md` (bank/DMV/voter identity bars are insurmountable without compromising real PII; `subscriptions` requires 5 sets of credentials in a headless browser). Better to ship 12 honest agents than 16 theatrical ones.
 
-We label every integration on the dashboard with **REAL / PARTIAL / STUB / ERR** so you know exactly what's happening:
+## Integrations — all REAL in v2, or the agent isn't in the roster
 
-| Integration | Status | Evidence / why |
-|---|---|---|
-| AgentPhone telephony | REAL | Inbound + outbound calls verified via `/calls` API |
-| PAVO routing layer | REAL | 50K-turn benchmark, peer-reviewed at TMLR 2026 |
-| Gemma 2-2B local | REAL | Runs on **M3 Air (Apple Silicon)** via Ollama, gemma2:2b model |
-| Gemini Flash 2.5 | REAL | Real Google API calls when PAVO escalates |
-| Claude Opus 4.7 | STUB | Anthropic key not set — fallback to Gemini |
-| AgentMail PDF | REAL | Real email with PDF attachment lands in inbox |
-| Supermemory persist | REAL | Real document writes |
-| Supermemory recall | REAL | Prior moves keyed by caller phone number |
-| Stripe PaymentIntent | STUB | Needs `sk_test_*` key |
-| Browser Use (USPS COA, DMV, voter) | STUB | Needs Browser Use API key |
-| Moss runbook RAG | STUB | Needs `MOSS_PROJECT_ID` (user only has one of two creds) |
-| sponge agent payments | ERR | Real key, but endpoint paths undocumented |
-| Outbound utility calls (PG&E/Comcast/Geico/Spectrum) | PARTIAL | Real telephony, but utility IVRs reject AI cancellations. Production needs carrier API integrations or human-in-the-loop. |
+| Integration | Status |
+|---|---|
+| AgentPhone (inbound buyer) | REAL — verified via `/calls` API |
+| AgentMail (5 email-mode agents + buyer PDF receipt) | REAL — message IDs land in inbox |
+| Browser Use (5 browser-mode agents) | REAL — requires `BROWSERUSE_API_KEY` |
+| Lob.com (Comcast certified mail) | REAL — requires `LOB_API_KEY` (~$1.40/letter) |
+| Supermemory (persist + recall by caller phone) | REAL |
+| PAVO routing (local Gemma + cloud escalation) | REAL — paper at TMLR 2026 |
+| Gemini Flash 2.5 (cloud tier) | REAL when PAVO escalates |
 
-**Bottom line**: PAVO routing + telephony + email + persistence + recall **all work right now**. The actual cancellation of your PG&E account is theatrical today — that's the wedge into carrier APIs / human-in-the-loop, not the demo.
+The end-to-end harness in `verify-all-agents.sh` boots the orchestrator, fires a buyer trigger, and asserts every shipping agent produced a real artifact. **No silent stubs in shipping agents.** If a key is missing, the affected agent fails loudly — the test goes red — and the right move is either to acquire the key or remove the agent from `personas.PERSONAS`.
 
 ## Architecture
 
@@ -192,7 +188,7 @@ curl -X POST http://localhost:8000/api/test/buyer-trigger \
   -d '{"spec":{"origin_address":"123 Main St SF","destination_address":"456 Oak Austin","move_date":"2026-05-31","homeowner_email":"you@example.com"}}'
 ```
 
-Watch `http://localhost:3000`: 16 cells burst from the singularity. A real PDF lands in the email you specified. A real Supermemory document is written.
+Watch `http://localhost:3000`: 12 cells burst from the singularity. A real PDF lands in the email you specified. A real Supermemory document is written.
 
 ## Repo layout
 

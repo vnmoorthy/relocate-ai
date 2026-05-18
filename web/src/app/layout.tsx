@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Relocate · AI Relocation OS · built on PAVO",
   description:
-    "One phone call. Sixteen agents. PAVO routes every turn — 25% cheaper, 34% faster, 71% less energy, 7.9× fewer failures (TMLR 2026).",
+    "One phone call. Twelve agents. PAVO routes every turn — 25% cheaper, 34% faster, 71% less energy, 7.9× fewer failures (TMLR 2026).",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

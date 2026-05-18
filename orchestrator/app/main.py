@@ -197,21 +197,103 @@ async def _handle_buyer_turn(call_id: str, transcript: str, history: list[dict])
         "pavo_tier": reply.tier, "ts": time.time(),
     })
 
-    # Attempt to extract a structured spec from the reply (buyer agent emits JSON in dispatch turn).
+    # ── v2: incremental field collection ────────────────────────────────
+    # Every turn the buyer may emit a JSON block with any subset of the
+    # full schema. We merge into ctx.collected, broadcast which fields
+    # arrived this turn, and dispatch the moment all CORE fields are in.
+    new_fields = _extract_and_merge_fields(reply.content, ctx)
+    if new_fields:
+        await ws_broker.broadcast({
+            "type": "fields_collected",
+            "event_id": ctx.event_id,
+            "turn": ctx.turn_count,
+            "fields": list(new_fields.keys()),
+            "values": {k: (v if not isinstance(v, str) or len(v) < 80 else v[:80] + "...")
+                       for k, v in new_fields.items()},
+            "ts": time.time(),
+        })
+
     if not ctx.dispatched:
-        spec = _try_extract_spec(reply.content)
-        if spec:
+        from .buyer_schema import is_dispatch_ready
+        if is_dispatch_ready(ctx.collected):
+            # Build the spec from collected + sensible defaults.
+            spec = dict(ctx.collected)
+            spec.setdefault("has_pets", False)
+            spec.setdefault("has_children", False)
+            spec.setdefault("has_car", True)
             ctx.parsed_spec = spec
             ctx.dispatched = True
             event.spec = spec
             asyncio.create_task(fan_out(ctx.event_id, spec))
-            log.info("buyer dispatched: event=%s spec_fields=%d", ctx.event_id, len(spec))
+            log.info("buyer dispatched (v2): event=%s core+optional=%d",
+                     ctx.event_id, len(spec))
 
     # Return NDJSON to AgentPhone (per their voice-webhook format).
     async def generate():
         yield json.dumps({"text": reply.content}) + "\n"
 
     return StreamingResponse(generate(), media_type="application/x-ndjson")
+
+
+async def _send_buyer_followup(ctx) -> None:
+    """Post-call: email the caller a structured form for the PII-gated fields
+    the buyer correctly didn't ask for over voice. Each missing field corresponds
+    to a specialist that's currently BLOCKED awaiting that detail."""
+    try:
+        from .buyer_schema import pending_pii_fields, fields_blocking
+        from .integrations.agentmail import send_buyer_followup_form
+        spec = ctx.parsed_spec or ctx.collected
+        to_email = spec.get("user_email") or settings.demo_email_recipient
+        missing = pending_pii_fields(ctx.collected)
+        # Per-specialist breakdown: which agents are blocked on what.
+        per_agent: list[dict[str, Any]] = []
+        for agent_id in ("pge_shutoff", "comcast_cancel", "geico_address",
+                         "usps_coa", "gym_cancel", "pharmacy", "pcp_transfer"):
+            blocked = fields_blocking(agent_id, ctx.collected)
+            if blocked:
+                per_agent.append({"agent_id": agent_id, "missing_fields": blocked})
+        await send_buyer_followup_form(
+            event_id=ctx.event_id,
+            to_email=to_email,
+            user_name=spec.get("user_name", ""),
+            missing_fields=missing,
+            blocked_agents=per_agent,
+        )
+        log.info("buyer followup sent: event=%s to=%s missing=%d",
+                 ctx.event_id, to_email, len(missing))
+    except Exception as e:
+        log.exception("buyer followup email failed: %s", e)
+
+
+def _extract_and_merge_fields(text: str, ctx) -> dict:
+    """Pull every JSON block out of the buyer reply, validate each field,
+    merge new ones into ctx.collected. Returns the dict of NEW fields this turn."""
+    import re as _re
+    from .buyer_schema import by_name
+    new: dict = {}
+    # Match every {...} block in the reply (buyer may emit one or several).
+    for raw in _re.findall(r"\{[^{}]+\}", text, _re.DOTALL):
+        try:
+            block = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(block, dict):
+            continue
+        for k, v in block.items():
+            if k in ctx.collected:
+                continue  # never overwrite once set
+            field = by_name(k)
+            if field is None:
+                continue  # unknown field name
+            # Validate string fields with the per-field validator.
+            if isinstance(v, str) and not field.validate(v):
+                continue
+            ctx.collected[k] = v
+            new[k] = v
+            ctx.collection_history.append({
+                "turn": ctx.turn_count, "field": k, "value": v, "ts": time.time(),
+            })
+    return new
 
 
 async def _handle_specialist_turn(agent_id: str, call_id: str, transcript: str, history: list[dict]) -> StreamingResponse:
@@ -291,6 +373,11 @@ async def _handle_call_ended(agent_id: str, data: dict[str, Any]) -> JSONRespons
                 "type": "agent_state", "event_id": ctx.event_id, "agent_id": "buyer",
                 "state": "closed", "ts": time.time(),
             })
+            # v2: send the buyer follow-up email with the PII-gated fields the
+            # buyer correctly did NOT ask for over voice. Idempotent: never twice.
+            if not ctx.followup_sent and ctx.dispatched:
+                ctx.followup_sent = True
+                asyncio.create_task(_send_buyer_followup(ctx))
         return JSONResponse({"ok": True})
 
     # Specialist call ended.
