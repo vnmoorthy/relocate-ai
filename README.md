@@ -6,7 +6,7 @@
 
 ### **Move in one call.**
 
-**Dial a single number. A real-time swarm of 16 AI agents handles your relocation — utility shutoffs, mover bids, USPS forwarding, USCIS AR-11, DMV change of address — and delivers verifiable artifacts to your inbox before you hang up.**
+**Dial a single number. A real-time swarm of 17 AI agents handles your relocation — utility shutoffs, mover bids, USPS forwarding, USCIS AR-11, DMV change of address — and delivers verifiable artifacts to your inbox before you hang up.**
 
 <br>
 
