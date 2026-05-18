@@ -168,6 +168,92 @@ COMCAST_LETTER_HTML = """
 """
 
 
+DL13A_LETTER_HTML = """
+<html>
+<head><style>
+  body {{ font-family: Helvetica, Arial, sans-serif; font-size: 11pt; line-height: 1.4; margin: 1in; }}
+  .header {{ margin-bottom: 24pt; }}
+  .recipient {{ margin-bottom: 24pt; }}
+  .subject {{ font-weight: bold; margin-bottom: 12pt; }}
+  .body p {{ margin-bottom: 12pt; }}
+  table {{ border-collapse: collapse; width: 100%; margin: 12pt 0; }}
+  td {{ border: 1px solid #999; padding: 6pt 10pt; vertical-align: top; }}
+  .signature {{ margin-top: 36pt; }}
+</style></head>
+<body>
+  <div class="header">
+    <div>{from_name}</div>
+    <div>{from_line1}</div>
+    <div>{from_city}, {from_state} {from_zip}</div>
+    <div style="margin-top:6pt;">{today}</div>
+  </div>
+  <div class="recipient">
+    <div>California Department of Motor Vehicles</div>
+    <div>Address Change Unit</div>
+    <div>PO Box 942869</div>
+    <div>Sacramento, CA 94269-0001</div>
+  </div>
+  <div class="subject">Form DL-13A — Change of Address Notification</div>
+  <div class="body">
+    <table>
+      <tr><td>Driver License Number</td><td>{ca_dl_number}</td></tr>
+      <tr><td>Full Name</td><td>{user_name}</td></tr>
+      <tr><td>Date of Birth</td><td>{user_dob}</td></tr>
+      <tr><td>Old Residence Address</td><td>{origin_address}</td></tr>
+      <tr><td>New Residence Address</td><td>{destination_address}</td></tr>
+      <tr><td>Effective Date</td><td>{move_date}</td></tr>
+    </table>
+    <p>Per California Vehicle Code §14600, I am notifying the Department of
+    a change of residence address within the 10-day reporting window.</p>
+  </div>
+  <div class="signature">
+    <p>Signature: ____________________________________________</p>
+    <p>Date: ____________________________________________</p>
+    <p style="font-size:9pt;color:#666;">
+      Sign and date the wet copy within 24 hours of receipt. Retain for your
+      records. No further action required — the DMV updates within 10 days
+      of postmark.
+    </p>
+  </div>
+</body>
+</html>
+"""
+
+
+async def send_dl13a_letter(*, event_id: str, spec: dict) -> dict[str, Any]:
+    """Agent #16 — id_card_update. Certified-mail DL-13A to CA DMV."""
+    import datetime as _dt
+    today = _dt.date.today().strftime("%B %d, %Y")
+    body = DL13A_LETTER_HTML.format(
+        from_name=DEFAULT_FROM_ADDRESS["name"],
+        from_line1=DEFAULT_FROM_ADDRESS["address_line1"],
+        from_city=DEFAULT_FROM_ADDRESS["address_city"],
+        from_state=DEFAULT_FROM_ADDRESS["address_state"],
+        from_zip=DEFAULT_FROM_ADDRESS["address_zip"],
+        today=today,
+        ca_dl_number=spec.get("ca_dl_number", "(DL number)"),
+        user_name=spec.get("user_name", "(license holder)"),
+        user_dob=spec.get("user_dob", "(DOB)"),
+        origin_address=spec.get("origin_address", "(origin address)"),
+        destination_address=spec.get("destination_address", "(destination address)"),
+        move_date=spec.get("move_date", "(effective date)"),
+    )
+    return await send_certified_letter(
+        event_id=event_id,
+        agent_id="id_card_update",
+        to_address={
+            "name": "California DMV — Address Change Unit",
+            "address_line1": "PO Box 942869",
+            "address_city": "Sacramento",
+            "address_state": "CA",
+            "address_zip": "94269-0001",
+            "address_country": "US",
+        },
+        body_html=body,
+        description=f"CA DMV DL-13A address change for {spec.get('user_name', 'license holder')}",
+    )
+
+
 async def send_comcast_cancellation_letter(
     *, event_id: str, spec: dict
 ) -> dict[str, Any]:

@@ -449,6 +449,71 @@ You'll see each task close as it finishes. Reply any time.
     )
 
 
+async def send_bank_script(
+    *, event_id: str, spec: dict, user_email: str
+) -> dict | None:
+    """Agent #17 — bank_notify. Emails the customer a 90-second call script
+    they'll read to their bank, because banks legally require account-holder
+    verification (SSN + 2FA) the agent cannot perform.
+
+    The artifact is the AgentMail message_id + the script payload."""
+    user_name = spec.get("user_name", "")
+    origin = spec.get("origin_address", "(origin address)")
+    dest = spec.get("destination_address", "(destination address)")
+    move_date = spec.get("move_date", "(move date)")
+    bank_name = spec.get("bank_name", "your bank")
+    bank_phone = spec.get("bank_phone", "the number on the back of your card")
+
+    subject = "90-second call script: update your bank address"
+    body = f"""Hi{(' ' + user_name.split()[0]) if user_name else ''},
+
+Banks won't take address-change instructions from an agent — they require
+YOUR voice on the line for SSN + 2FA verification. So I drafted a 90-second
+script you can read to {bank_name} when you call {bank_phone}.
+
+==============================================================
+SCRIPT (read verbatim — they're trained to recognize this shape):
+==============================================================
+
+"Hi, I'd like to update the mailing address on all my linked accounts.
+Old address: {origin}
+New address: {dest}
+Effective: {move_date}.
+
+I have my last 4 of SSN, security questions, and 2FA app ready."
+
+==============================================================
+EXPECTED VERIFICATION (in this order):
+==============================================================
+
+1. Last 4 of SSN
+2. Date of birth
+3. Mother's maiden name OR a recent transaction amount
+4. 2FA code from your bank's app
+
+==============================================================
+HOW LONG IT TAKES:
+==============================================================
+
+Median: 4 minutes (1 min wait, 3 min verification + change).
+The change applies to checking, savings, and any cards on the same
+profile — you do NOT have to call each card separately.
+
+Reply to this email when you're done and I'll persist the confirmation
+in your Relocate history for next time.
+
+— Relocate
+"""
+    return await _send_via_agentmail(
+        event_id=event_id,
+        agent_id="bank_notify",
+        to=user_email,
+        subject=subject,
+        body=body,
+        reply_to=user_email,
+    )
+
+
 async def request_pharmacy_transfer_fallback(
     *, event_id: str, spec: dict, user_email: str
 ) -> dict | None:

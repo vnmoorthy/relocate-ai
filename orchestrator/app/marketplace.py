@@ -170,7 +170,7 @@ async def _run_one(p: Persona, event_id: str, spec: dict[str, Any]) -> None:
 
 
 async def _run_browser(p: Persona, event_id: str, spec: dict[str, Any]) -> dict:
-    """Browser-mode specialists: 5 in the v2 roster."""
+    """Browser-mode specialists: 8 in the v2.1 roster."""
     await _emit_agent_state(event_id, p.agent_id, "in-progress")
     if p.agent_id == "pge_shutoff":
         return await bu.submit_pge_shutoff(event_id=event_id, spec=spec)
@@ -180,6 +180,12 @@ async def _run_browser(p: Persona, event_id: str, spec: dict[str, Any]) -> dict:
         return await bu.submit_usps_coa(event_id=event_id, spec=spec)
     if p.agent_id == "spectrum_austin":
         return await bu.submit_spectrum_order(event_id=event_id, spec=spec)
+    if p.agent_id == "flight_book":
+        return await bu.submit_flight_search(event_id=event_id, spec=spec)
+    if p.agent_id == "water_board":
+        return await bu.submit_water_shutoff(event_id=event_id, spec=spec)
+    if p.agent_id == "uscis_ar11":
+        return await bu.submit_uscis_ar11(event_id=event_id, spec=spec)
     if p.agent_id == "pharmacy":
         # Primary path: Browser Use. Fallback: AgentMail to CVS customer service.
         try:
@@ -220,13 +226,17 @@ async def _run_email(p: Persona, event_id: str, spec: dict[str, Any]) -> dict:
         return await am.request_vet_records(event_id=event_id, spec=spec, user_email=user_email)
     if p.agent_id == "gym_cancel":
         return await am.request_gym_cancellation(event_id=event_id, spec=spec, user_email=user_email)
+    if p.agent_id == "bank_notify":
+        return await am.send_bank_script(event_id=event_id, spec=spec, user_email=user_email)
 
     raise RuntimeError(f"no email handler for agent {p.agent_id}")
 
 
 async def _run_mail(p: Persona, event_id: str, spec: dict[str, Any]) -> dict:
-    """Mail-mode specialists: 1 in the v2 roster (comcast_cancel via Lob)."""
+    """Mail-mode specialists: 2 in the v2.1 roster (comcast_cancel + id_card_update)."""
     await _emit_agent_state(event_id, p.agent_id, "in-progress")
     if p.agent_id == "comcast_cancel":
         return await lob.send_comcast_cancellation_letter(event_id=event_id, spec=spec)
+    if p.agent_id == "id_card_update":
+        return await lob.send_dl13a_letter(event_id=event_id, spec=spec)
     raise RuntimeError(f"no mail handler for agent {p.agent_id}")

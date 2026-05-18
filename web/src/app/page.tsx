@@ -2,6 +2,7 @@
 
 import { ArtifactsPanel } from "@/components/ArtifactsPanel";
 import { CostTicker } from "@/components/CostTicker";
+import { FieldsCollectedStrip } from "@/components/FieldsCollectedStrip";
 import { PAVOFlow } from "@/components/PAVOFlow";
 import { SponsorRow } from "@/components/SponsorRow";
 import { SwarmStage } from "@/components/SwarmStage";
@@ -121,6 +122,7 @@ export default function Page() {
         </div>
 
         <div className="mt-4 flex flex-col gap-3">
+          <FieldsCollectedStrip collectedFields={s.collectedFields} />
           <SponsorRow sponsorEvents={s.sponsorEvents} />
           <CostTicker
             pavoCents={s.pavoCents}
