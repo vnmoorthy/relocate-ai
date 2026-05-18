@@ -59,9 +59,10 @@ export default function Page() {
           </h1>
 
           <p className="hero-tagline">
-            Dial a single phone number. A real-time swarm of 12 specialist
-            agents handles your relocation — utility shutoffs, address updates,
-            mover bids, USPS forwarding — and delivers verifiable artifacts to
+            Dial a single phone number. A real-time swarm of 16 specialist
+            agents handles your relocation — utility shutoffs, mover bids,
+            flight search, USPS forwarding, address updates, USCIS AR-11,
+            DMV change of address — and delivers verifiable artifacts to
             your inbox before you hang up.
           </p>
 
@@ -162,7 +163,7 @@ export default function Page() {
           <Step
             n="03"
             title="Swarm fans out"
-            body="Twelve specialist agents dispatch in parallel. Browser Use submits real forms (PG&E, USPS, Geico, Spectrum). AgentMail emails intake addresses (movers, schools, vets). Lob mails Comcast a certified letter."
+            body="Sixteen specialist agents dispatch in parallel. Browser Use submits real forms (PG&E, USPS, Geico, Spectrum, water, flights). AgentMail emails intake addresses (movers, schools, vets, bank-script playbook). Lob mails Comcast + DMV DL-13A certified letters. USCIS AR-11 is pre-filled to the signature step — federal law requires the alien to sign."
           />
           <Step
             n="04"
