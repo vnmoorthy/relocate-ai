@@ -205,10 +205,10 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
       <div
         className="absolute swarm-core"
         style={{
-          left: cx - 130,
-          top: cy - 130,
-          width: 260,
-          height: 260,
+          left: cx - 160,
+          top: cy - 160,
+          width: 320,
+          height: 320,
           zIndex: 3,
         }}
       >
@@ -224,7 +224,7 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
               <a
                 href={`tel:${PHONE_E164}`}
                 aria-label={`Call Relocate at ${PHONE_DISPLAY}`}
-                className="font-mono-tight text-[19px] font-bold text-[var(--mint)] hover:text-white transition-colors leading-none"
+                className="font-mono-tight text-[20px] font-bold text-[var(--mint)] hover:text-white transition-colors leading-none whitespace-nowrap"
               >
                 {PHONE_DISPLAY}
               </a>
@@ -237,7 +237,7 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
                 <span>CALL NOW</span>
               </a>
               <span className="text-[9px] tracking-[0.15em] uppercase text-[var(--ink-500)] mt-2 text-center leading-tight">
-                one phone call ·<br />16 agents handle your move
+                one phone call ·<br />12 agents handle your move
               </span>
             </div>
           ) : (

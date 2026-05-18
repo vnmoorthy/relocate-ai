@@ -72,8 +72,10 @@ export interface SponsorEvent {
   ts: number;
 }
 
-// All 16 agents — all fire on dispatch (subject to conditional rules in marketplace.pick_specialists).
-// Order matters: this is the clockwise burst sequence starting at the top (-90°).
+// All 12 agents — strict-completion roster (down from 16 after auditing which
+// tasks can be 100% real). Removed agents required SSN/bank-login/DMV-identity
+// verification that can't be legally automated.
+// Order = clockwise burst sequence starting at the top (-90°).
 export const ALL_AGENTS = [
   { id: "buyer", name: "Concierge", category: "concierge", live: true },
   { id: "pge_shutoff", name: "PG&E Shutoff", category: "utility", live: true },
@@ -82,15 +84,11 @@ export const ALL_AGENTS = [
   { id: "spectrum_austin", name: "Spectrum Austin", category: "utility", live: true },
   { id: "usps_coa", name: "USPS COA", category: "postal", live: true },
   { id: "mover_quote", name: "Mover Quotes", category: "mover", live: true },
-  { id: "wells_fargo", name: "Wells Fargo", category: "bank", live: true },
   { id: "school_district", name: "AISD Enrollment", category: "school", live: true },
   { id: "pcp_transfer", name: "PCP Transfer", category: "medical", live: true },
-  { id: "pharmacy", name: "Pharmacy", category: "pharmacy", live: true },
   { id: "vet_transfer", name: "Vet Transfer", category: "vet", live: true },
   { id: "gym_cancel", name: "Gym Cancel", category: "gym", live: true },
-  { id: "ca_dmv", name: "CA DMV", category: "dmv", live: true },
-  { id: "ca_voter", name: "Voter Reg", category: "voter", live: true },
-  { id: "subscriptions", name: "Subscriptions", category: "subscriptions", live: true },
+  { id: "pharmacy", name: "Pharmacy", category: "pharmacy", live: true },
 ] as const;
 
 // Backwards-compat alias for any old consumers.

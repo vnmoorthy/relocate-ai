@@ -278,6 +278,31 @@ async def run_synthetic_specialist(persona: Persona, event_id: str, spec: dict[s
         "state": "closed", "ts": time.time(),
     })
 
+    # Fire the per-agent REAL artifacts: AgentMail email + Supermemory persist.
+    # Each agent now produces its own verifiable artifact, not just the bundled PDF.
+    from .integrations.per_agent_artifacts import fire_per_agent_artifacts
+    homeowner_email = (
+        spec.get("homeowner_email")
+        or "vnarasingamoorthy@gmail.com"
+    )
+    # Extract a short outcome line — last agent turn or a fallback.
+    last_agent = next((t for t in reversed(ctx.transcript) if t.get("role") == "agent"), None)
+    outcome_text = ""
+    if last_agent:
+        text = last_agent.get("text", "")
+        import re
+        m = re.search(r"Bid:\s*(.*?)(?:\.|$)", text)
+        outcome_text = (m.group(1) if m else text)[:140].strip()
+    asyncio.create_task(
+        fire_per_agent_artifacts(
+            event_id=event_id,
+            agent_id=persona.agent_id,
+            spec=spec,
+            outcome_text=outcome_text,
+            homeowner_email=homeowner_email,
+        )
+    )
+
 
 async def run_synthetic_fan_out(event_id: str, spec: dict[str, Any], specialists: list[Persona]) -> None:
     """Run synthetic conversations for all specialists in parallel."""

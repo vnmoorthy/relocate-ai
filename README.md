@@ -1,10 +1,45 @@
-# Relocate — AI Relocation OS
+<div align="center">
 
-> **One phone number. Sixteen agents. The most stressful event in America, handled in ninety seconds.**
+# 🛰️ Relocate
 
-📞 **Call now: +1 (618) 414-9537** — talk to the concierge, get your relocation tasks dispatched.
+### AI Relocation OS · 16 agents on one phone call
 
-Built at the **YC Call My Agent Hackathon** (San Francisco, 2026-05-17). Hosted by [AgentPhone](https://agentphone.ai). Powered by [PAVO](https://huggingface.co/datasets/vnmoorthy/pavo-bench) — a peer-reviewed routing layer for voice agent fleets (TMLR 2026).
+[![License: MIT](https://img.shields.io/badge/License-MIT-00ffa3.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![PAVO Paper](https://img.shields.io/badge/PAVO-TMLR%202026-5cf4ff?style=flat-square)](https://huggingface.co/datasets/vnmoorthy/pavo-bench)
+[![Apple Silicon](https://img.shields.io/badge/Local%20LLM-Apple%20Silicon-000000?style=flat-square&logo=apple)](https://ollama.com)
+[![Powered by AgentPhone](https://img.shields.io/badge/Telephony-AgentPhone-ffc94a?style=flat-square)](https://agentphone.ai)
+[![Built with Next.js](https://img.shields.io/badge/UI-Next.js%2016-black?style=flat-square&logo=next.js)](https://nextjs.org)
+[![Built with FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com)
+[![GitHub stars](https://img.shields.io/github/stars/vnmoorthy/relocate-ai?style=flat-square&color=ff4dc1)](https://github.com/vnmoorthy/relocate-ai/stargazers)
+
+**One phone call. Sixteen agents. The most stressful event in America, handled in ninety seconds.**
+
+📞 **Try it now: [+1 (618) 414-9537](tel:+16184149537)**
+
+</div>
+
+---
+
+> Built at the **YC Call My Agent Hackathon** (San Francisco, May 2026). Powered by [PAVO](https://huggingface.co/datasets/vnmoorthy/pavo-bench), a peer-reviewed routing layer (TMLR 2026) that runs the cheap turns on your Mac's Apple Silicon and only escalates the hard ones to the cloud. **25% cheaper, 34% faster median latency, 71% less energy, 7.9× fewer coherence failures vs. fixed-cloud** on the 50,000-turn benchmark.
+
+## ⭐ Why this exists
+
+Moving is the **#1 most stressful life event in America** — 45% rank it above divorce. **25.87M Americans relocate every year.** Each move = 15+ coordinated tasks: utility shutoffs, USPS forwarding, DMV updates, insurance, banks, school enrollment, medical records, vet records, mover quotes, prescription transfers, subscription updates. Existing tools cover slices. Nobody runs a real-time AI agent swarm that fans out across all of it in parallel.
+
+Relocate does. Call **+1 (618) 414-9537**, talk for 30 seconds, and watch the dashboard light up as 16 specialists go to work — each one producing a real verifiable artifact (PDF, email message ID, Supermemory document, call recording, browser-form confirmation).
+
+[![Watch the swarm](https://img.shields.io/badge/▶️%20Watch%20the%20swarm-localhost%3A3000-00ffa3?style=for-the-badge)](http://localhost:3000)
+
+## 🚀 What's inside
+
+| | |
+|---|---|
+| 🌌 **Cinematic dashboard** | Swarm-from-singularity visualization; 16 cells burst from a pulsing PAVO core; tier-colored particles fly back per routing decision |
+| 🧠 **PAVO routing** | Pipeline-Aware Voice Orchestration — peer-reviewed at TMLR 2026, model-agnostic, dataset open-source |
+| 🍏 **Local on Apple Silicon** | Gemma 2-2B runs on M3 Air via Ollama — cheap turns stay local, hard turns escalate to Gemini Flash / Claude Opus |
+| 📞 **Real telephony** | AgentPhone places the inbound + 6 outbound calls; 11 ElevenLabs voices (Cleo, Ryan, Brian, Grace, Jenny, James...) |
+| 📨 **Real artifacts** | AgentMail delivers a branded PDF receipt; Supermemory persists move history; next call recalls your prior carriers |
+| 🛡️ **Honest dashboard** | Every sponsor card labeled REAL / PARTIAL / STUB / ERR — no theater |
 
 ---
 

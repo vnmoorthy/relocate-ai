@@ -308,6 +308,31 @@ async def _handle_call_ended(agent_id: str, data: dict[str, Any]) -> JSONRespons
             "state": "closed", "ts": time.time(),
         })
 
+        # Fire the per-agent REAL artifact (AgentMail email + Supermemory persist)
+        # the moment THIS specialist closes — not waiting for the whole event to finish.
+        from .integrations.per_agent_artifacts import fire_per_agent_artifacts
+        ctx = event.specialist_calls[agent_id]
+        last_agent_turn = next(
+            (t for t in reversed(ctx.transcript) if t.get("role") == "agent"),
+            None,
+        )
+        outcome_text = ""
+        if last_agent_turn:
+            import re as _re
+            text = last_agent_turn.get("text", "")
+            m = _re.search(r"Bid:\s*(.*?)(?:\.|$)", text)
+            outcome_text = (m.group(1) if m else text)[:140].strip()
+        homeowner_email = event.spec.get("homeowner_email") or settings.demo_email_recipient
+        asyncio.create_task(
+            fire_per_agent_artifacts(
+                event_id=event_id,
+                agent_id=agent_id,
+                spec=event.spec,
+                outcome_text=outcome_text,
+                homeowner_email=homeowner_email,
+            )
+        )
+
         if all(c.state in ("closed", "error", "voicemail") for c in event.specialist_calls.values()):
             # Event complete: fire Stripe + Sponge + AgentMail + Supermemory persist.
             asyncio.create_task(_fire_event_complete_sponsors(event_id))
