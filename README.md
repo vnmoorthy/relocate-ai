@@ -30,9 +30,9 @@
 
 <br>
 
-[![Relocate swarm dashboard — 16 agents firing in parallel from the PAVO singularity](docs/swarm.png)](https://vnmoorthy.github.io/relocate-ai/)
+[![Relocate swarm dashboard — 17 agents (1 concierge + 16 specialists) firing in parallel from the PAVO singularity](docs/swarm.png)](https://vnmoorthy.github.io/relocate-ai/)
 
-<sub>The swarm-from-singularity dashboard — 16 specialist agents burst out from a glowing PAVO core, each runs a real task, every routing decision dispatches a tier-colored particle outward. [Open the live site →](https://vnmoorthy.github.io/relocate-ai/)</sub>
+<sub>The swarm-from-singularity dashboard — all 17 agents (1 concierge + 16 specialists) burst out from a glowing PAVO core, each runs a real task, every routing decision dispatches a tier-colored particle outward. [Open the live site →](https://vnmoorthy.github.io/relocate-ai/)</sub>
 
 </div>
 
@@ -42,7 +42,7 @@
 
 **Open** → [**vnmoorthy.github.io/relocate-ai**](https://vnmoorthy.github.io/relocate-ai/)
 
-The site runs a demo-replay client-side, so you'll see 16 cells burst out from a glowing PAVO singularity, each one streaming a real conversation, with tier-colored particles dispatched from the core to every agent on every routing decision. Built on the [PAVO router (TMLR 2026)](https://huggingface.co/datasets/vnmoorthy/pavo-bench).
+The site runs a demo-replay client-side, so you'll see 17 cells (the concierge + 16 specialists) burst out from a glowing PAVO singularity, each one streaming a real conversation, with tier-colored particles dispatched from the core to every agent on every routing decision. Built on the [PAVO router (TMLR 2026)](https://huggingface.co/datasets/vnmoorthy/pavo-bench).
 
 **Dial** → **[+1 (618) 414-9537](tel:+16184149537)**
 
@@ -58,11 +58,11 @@ Tell her where you're moving. In two-to-three turns she captures origin, destina
 
 | | |
 |---|---|
-| 🪐 **One call, 16 agents** | The concierge extracts the spec, the swarm fans out. Everything runs in parallel — no sequential phone tag. |
+| 🪐 **One call, 17 agents** | The concierge extracts the spec, 16 specialists fan out in parallel. No sequential phone tag. |
 | 🧠 **PAVO routes every turn** | Peer-reviewed at **TMLR 2026**. **25% cheaper · 34% lower median latency · 71% less energy · 7.9× fewer coherence failures** on a 50,000-turn benchmark. |
 | 🍏 **Local LLM on Apple Silicon** | Cheap turns run on **gemma2:2b** via Ollama on the author's M3 Air. Cloud only for the hard turns. |
 | 📨 **Verifiable real artifacts** | Per-agent AgentMail emails, Lob certified mail, Browser Use form submissions, Supermemory persistence — every agent emits a real ID you can verify. |
-| 🛡️ **Honest about the cap** | 3 of the 16 agents (USCIS AR-11, DMV ID, bank notify) hand off the final click to the customer — federal law requires the alien / DL holder / account holder to sign. We do 100% of the prep, you do the 30-second click. |
+| 🛡️ **Honest about the cap** | 3 of the 16 specialists (USCIS AR-11, DMV ID, bank notify) hand off the final click to the customer — federal law requires the alien / DL holder / account holder to sign. We do 100% of the prep, you do the 30-second click. |
 | 🌌 **Swarm-from-singularity dashboard** | Cinematic Linear/Framer aesthetic. Cells burst from the core, particles dispatched outward per routing decision. **[Watch live](https://vnmoorthy.github.io/relocate-ai/)**. |
 
 ---
@@ -75,7 +75,7 @@ Tell her where you're moving. In two-to-three turns she captures origin, destina
 2. Cleo answers, extracts: origin, destination, move date,
    household, pets, kids, car, visa (3 turns max)
    ▼
-3. The swarm dispatches — 16 agents in parallel, conditional on your spec:
+3. The swarm dispatches — 16 specialists in parallel, conditional on your spec:
       Browser Use ──► pge_shutoff · geico_address · usps_coa
                       spectrum_austin · pharmacy · flight_book
                       water_board · uscis_ar11
@@ -90,7 +90,9 @@ Every LLM turn — buyer + every specialist — is routed by PAVO between **gemm
 
 ---
 
-## 🤖 The 16 agents
+## 🤖 The 17 agents
+
+The fleet: 1 inbound concierge (`buyer`) + 16 outbound specialists.
 
 | Agent | Mode | What it does | Conditional |
 |---|---|---|---|

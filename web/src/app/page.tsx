@@ -60,11 +60,11 @@ export default function Page() {
           </h1>
 
           <p className="hero-tagline">
-            Dial a single phone number. A real-time swarm of 16 specialist
-            agents handles your relocation — utility shutoffs, mover bids,
-            flight search, USPS forwarding, address updates, USCIS AR-11,
-            DMV change of address — and delivers verifiable artifacts to
-            your inbox before you hang up.
+            Dial a single phone number. A real-time swarm of 17 AI agents
+            (1 concierge + 16 specialists) handles your relocation — utility
+            shutoffs, mover bids, flight search, USPS forwarding, address
+            updates, USCIS AR-11, DMV change of address — and delivers
+            verifiable artifacts to your inbox before you hang up.
           </p>
 
           <div className="flex items-center gap-3 mt-2">

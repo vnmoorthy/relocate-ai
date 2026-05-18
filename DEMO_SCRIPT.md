@@ -2,7 +2,7 @@
 
 **Memorize. Do not read from notes on stage.**
 
-The honest framing (v2): **every shipping agent produces a real verifiable artifact** — a USPS confirmation number, a Lob certified-mail tracking number, an AgentMail message ID, a Browser Use task output. v1 claimed 16 agents but ~7 were partial or stubbed; v2 ships **12** agents (1 buyer + 11 specialists), all real. The 4 removed agents (`wells_fargo`, `subscriptions`, `ca_dmv`, `ca_voter`) hit identity bars (SSN, bank login, CA DL verification) that an AI can't legally clear without compromising real PII. See `AGENT_COUNT.md` + `orchestrator/AUDIT.md`.
+The honest framing (v2.1): **every shipping agent produces a real verifiable artifact** — a USPS confirmation number, a Lob certified-mail tracking number, an AgentMail message ID, a Browser Use task output. v1 claimed 16 agents but ~7 were partial or stubbed; v2 shipped 12 agents (1 buyer + 11 specialists); **v2.1 now ships 17 agents (1 buyer + 16 specialists)** after adding flight_book, water_board, uscis_ar11, id_card_update, and bank_notify. See `AGENT_COUNT.md` + `orchestrator/AUDIT.md`.
 
 **Voice**: only the buyer concierge is voice in v2 (ElevenLabs "Cleo"). The 11 specialists fan out across Browser Use (5 agents), AgentMail (5 agents), and Lob certified mail (1 agent — Comcast, because Comcast has no working online cancel). Buyer prompts written for spoken dialogue — contractions, short sentences, natural pacing.
 
