@@ -55,7 +55,7 @@ export default function Page() {
           </span>
 
           <h1 className="hero-title text-[clamp(56px,9vw,128px)]">
-            Move in<br />one call.
+            Relocate.<br />In one call.
           </h1>
 
           <p className="hero-tagline">
