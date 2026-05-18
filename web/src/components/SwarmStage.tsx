@@ -274,9 +274,10 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
               </a>
               <a
                 href={`tel:${PHONE_E164}`}
-                className="mt-2 inline-flex items-center gap-1.5 bg-[var(--mint)] text-black font-display font-semibold text-[12px] tracking-[0.05em] px-4 py-1.5 rounded-full hover:bg-white hover:shadow-[0_0_20px_4px_rgba(0,255,163,0.45)] transition-all"
+                aria-label={`Call Relocate now at ${PHONE_DISPLAY}`}
+                className="mt-2 inline-flex items-center gap-1.5 bg-[var(--mint)] text-black font-display font-semibold text-[12px] tracking-[0.05em] px-4 py-1.5 rounded-full hover:bg-white hover:shadow-[0_0_20px_4px_rgba(0,255,163,0.45)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-deep)] transition-all"
               >
-                <span className="text-[14px]">📞</span>
+                <span aria-hidden="true" className="text-[14px]">📞</span>
                 <span>CALL NOW</span>
               </a>
               <span className="text-[9px] tracking-[0.15em] uppercase text-[var(--ink-500)] mt-2 text-center leading-tight">

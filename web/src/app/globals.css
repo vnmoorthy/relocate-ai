@@ -314,3 +314,30 @@ body {
   0%, 100% { filter: drop-shadow(0 0 0px rgba(92,244,255,0)); }
   50% { filter: drop-shadow(0 0 14px rgba(92,244,255,0.30)); }
 }
+
+/* === Focus rings (a11y) === */
+a:focus-visible, button:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* === Respect prefers-reduced-motion (a11y) ===
+ * The swarm visualization relies heavily on motion; for users who prefer reduced
+ * motion, freeze infinite animations and shorten one-shot transitions. We still
+ * show the burst (cells need to appear) but the staggered animation collapses
+ * into an instant fade-in. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001s !important;
+  }
+  .live-pulse, .live-dot, .swarm-core-ring-outer, .swarm-core-ring-mid,
+  .swarm-core-ring-inner, .swarm-cell-buyer, .swarm-line-active, .cursor-blink::after {
+    animation: none !important;
+  }
+  .swarm-bg, .swarm-stage::before {
+    background: var(--bg-panel);
+  }
+}
