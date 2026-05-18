@@ -32,8 +32,14 @@ async def main() -> None:
     client = AgentPhoneClient()
     updated = 0
     for entry in agents:
-        ap_id = entry["agentphone_id"]
         agent_id = entry["agent_id"]
+        ap_id = entry.get("agentphone_id")
+        if not ap_id:
+            # v2: only the buyer is an AgentPhone voice agent. The other 16
+            # are browser/email/mail mode and have no AgentPhone webhook to
+            # push.
+            print(f"  [skip] {agent_id}: no agentphone_id (mode={entry.get('voice_mode', '?')})")
+            continue
         url = f"{public_base}/webhook/agent/{agent_id}"
         try:
             wh = await client.set_agent_webhook(ap_id, url=url, timeout=30, context_limit=5)
