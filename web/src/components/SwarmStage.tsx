@@ -281,15 +281,17 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
         {returnParticles.map((p) => {
           const idx = ALL_AGENTS.findIndex((s) => s.id === p.agent_id);
           if (idx === -1 || !positions[idx]) return null;
-          const start = positions[idx];
+          const target = positions[idx];
           const color = tierColor(p.tier);
+          // Path: core (cx,cy) → cell. Particle is PAVO dispatching the
+          // routing decision OUT to the agent that's executing it.
           return (
             <circle
               key={p.id}
               r={3.5}
               fill={color}
               style={{
-                offsetPath: `path("M ${start.cellCx} ${start.cellCy} L ${cx} ${cy}")`,
+                offsetPath: `path("M ${cx} ${cy} L ${target.cellCx} ${target.cellCy}")`,
                 animation: `swarmReturn 1.4s ease-out forwards`,
                 filter: `drop-shadow(0 0 8px ${color})`,
               }}
