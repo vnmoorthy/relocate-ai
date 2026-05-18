@@ -50,3 +50,4 @@ build/
 .vscode/
 .idea/
 NUCLEAR_FIX_PROMPT.md
+web/out/
