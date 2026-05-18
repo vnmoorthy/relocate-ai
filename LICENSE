@@ -19,12 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-----------------------------------------------------------------------
-
-Note on bundled assets:
-
-- The PAVO dataset (referenced by URL, not bundled) is licensed CC-BY 4.0
-  via HuggingFace: https://huggingface.co/datasets/vnmoorthy/pavo-bench
-- The trained PAVO router weights are proprietary and not redistributed
-  by this repository.
