@@ -21,8 +21,8 @@
   /* Text */
   --text-primary: #FAFAFA;
   --text-secondary: #A1A1A8;
-  --text-tertiary: #93939D;
-  --text-quaternary: #7F7F89;
+  --text-tertiary: #6B6B73;
+  --text-quaternary: #45454D;
 
   /* Brand: a refined mint, less LED, more designer */
   --brand: #00D49A;
@@ -38,11 +38,6 @@
   --tier-haiku: #60A5FA;
   --tier-opus: var(--tier-cloud-hard);
   --tier-fallback: #A1A1AA;
-
-  /* Self-hosted via next/font (Syne / Manrope / IBM Plex Mono). */
-  --font-app-display: var(--font-display), ui-sans-serif, system-ui, sans-serif;
-  --font-app-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-app-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* Backwards-compat aliases — existing components still reference these */
   --bg-deep: var(--bg-base);
@@ -68,15 +63,14 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-app-sans);
-  --font-mono: var(--font-app-mono);
-  --font-display: var(--font-app-display);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
 }
 
 html, body {
   background: var(--bg-base);
   color: var(--text-primary);
-  font-family: var(--font-app-sans);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui;
   font-feature-settings: "ss01", "cv11", "tnum";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -119,12 +113,12 @@ main {
    Typography utilities
    ────────────────────────────────────────────────────────────────────────── */
 .font-display {
-  font-family: var(--font-app-display);
+  font-family: var(--font-geist-sans);
   font-weight: 700;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.025em;
 }
 .font-mono-tight {
-  font-family: var(--font-app-mono);
+  font-family: var(--font-geist-mono);
   font-feature-settings: "tnum", "ss01";
   letter-spacing: -0.01em;
 }
@@ -156,7 +150,7 @@ main {
     border-radius: 999px;
     background: var(--text-primary);
     color: var(--bg-base);
-    font-family: var(--font-app-sans);
+    font-family: var(--font-geist-sans);
     font-weight: 600;
     font-size: 14px;
     letter-spacing: -0.005em;
@@ -178,7 +172,7 @@ main {
     background: transparent;
     color: var(--text-primary);
     border: 1px solid var(--border-strong);
-    font-family: var(--font-app-sans);
+    font-family: var(--font-geist-sans);
     font-weight: 500;
     font-size: 14px;
     transition: all 0.15s ease;
@@ -487,20 +481,14 @@ a:focus-visible, button:focus-visible {
 }
 
 .hero-title {
-  font-family: var(--font-app-display);
+  font-family: var(--font-geist-sans);
   font-weight: 800;
-  letter-spacing: -0.04em;
-  line-height: 0.92;
+  letter-spacing: -0.035em;
+  line-height: 0.95;
   background: linear-gradient(180deg, #FFFFFF 0%, #C9C9CF 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: heroReveal 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-@keyframes heroReveal {
-  from { opacity: 0; transform: translateY(18px); filter: blur(6px); }
-  to { opacity: 1; transform: translateY(0); filter: blur(0); }
 }
 
 .hero-tagline {
@@ -509,9 +497,4 @@ a:focus-visible, button:focus-visible {
   line-height: 1.5;
   font-weight: 400;
   max-width: 640px;
-  animation: heroReveal 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.12s both;
-}
-
-.hero-cta-row {
-  animation: heroReveal 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.22s both;
 }

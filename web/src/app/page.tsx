@@ -75,7 +75,7 @@ export default function Page() {
             outcome to this dashboard before you hang up.
           </p>
 
-          <div className="hero-cta-row flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 mt-2 w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 mt-2 w-full sm:w-auto">
             <a href={`tel:${PHONE_E164}`} className="btn-primary">
               <span className="font-mono-tight tracking-tight">{PHONE_DISPLAY}</span>
             </a>
