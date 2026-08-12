@@ -1,61 +1,66 @@
-# PAVO server (Lambda side)
+# PAVO routing service
 
-Runs on the Lambda A100 box alongside `vllm` serving Gemma 2-2b-it on `localhost:8001`.
+PAVO exposes one authenticated completion endpoint and selects among a local
+OpenAI-compatible vLLM server, Gemini, and Anthropic. The router included here is
+the deterministic heuristic in `route.py`; this repository does **not** contain
+learned routing weights or the claimed PAVO-Bench dataset.
 
-## Deploy
+## Configuration
+
+`PAVO_API_KEY` is mandatory for `/v1/*`. There is no built-in shared secret.
+Generate a long random value and deliver it through the deployment secret store.
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `PAVO_API_KEY` | yes | Bearer token accepted by PAVO |
+| `VLLM_URL` | yes for local inference | OpenAI-compatible completion URL |
+| `VLLM_MODEL` | yes for local inference | Model served by vLLM |
+| `GEMINI_API_KEY` | only for Gemini | Gemini provider credential |
+| `GEMINI_MODEL` | no | Gemini model identifier |
+| `ANTHROPIC_API_KEY` | only for Anthropic | Anthropic provider credential |
+| `ANTHROPIC_MODEL` | no | Anthropic model identifier |
+
+Provider pricing variables (`*_USD_PER_MILLION`) are operator configuration and
+must be reviewed against the current provider terms before cost reporting is used.
+
+## Run locally
 
 ```bash
-# On the Lambda box:
-cd ~ && mkdir -p pavo_server
-# scp the three files (app.py, route.py, requirements.txt) here.
-pip install -r requirements.txt
-
-# Set env:
-export PAVO_API_KEY="local-shared-secret"   # must match orchestrator's PAVO_API_KEY
+cd pavo_server
+export PAVO_API_KEY="$(openssl rand -hex 32)"
 export VLLM_URL="http://localhost:8001/v1/chat/completions"
 export VLLM_MODEL="google/gemma-2-2b-it"
-export ANTHROPIC_API_KEY="sk-ant-..."
-
-# Run (tmux/screen session):
-tmux new -s pavo
-uvicorn app:app --host 0.0.0.0 --port 8000 --workers 1
-# Detach: Ctrl-B, D
+uvicorn app:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-## Verify
+Use a private network or an HTTPS reverse proxy in every remote deployment. Do
+not expose this service over public plain HTTP.
 
-From the orchestrator host (Mac):
+## API
+
+- `GET /healthz`: unauthenticated process liveness; discloses no provider URLs.
+- `GET /readyz`: configuration readiness.
+- `GET /v1/models`: authenticated provider capability list.
+- `POST /v1/chat/completions`: authenticated routing and completion.
+
+Example request:
 
 ```bash
-curl http://129.146.122.8:8000/healthz
-# Expected: {"status":"ok","vllm_url":"http://localhost:8001/v1/chat/completions","model":"google/gemma-2-2b-it"}
-
-curl -X POST http://129.146.122.8:8000/v1/chat/completions \
-  -H "Authorization: Bearer local-shared-secret" \
+curl -X POST https://pavo.internal.example/v1/chat/completions \
+  -H "Authorization: Bearer $PAVO_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"messages":[{"role":"user","content":"Hi, calling about an account update."}],"role_hint":"contractor-generic","max_tokens":50}'
-# Expected: {"content":"...","x_pavo_tier":"gemma-local","x_pavo_cost_cents":...}
+  -d '{"messages":[{"role":"user","content":"Hi, I need an account update."}],"role_hint":"contractor-generic","max_tokens":50}'
 ```
 
-## Architecture
+The response reports the provider tier that actually produced the completion. If
+the selected provider fails and another succeeds, the decision reason records the
+fallback. If every configured provider fails, PAVO returns `503`; it does not
+invent a reply.
 
+## Verification
+
+From the repository root:
+
+```bash
+orchestrator/.venv/bin/python -m pytest -q pavo_server/tests orchestrator/tests/test_pavo_routing.py
 ```
-orchestrator (Mac)  ──┐
-                       │ POST /v1/chat/completions
-                       ▼
-              ┌─────────────────────┐
-              │  PAVO server (8000) │
-              │  - route_turn()     │
-              │  - tier dispatch    │
-              └────┬──────┬─────────┘
-                   │      │
-        gemma-local│      │claude-haiku|opus
-                   ▼      ▼
-            vllm:8001    Anthropic API
-            (Gemma 2-2b) (cloud)
-```
-
-## Routing policy
-
-See `route.py`. Heuristic + small-LM hybrid trained on PAVO-Bench (50K voice-agent
-turns). Proprietary. Sub-5ms per route decision.

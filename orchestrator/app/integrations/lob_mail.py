@@ -87,7 +87,7 @@ async def send_certified_letter(
 
     await emit_sponsor_event(
         event_id=event_id, sponsor="lob",
-        action=f"started[{agent_id}]", detail=description[:160],
+        action=f"started[{agent_id}]", detail="letter contents redacted",
     )
 
     async with httpx.AsyncClient(
@@ -111,7 +111,8 @@ async def send_certified_letter(
 
     await emit_sponsor_event(
         event_id=event_id, sponsor="lob",
-        action=f"sent[{agent_id}]", detail=str(artifact)[:160],
+        action=f"sent[{agent_id}]",
+        detail="letter accepted; provider identifiers retained server-side",
     )
     return artifact
 

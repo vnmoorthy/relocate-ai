@@ -1,117 +1,144 @@
-# Relocate — 90-second demo script
+# Relocate demo runbook
 
-**Memorize. Do not read from notes on stage.**
+This runbook keeps the demonstration aligned with what the repository proves.
+Choose one mode before presenting and state it plainly:
 
-The honest framing (v2.1): **every shipping agent produces a real verifiable artifact** — a USPS confirmation number, a Lob certified-mail tracking number, an AgentMail message ID, a Browser Use task output. v1 claimed 16 agents but ~7 were partial or stubbed; v2 shipped 12 agents (1 buyer + 11 specialists); **v2.1 now ships 17 agents (1 buyer + 16 specialists)** after adding flight_book, water_board, uscis_ar11, id_card_update, and bank_notify. See `AGENT_COUNT.md` + `orchestrator/AUDIT.md`.
+- **Replay demo (recommended):** deterministic client-side events; no provider
+  calls or external side effects.
+- **Authorized live demo:** a provisioned AgentPhone account and explicitly
+  selected provider sandboxes/test accounts. Never improvise a live run against
+  real customer or institution accounts.
 
-**Voice**: only the buyer concierge is voice in v2 (ElevenLabs "Cleo"). The 11 specialists fan out across Browser Use (5 agents), AgentMail (5 agents), and Lob certified mail (1 agent — Comcast, because Comcast has no working online cancel). Buyer prompts written for spoken dialogue — contractions, short sentences, natural pacing.
+Do not describe replay events, mocked tests, playbook emails, or provider
+submission IDs as completed relocation transactions.
 
-**Visual**: dashboard is a "swarm-from-singularity" stage — when the buyer extracts the move spec, all 6 specialist cells **burst outward from the PAVO core** with staggered animation (110ms apart, cubic-bezier easing). Connection lines from each cell to the core breathe; every routing decision spawns a colored particle that flies from the cell back to the core (mint=Gemma-local, amber=Gemini-Flash, magenta=Claude-Opus). PAVO core in the dead center counts decisions and local-tier share.
+## 90-second replay demo
 
----
+### 0:00–0:15 — Problem and boundary
 
-## 0:00–0:18 — Cold open
+> “Relocate is a prototype for turning one moving conversation into a set of
+> parallel specialist workflows. This screen is a labeled replay, so it is safe
+> and deterministic; I’ll distinguish implemented code from live-provider
+> validation as we go.”
 
-Stand still. Hold the phone you'll dial. One breath in.
+Point to the demo/replay connection label before the animation starts.
 
-> *"I'm Moorthy, first author of PAVO. Moving is the number-one most stressful event in America.*
-> *Watch what one phone number does."*
+### 0:15–0:35 — Buyer and dispatch
 
-Hand the phone to the judge (or put yourself on speaker). Dial the buyer number.
+> “The inbound buyer is the one voice persona. The backend incrementally
+> collects origin, destination, date, and email, then applies household flags.
+> Once the core fields are present, it chooses the applicable specialists.”
 
-## 0:18–0:35 — The inbound call
+Call out that the configured roster is one buyer plus 16 specialists, while an
+individual move dispatches 11–16 specialists.
 
-Buyer agent answers (Polly Joanna voice):
+### 0:35–1:00 — Parallel workflows
 
-> *"Relocate here — I see you moved Berkeley to SF last September. Where are you going this time?"*
+> “The specialists are browser, email, and postal-mail workflows—not 16 voice
+> calls. The orchestrator runs them concurrently and streams state, transcript,
+> routing, and artifact events to the dashboard. One failure is isolated from
+> the rest.”
 
-The "I see you moved" line is real Supermemory recall, keyed off the caller's phone number. Pre-seeded artifact, real DB read at call time.
+When an artifact appears, describe it precisely:
 
-Judge (or you, naturally):
-> *"San Francisco to Austin in two weeks. Two-bedroom, no pets."*
+- “replayed blocked-browser workflow,” not “PG&E was disconnected”;
+- “email request identifier,” not “the school enrolled the child”;
+- “letter submission identifier,” not “the provider accepted cancellation”;
+- “user-action handoff,” not “the government form was filed.”
 
-Buyer:
-> *"On it. I'll text you each task as it closes. Hang up whenever you want."*
+### 1:00–1:20 — Routing and fallback
 
-Hang up. The dashboard is the demo now.
+> “PAVO is an authenticated completion service. The open repository routes
+> deterministically among a local model, Gemini, and Anthropic using transparent
+> heuristics. If a provider tier fails, it tries another configured tier; if all
+> fail, the request errors rather than inventing a response.”
 
-## 0:35–1:15 — The swarm
+If the UI displays cost, explain that it is an estimate based on configured
+prices and provider usage, not an invoice. Do not present historical benchmark
+numbers unless the exact reproducible benchmark artifact is separately shown.
 
-Don't narrate the whole swarm. Let the dashboard do the work. The 7-cell grid fills with live transcripts. The PAVO routing panel ticks up.
+### 1:20–1:30 — Honest close
 
-**ONE narration line at ~0:55:**
+> “What is built is the orchestration and demonstration layer. The next work is
+> durable jobs and state, secure customer intake and approvals, provider sandbox
+> certification, authenticated live UI, and production operations.”
 
-> *"Six specialist agents firing in parallel — utilities at both addresses, the insurer, the post office, the moving companies. Every turn is routed by PAVO in real time."*
+Open [STATUS.md](STATUS.md) for detailed questions.
 
-What's actually happening:
-- 6 outbound AgentPhone calls placed (visible on AgentPhone dashboard at agentphone.ai)
-- Every turn the agents speak goes through PAVO on the Lambda A10
-- Routing decisions stream live to the dashboard — most stay local (Gemma 2-2B on our GPU), some escalate to Gemini Flash, the hard ones to Claude Opus
-- The REAL ARTIFACTS panel on the right lights up: Supermemory document ID, AgentMail message ID, etc.
+## Authorized live-demo checklist
 
-## 1:15–1:35 — The cost reveal
+Complete this checklist before placing a call or enabling any provider path:
 
-Point at the bottom strip. Read the numbers as they tick.
+- [ ] The operator owns or is explicitly authorized to use every identity,
+  account, phone number, recipient, and address in the test.
+- [ ] `orchestrator/.env` contains only isolated development/sandbox keys.
+- [ ] Stripe test mode is on; Lob uses test mode; no live payment/mail key is
+  present.
+- [ ] The generated `agents.json` matches the provisioned AgentPhone buyer.
+- [ ] PAVO, orchestrator, and dashboard health checks pass.
+- [ ] Webhook signing has been verified against the current vendor contract.
+- [ ] The exact specialist subset is known; unapproved integrations are blank or
+  feature-disabled.
+- [ ] Any email recipient is allowlisted and controlled by the demo team.
+- [ ] Browser targets cannot mutate a real account or charge a real card without
+  a deliberate approval.
+- [ ] Expected cleanup, cancellation, mail suppression, and data deletion are
+  documented.
+- [ ] A replay-demo fallback is already open if the live path fails.
 
-> *"Eighteen routing decisions. Sixty-one percent stayed local — zero cents.*
->
-> *On the fifty-thousand-turn PAVO-Bench, that translates to twenty-five percent cheaper, thirty-four percent faster median latency, seventy-one percent less energy, seven-point-nine times fewer coherence failures vs. fixed-cloud.*
->
-> *Peer-reviewed at TMLR. Dataset open-source on HuggingFace.*
->
-> *PAVO is the routing layer every voice agent company in your portfolio needs.*
->
-> *Relocate is what it lets us build."*
+Run safe checks first:
 
-While you speak, the judge's email pings. The PDF receipt is in their inbox. Real artifact. AgentMail delivery confirmation on screen.
+```bash
+./verify-all-agents.sh
+bash orchestrator/tests/preflight.sh
 
-## 1:35–1:45 — Walk off
+cd web
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```
 
-> *"Moving sucks. Now it doesn't."*
+Start locally with `./run.sh`. A public tunnel is opt-in via `--ngrok`; do not
+enable it until the exposed webhook routes and authentication have been
+reviewed. The current phone number is deployment state and should be read from
+the authorized AgentPhone account, not hard-coded into presentation material.
 
-Walk off. Total: 1:45.
+## Live narration rules
 
----
+Say:
 
-## Anti-patterns (don't do)
+- “request submitted” when a provider accepted a request;
+- “needs user action” when a signature, MFA, payment, or final click remains;
+- “completed” only after final provider confirmation that meets a documented
+  evidence contract;
+- “policy blocked” when Browser Use, Lob, medical, pharmacy, or another unsafe
+  path requires a secure/user-approved workflow;
+- “failed” or “unavailable” when a provider errors.
 
-- Don't open with "Hi everyone" or "Today we built." Get to the cold open in one breath.
-- Don't claim a number you can't defend. The paper's actual numbers (25% / 34% / 71% / 7.9×) are stronger because they're peer-reviewed AND multi-dimensional.
-- Don't apologize for cells that error. Narrate around it ("five of six confirmed live").
-- Don't read from notes. The cold open is 24 words. The cost reveal is 70 words. Memorize.
-- Don't end on "thanks for watching." End on the punchline. Walk off.
+Never say:
 
-## What's real vs. what's theater (memorize this for Q&A)
+- all 17 agents fired if conditional selection launched fewer;
+- every artifact is live during replay/mocked mode;
+- a letter ID proves delivery or cancellation;
+- an email ID proves the recipient acted;
+- a browser task ID proves the target transaction succeeded;
+- a prepared USCIS/DMV form was filed or accepted;
+- a routing benchmark, model parameter count, latency, energy, margin, or cost
+  is current without showing its reproducible source;
+- the system is production-secure, HIPAA compliant, legally authorized, or
+  fully autonomous.
 
-| What | Status |
-|---|---|
-| AgentPhone telephony — inbound + 6 outbound calls | **Real.** Audible on stage speakers. Visible on AgentPhone dashboard. |
-| PAVO routing — every LLM turn classified and dispatched | **Real.** Lambda A10 with vLLM serving Gemma 2-2b + Gemini Flash + Claude Opus API. Decisions stream to dashboard. |
-| Supermemory — prior-move recall on inbound, persist on completion | **Real.** Pre-seeded with prior move history; live DB read on call answer. |
-| AgentMail — PDF move-package receipt to judge | **Real.** Generated with reportlab, base64 + send via AgentMail SDK. Lands in real inbox. |
-| The counterparty side of each outbound call | **Theater in synthetic mode** (templated reply lines), **real telephony in real mode** (actually dials PG&E etc., but utility IVRs don't accept AI cancellations so the conversation goes nowhere useful). We have a friend-as-counterparty setup if needed. |
-| Stripe, Browser Use, Moss sponsor cards | **STUB.** API keys not wired (clearly labeled STUB on the dashboard). |
-| sponge | **ERR.** Real key, real call, endpoint paths undocumented — returns 404 and we surface that honestly. |
+## Failure plan
 
-## YC Partner Q&A — likely questions + answers
+If live connectivity or a provider fails:
 
-**"How big is the routing layer? Is it just an if/else?"**
-> *"It's an 85,041-parameter meta-controller trained with multi-objective PPO on 50,000 voice agent turns. Two-regime coupling structure between ASR error and LLM degradation. Paper's on HuggingFace if you want to read it."*
+1. state the failure without hiding or relabeling it;
+2. show the surfaced error/retry state if useful;
+3. switch to the labeled replay;
+4. explain which contract or infrastructure layer remains incomplete;
+5. do not rerun an irreversible provider action unless idempotency and cleanup
+   have been verified.
 
-**"What's the moat? Anyone could write a router."**
-> *"They could write a router. They couldn't train one. We have the only dataset of 50,000 labeled voice agent turns spanning three LLM families and two hardware platforms. That dataset is the moat. The router is the lever."*
-
-**"What's stopping OpenAI from doing this in their Realtime API?"**
-> *"Nothing in principle. In practice — their routing layer would be locked to their own models. Ours is model-agnostic. Every voice agent company that wants to mix Gemma, Llama, Claude, GPT, and on-device models needs a neutral routing layer. That's our wedge."*
-
-**"How are you going to acquire customers?"**
-> *"Two channels. Consumer: SEO on 'moving checklist' and 'moving stress' — high-intent. B2B: every voice-agent startup in your portfolio is a candidate. Vapi, Retell, Bland, Pi.ai customers all need this."*
-
-**"What does it cost you to run Relocate per move?"**
-> *"$3.50 in direct COGS — $1.40 AgentPhone, $0.55 in PAVO inference, the rest is sponsor APIs. Margin: 96% on a $99 flat fee."*
-
-**"Why didn't this exist before?"**
-> *"Two things had to converge. Routing-layer research mature enough to publish — PAVO did that this year. The browser + email + certified-mail substrate maturing — Browser Use, AgentMail, and Lob all shipped real APIs in the past 12 months. Before those, a dozen specialist agents running in parallel was a Twilio + custom-WebSocket nightmare."*
-
-**"What's actually real on stage?"**
-> *"The telephony is real. The routing layer is real. The artifacts the judge gets are real — pull out your phone and look at your inbox right now. The counterparty side of the utility calls is theater because utility IVRs don't accept AI cancellations. We're up-front about that on the dashboard — every sponsor is labeled REAL or STUB or ERR. We don't fake what we couldn't ship."*
+The best demo is legible about the boundary between product vision, implemented
+workflow code, and externally verified completion.

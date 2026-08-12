@@ -1,7 +1,7 @@
 [project]
 name = "stat-orchestrator"
 version = "0.1.0"
-description = "Add your description here"
+description = "FastAPI orchestration service for the Relocate prototype"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -22,5 +22,33 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "mypy>=1.13.0",
     "pytest>=9.0.3",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.15.11",
 ]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = [".", ".."]
+markers = [
+    "provider_acceptance: explicitly gated tests that contact external staging/sandbox providers",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["app", "tests", "scripts"]
+check_untyped_defs = true
+ignore_missing_imports = true
+no_implicit_optional = true
+warn_unused_configs = true

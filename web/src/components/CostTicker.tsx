@@ -4,69 +4,60 @@ import { useEffect, useState } from "react";
 
 interface Props {
   pavoCents: number;
-  baselineCents: number;
+  baselineCents: number | null;
   decisions: number;
+  demoMode: boolean;
 }
 
 /**
- * Bloomberg-terminal-style big-number panel.
- * Four big metrics:
- *   1. Relocate cost (PAVO-routed) — counts up
- *   2. Cloud baseline — counts up faster
- *   3. Savings ratio — derived
- *   4. PAVO paper headline (energy / failures)
+ * Event-reported routing metrics. A counterfactual baseline is optional; when
+ * the backend did not measure or configure one, the UI explicitly says so and
+ * does not manufacture a savings claim.
  */
-export function CostTicker({ pavoCents, baselineCents, decisions }: Props) {
+export function CostTicker({ pavoCents, baselineCents, decisions, demoMode }: Props) {
   const pavoUSD = pavoCents / 100;
-  const baselineUSD = baselineCents / 100;
-  const saved = Math.max(0, baselineUSD - pavoUSD);
-  const ratio = pavoUSD > 0 ? baselineUSD / pavoUSD : 0;
+  const baselineUSD = baselineCents === null ? null : baselineCents / 100;
+  const difference = baselineUSD === null ? null : baselineUSD - pavoUSD;
 
   const pavoSmooth = useSmoothNumber(pavoUSD);
-  const baselineSmooth = useSmoothNumber(baselineUSD);
-  const savedSmooth = useSmoothNumber(saved);
+  const baselineSmooth = useSmoothNumber(baselineUSD ?? 0);
+  const differenceSmooth = useSmoothNumber(difference ?? 0);
 
   return (
-    <section className="panel-elev px-6 py-4 flex items-stretch justify-between gap-4">
+    <section className="panel-elev p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3" aria-label="Call cost and routing summary" aria-live="polite">
       <BigStat
-        kicker="Relocate spend"
-        sub="this call · PAVO-routed"
+        kicker={demoMode ? "Synthetic routed cost" : "Reported routed cost"}
+        sub={demoMode ? "demo estimate · no charge" : "event-reported estimate"}
         value={`$${pavoSmooth.toFixed(4)}`}
         accent="var(--mint)"
       />
-      <Divider />
       <BigStat
         kicker="Fixed-cloud baseline"
-        sub="counterfactual · same turns on Claude-Opus"
-        value={`$${baselineSmooth.toFixed(4)}`}
+        sub={baselineUSD === null ? "no counterfactual supplied" : "reported counterfactual estimate"}
+        value={baselineUSD === null ? "Not measured" : `$${baselineSmooth.toFixed(4)}`}
         accent="var(--ink-500)"
-        strike
       />
-      <Divider />
       <BigStat
-        kicker="Saved this call"
-        sub={ratio > 1 ? `${ratio.toFixed(1)}× cheaper` : "—"}
-        value={`$${savedSmooth.toFixed(4)}`}
+        kicker="Estimated difference"
+        sub={difference === null ? "baseline required" : "counterfactual minus reported cost"}
+        value={difference === null ? "Not measured" : formatSignedCurrency(differenceSmooth)}
         accent="var(--cyan)"
       />
-      <Divider />
       <BigStat
         kicker="Routing decisions"
         sub="PAVO · gemma → flash → opus"
         value={String(decisions)}
         accent="var(--amber)"
       />
-      <Divider />
-      <div className="flex flex-col justify-center min-w-[170px]">
+      <div className="flex flex-col justify-center min-w-0 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-elev)] p-3 sm:col-span-2 xl:col-span-1">
         <span className="text-[9px] tracking-[0.18em] text-[var(--ink-500)] uppercase">
-          From the paper (TMLR 2026)
+          Measurement status
         </span>
-        <ul className="mt-1 space-y-0.5 text-[11px] font-mono-tight text-[var(--ink-300)]">
-          <li><span className="text-[var(--mint)]">−25%</span> spend</li>
-          <li><span className="text-[var(--mint)]">−34%</span> median latency</li>
-          <li><span className="text-[var(--mint)]">−71%</span> energy</li>
-          <li><span className="text-[var(--mint)]">7.9×</span> fewer coherence failures</li>
-        </ul>
+        <p className="mt-1 text-[11px] leading-relaxed text-[var(--ink-300)]">
+          {baselineUSD === null
+            ? "No baseline was reported, so this dashboard makes no savings claim."
+            : "A baseline was reported for this event. The difference remains an estimate, not a measured bill reduction."}
+        </p>
       </div>
     </section>
   );
@@ -77,23 +68,19 @@ function BigStat({
   sub,
   value,
   accent,
-  strike,
 }: {
   kicker: string;
   sub: string;
   value: string;
   accent: string;
-  strike?: boolean;
 }) {
   return (
-    <div className="flex flex-col justify-center min-w-[180px]">
+    <div className="flex flex-col justify-center min-w-0 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-elev)] p-3">
       <span className="text-[9px] tracking-[0.18em] text-[var(--ink-500)] uppercase">
         {kicker}
       </span>
       <span
-        className={`font-mono-tight text-[34px] font-bold leading-none mt-1 ${
-          strike ? "line-through opacity-70" : ""
-        }`}
+        className="font-mono-tight text-[clamp(24px,7vw,34px)] font-bold leading-none mt-1 break-words"
         style={{ color: accent }}
       >
         {value}
@@ -103,8 +90,9 @@ function BigStat({
   );
 }
 
-function Divider() {
-  return <span className="w-px self-stretch bg-[var(--border-soft)]" />;
+function formatSignedCurrency(value: number): string {
+  const sign = value > 0 ? "+" : value < 0 ? "−" : "";
+  return `${sign}$${Math.abs(value).toFixed(4)}`;
 }
 
 /** Smoothly interpolates toward a target number for cinematic ticker effect. */

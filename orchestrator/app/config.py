@@ -5,6 +5,8 @@ at startup; fail loudly rather than discovering at 7:50 PM that AGENTPHONE_API_K
 """
 from __future__ import annotations
 
+from functools import cached_property
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,8 +21,8 @@ class Settings(BaseSettings):
     public_base_url: str = "http://localhost:8000"
 
     # Lambda PAVO server (proprietary routing layer + completion).
-    pavo_base_url: str = "http://129.146.122.8:8000/v1"
-    pavo_api_key: str = "local-shared-secret"
+    pavo_base_url: str = "http://127.0.0.1:8765/v1"
+    pavo_api_key: str
 
     # Cloud LLM fallback.
     anthropic_api_key: str = ""
@@ -52,11 +54,29 @@ class Settings(BaseSettings):
     synthetic_mode: bool = False
 
     # App.
+    app_env: str = "development"
     host: str = "0.0.0.0"
     port: int = 8000
     log_level: str = "info"
+    # The synthetic trigger is disabled unless both this switch and a bearer
+    # token are configured. It is never available in production.
+    enable_dev_trigger: bool = False
+    admin_api_token: str = ""
+    # Dashboard WebSockets carry transcripts and therefore always require a
+    # token, even in development.
+    dashboard_api_token: str = ""
+    cors_allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     demo_homeowner_number: str = "+14155550100"
-    demo_email_recipient: str = "vnarasingamoorthy@gmail.com"  # where AgentMail receipts go
+    demo_email_recipient: str = "demo.mover@example.com"
+
+    @cached_property
+    def cors_origins(self) -> list[str]:
+        """Return a conservative, credential-safe CORS allowlist."""
+        origins = [origin.strip() for origin in self.cors_allowed_origins.split(",")]
+        return [origin for origin in origins if origin and origin != "*"]
 
 
-settings = Settings()  # type: ignore[call-arg] — pydantic-settings reads from env
+# ``BaseSettings`` resolves required values from the environment at runtime;
+# mypy only sees the generated model constructor and therefore expects them as
+# explicit arguments.
+settings = Settings()  # type: ignore[call-arg]

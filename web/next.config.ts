@@ -13,6 +13,7 @@ const isGhPages = process.env.GITHUB_PAGES === "1";
 
 const nextConfig: NextConfig = {
   output: "export",
+  turbopack: { root: process.cwd() },
   images: { unoptimized: true },
   trailingSlash: true,
   basePath: isGhPages ? "/relocate-ai" : "",

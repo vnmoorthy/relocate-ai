@@ -1,6 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
+import { PAVO_TIERS, tierMeta } from "@/lib/tiers";
+import type { PavoTier } from "@/lib/types";
+import type { DashboardConnection } from "@/lib/dashboard-state";
+import { publicFeedText } from "@/lib/privacy";
 
 interface Decision {
   agent_id: string;
@@ -12,131 +16,87 @@ interface Decision {
 
 interface Props {
   decisions: Decision[];
+  totalDecisions: number;
+  tierCounts: Partial<Record<PavoTier, number>>;
+  connection: DashboardConnection;
 }
 
-const TIERS = [
-  {
-    key: "gemma-local",
-    label: "Gemma 2-2B",
-    sub: "local · M3 Air",
-    cost: "$0.0001",
-    color: "var(--tier-local)",
-  },
-  {
-    key: "gemini-flash",
-    label: "Gemini Flash 2.5",
-    sub: "cloud · Google",
-    cost: "$0.0023",
-    color: "var(--tier-flash)",
-  },
-  {
-    key: "claude-opus",
-    label: "Claude Opus 4.7",
-    sub: "cloud · escalation",
-    cost: "$0.0420",
-    color: "var(--tier-opus)",
-  },
-];
-
-type Particle = { id: string; tier: string; bornAt: number };
-
-export function PAVOFlow({ decisions }: Props) {
-  const seenRef = useRef<Set<string>>(new Set());
-  const [particles, setParticles] = useState<Particle[]>([]);
-
-  useEffect(() => {
-    const fresh: Particle[] = [];
-    for (const d of decisions) {
-      const id = `${d.agent_id}-${d.turn}-${d.ts}`;
-      if (seenRef.current.has(id)) continue;
-      seenRef.current.add(id);
-      fresh.push({ id, tier: d.tier, bornAt: Date.now() });
-    }
-    if (fresh.length === 0) return;
-    setParticles((prev) => [...prev.slice(-40), ...fresh]);
-    const expire = window.setTimeout(() => {
-      setParticles((prev) => prev.filter((p) => Date.now() - p.bornAt < 3000));
-    }, 3000);
-    return () => window.clearTimeout(expire);
-  }, [decisions]);
-
-  const counts = useMemo(() => {
-    const c: Record<string, number> = {};
-    for (const d of decisions) c[d.tier] = (c[d.tier] ?? 0) + 1;
-    return c;
-  }, [decisions]);
-
-  const total = decisions.length;
-  const localCount = counts["gemma-local"] ?? 0;
-  const localShare = total ? Math.round((localCount / total) * 100) : 0;
-
+export function PAVOFlow({ decisions, totalDecisions, tierCounts, connection }: Props) {
+  const demoMode = connection === "demo";
+  const connectionMeta = routingConnectionMeta(connection);
+  const localCount = tierCounts["gemma-local"] ?? 0;
+  const localShare = totalDecisions ? Math.round((localCount / totalDecisions) * 100) : 0;
   const recentReasons = decisions.slice(0, 4);
+  const recentParticles = decisions.slice(0, 16);
+  const visibleTiers = useMemo(
+    () =>
+      PAVO_TIERS.filter(
+        (tier) =>
+          (tierCounts[tier.key] ?? 0) > 0 ||
+          tier.key === "gemma-local" ||
+          tier.key === "gemini-flash" ||
+          tier.key === "claude-opus",
+      ),
+    [tierCounts],
+  );
 
   return (
-    <section className="panel-elev p-4 relative overflow-hidden">
-      {/* Header — clean two-line layout, compact for narrow side column */}
+    <section className="panel-elev p-4 relative overflow-hidden" aria-labelledby="pavo-routing-heading">
       <div className="flex items-center justify-between gap-2 mb-1">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[10px] tracking-[0.18em] text-[var(--ink-500)] uppercase shrink-0">
+          <h3 id="pavo-routing-heading" className="text-[10px] tracking-[0.18em] text-[var(--ink-500)] uppercase shrink-0">
             PAVO routing
-          </span>
-          <span className="inline-flex items-center gap-1 shrink-0">
-            <span className="h-1.5 w-1.5 rounded-full bg-[var(--red)] live-dot" />
-            <span className="text-[9px] tracking-[0.16em] text-[var(--red)] uppercase font-semibold">
-              Live
+          </h3>
+          <span className="inline-flex items-center gap-1 shrink-0" role="status">
+            <span className={`h-1.5 w-1.5 rounded-full ${connectionMeta.dot}`} aria-hidden="true" />
+            <span className={`text-[9px] tracking-[0.16em] uppercase font-semibold ${connectionMeta.text}`}>
+              {connectionMeta.label}
             </span>
           </span>
         </div>
         <div className="flex items-baseline gap-3 shrink-0">
-          <CountPill label="DEC" value={total} />
+          <CountPill label="DEC" value={totalDecisions} />
           <CountPill label="LOCAL" value={`${localShare}%`} />
         </div>
       </div>
       <p className="text-[10px] text-[var(--ink-500)] mb-3">
-        Pipeline-Aware Voice Orchestration · TMLR 2026
+        {demoMode
+          ? "Synthetic routing decisions · no model calls"
+          : connection === "live"
+            ? "Reported routing events · provider availability depends on configuration"
+            : "No active routing feed"}
       </p>
 
-      {/* Tier rows — vertical stack so wide cost / count values never collide */}
       <div className="flex flex-col gap-2.5">
-        {TIERS.map((t) => {
-          const tierParticles = particles.filter((p) => p.tier === t.key);
-          const tierCount = counts[t.key] ?? 0;
-          const turnLabel =
-            tierCount === 0 ? "idle" : tierCount === 1 ? "1 turn" : `${tierCount} turns`;
+        {visibleTiers.map((tier) => {
+          const tierParticles = recentParticles.filter((decision) => decision.tier === tier.key);
+          const tierCount = tierCounts[tier.key] ?? 0;
+          const turnLabel = tierCount === 0 ? "idle" : tierCount === 1 ? "1 turn" : `${tierCount} turns`;
           return (
-            <div key={t.key} className="flex flex-col gap-1">
+            <div key={tier.key} className="flex flex-col gap-1">
               <div className="flex items-baseline justify-between gap-2">
                 <div className="flex flex-col min-w-0">
-                  <span className="text-[12px] font-semibold text-[var(--ink-100)] truncate">
-                    {t.label}
-                  </span>
-                  <span className="text-[10px] text-[var(--ink-500)] truncate">
-                    {t.sub}
-                  </span>
+                  <span className="text-[12px] font-semibold text-[var(--ink-100)] truncate">{tier.label}</span>
+                  <span className="text-[10px] text-[var(--ink-500)] truncate">{tier.subtitle}</span>
                 </div>
-                <span
-                  className="font-mono-tight text-[20px] font-bold tabular-nums shrink-0"
-                  style={{ color: t.color }}
-                >
+                <span className="font-mono-tight text-[20px] font-bold tabular-nums shrink-0" style={{ color: tier.color }}>
                   {tierCount}
                 </span>
               </div>
-              <div className="pavo-lane">
-                {tierParticles.map((p) => (
+              <div className="pavo-lane" aria-hidden="true">
+                {tierParticles.map((decision) => (
                   <span
-                    key={p.id}
+                    key={`${decision.agent_id}-${decision.turn}-${decision.ts}`}
                     className="pavo-particle"
                     style={{
-                      background: t.color,
-                      boxShadow: `0 0 12px 2px ${t.color}`,
-                      animationDuration:
-                        t.key === "gemma-local" ? "1.6s" : t.key === "gemini-flash" ? "2.2s" : "3.0s",
+                      background: tier.color,
+                      boxShadow: `0 0 12px 2px ${tier.color}`,
                     }}
                   />
                 ))}
               </div>
               <div className="flex items-center justify-between gap-2 text-[10px] font-mono-tight text-[var(--ink-500)]">
-                <span className="tabular-nums">{t.cost}/turn</span>
+                <span>{tier.availabilityLabel}</span>
                 <span className="tabular-nums">{turnLabel}</span>
               </div>
             </div>
@@ -146,28 +106,28 @@ export function PAVOFlow({ decisions }: Props) {
 
       {recentReasons.length > 0 && (
         <div className="mt-3 pt-3 border-t border-[var(--border-soft)]">
-          <span className="text-[9px] tracking-[0.18em] text-[var(--ink-500)] uppercase">
-            Recent decisions
-          </span>
+          <span className="text-[9px] tracking-[0.18em] text-[var(--ink-500)] uppercase">Recent decisions</span>
           <ul className="mt-1.5 flex flex-col gap-1 font-mono-tight text-[10px]">
-            {recentReasons.map((d, i) => (
-              <li
-                key={`${d.ts}-${i}`}
-                className="rise-in flex items-center gap-1.5 min-w-0"
-              >
-                <span
-                  className={`px-1 py-0 rounded text-[9px] font-semibold shrink-0 tier-pill-${shortTier(
-                    d.tier,
-                  )}`}
-                >
-                  {tierBadge(d.tier)}
-                </span>
-                <span className="text-[var(--ink-300)] truncate">
-                  {d.agent_id}
-                  <span className="text-[var(--ink-500)]">#{d.turn}</span>
-                </span>
-              </li>
-            ))}
+            {recentReasons.map((decision) => {
+              const tier = tierMeta(decision.tier);
+              return (
+                <li key={`${decision.agent_id}-${decision.turn}-${decision.ts}`} className="rise-in flex items-start gap-1.5 min-w-0">
+                  <span className={`px-1 py-0 rounded text-[9px] font-semibold shrink-0 tier-pill-${tier.pillClass}`}>
+                    {tier.shortLabel}
+                  </span>
+                  <span className="text-[var(--ink-300)] min-w-0">
+                    <span>{decision.agent_id}#{decision.turn}</span>
+                    <span className="text-[var(--ink-500)] block truncate">
+                      {publicFeedText(
+                        decision.reason,
+                        demoMode,
+                        "Routing reason hidden on this public dashboard.",
+                      )}
+                    </span>
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -175,30 +135,46 @@ export function PAVOFlow({ decisions }: Props) {
   );
 }
 
+function routingConnectionMeta(connection: DashboardConnection) {
+  switch (connection) {
+    case "live":
+      return {
+        label: "Live",
+        dot: "bg-[var(--red)] live-dot",
+        text: "text-[var(--red)]",
+      };
+    case "demo":
+      return {
+        label: "Demo",
+        dot: "bg-[var(--amber)]",
+        text: "text-[var(--amber)]",
+      };
+    case "reconnecting":
+      return {
+        label: "Reconnecting",
+        dot: "bg-[var(--tier-haiku)]",
+        text: "text-[var(--tier-haiku)]",
+      };
+    case "offline":
+      return {
+        label: "Offline",
+        dot: "bg-[var(--ink-500)]",
+        text: "text-[var(--ink-500)]",
+      };
+    case "connecting":
+      return {
+        label: "Connecting",
+        dot: "bg-[var(--ink-500)]",
+        text: "text-[var(--ink-500)]",
+      };
+  }
+}
+
 function CountPill({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="flex items-baseline gap-1.5">
-      <span className="text-[8px] tracking-[0.18em] text-[var(--ink-500)] uppercase">
-        {label}
-      </span>
-      <span className="font-mono-tight text-[18px] font-bold text-[var(--mint)] tabular-nums">
-        {value}
-      </span>
+      <span className="text-[8px] tracking-[0.18em] text-[var(--ink-500)] uppercase">{label}</span>
+      <span className="font-mono-tight text-[18px] font-bold text-[var(--mint)] tabular-nums">{value}</span>
     </div>
   );
-}
-
-function shortTier(t: string): "local" | "flash" | "opus" | "mock" {
-  if (t === "gemma-local") return "local";
-  if (t === "gemini-flash") return "flash";
-  if (t === "claude-opus" || t === "claude-haiku") return "opus";
-  return "mock";
-}
-
-function tierBadge(t: string): string {
-  if (t === "gemma-local") return "G-2B";
-  if (t === "gemini-flash") return "Gem";
-  if (t === "claude-opus") return "C-Opus";
-  if (t === "claude-haiku") return "C-Hku";
-  return "Mock";
 }

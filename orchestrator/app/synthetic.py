@@ -27,8 +27,8 @@ import time
 from typing import Any
 
 from .pavo_client import pavo_chat
-from .personas import Persona, by_id
-from .state import state, SpecialistCallContext
+from .personas import Persona
+from .state import state
 from .ws import ws_broker
 
 
@@ -248,7 +248,6 @@ async def run_synthetic_specialist(persona: Persona, event_id: str, spec: dict[s
 
             # Update cost ticker on each real PAVO call.
             event.pavo_cents_total += cost_cents
-            event.baseline_cents_total += cost_cents * 4  # rough cloud baseline ratio per paper
             await ws_broker.broadcast({
                 "type": "routing_decision", "event_id": event_id, "agent_id": persona.agent_id,
                 "turn": ctx.turn_count + 1, "tier": tier, "reason": decision_reason,
@@ -315,8 +314,3 @@ async def run_synthetic_fan_out(event_id: str, spec: dict[str, Any], specialists
         **spec,
     }
     await asyncio.gather(*[run_synthetic_specialist(p, event_id, spec_filled) for p in specialists])
-
-    # Event complete: trigger the same post-completion sponsor fan-out as the real flow.
-    # (Imported here to avoid circular import at module load.)
-    from .main import _fire_event_complete_sponsors
-    await _fire_event_complete_sponsors(event_id)

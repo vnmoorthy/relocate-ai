@@ -1,30 +1,37 @@
-# Notice — bundled and referenced assets
+# Notice
 
-The Relocate codebase is MIT-licensed (see [LICENSE](LICENSE)). This NOTICE captures licensing for assets referenced (not bundled) by this repository.
+The source code in this repository is licensed under [MIT](LICENSE), except for
+any separately identified third-party material.
 
-## PAVO benchmark dataset
+## What is included
 
-The 50,000-turn PAVO-Bench dataset is licensed **CC-BY 4.0** and lives on HuggingFace:
+The checked-in `pavo_server/route.py` implementation is a deterministic
+heuristic router written as part of this repository. It does not contain or load
+learned routing weights. The MIT license applies to that checked-in code.
 
-- <https://huggingface.co/datasets/vnmoorthy/pavo-bench>
+The repository may contain names, links, configuration examples, or adapters
+for external services. An adapter's presence does not redistribute the service,
+grant permission to automate a target website, or change any provider's terms.
 
-If you redistribute or build on the dataset, follow CC-BY 4.0 attribution requirements.
+Referenced services include AgentPhone, AgentMail, Browser Use, Lob,
+Supermemory, Moss, Google Gemini, Anthropic, Stripe, Sponge, Ollama, and other
+target institutions named by persona examples. Product and company names may be
+trademarks of their respective owners; no endorsement is implied.
 
-## PAVO router weights
+## What is not included
 
-The trained PAVO routing-layer weights (an 85,041-parameter meta-controller trained with multi-objective PPO on PAVO-Bench) are **proprietary** and not redistributed by this repository. The router's *interface* and integration patterns shown here are MIT-licensed; the underlying weights are not.
+- proprietary or third-party model weights;
+- learned PAVO router weights or training code;
+- provider APIs, hosted services, or provider data;
+- customer/provider credentials, generated webhook registries, or acceptance
+  evidence;
+- rights to third-party websites, forms, logos, content, or trademarks.
 
-If you need access to the trained router, contact the authors via the email in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+Older project material references a PAVO benchmark dataset hosted externally.
+That dataset is not bundled here. Verify its current license and attribution
+requirements at the source before downloading, redistributing, or building on
+it; this repository's MIT license does not apply to external artifacts.
 
-## Third-party services referenced
-
-This codebase integrates with several third-party services. Each has its own terms; the integrations themselves are MIT.
-
-- AgentPhone (telephony)
-- AgentMail (email infrastructure)
-- Browser Use (browser automation API)
-- Lob (certified mail API)
-- Supermemory (vector memory)
-- Google DeepMind (Gemini API)
-- Anthropic (Claude API, optional)
-- Ollama (local LLM runtime)
+Operators are responsible for reviewing external model/dataset licenses,
+provider terms, website automation permissions, data-processing obligations,
+and regulated workflows before enabling an integration.

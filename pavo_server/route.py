@@ -1,13 +1,11 @@
-"""PAVO routing classifier — proprietary, derived from PAVO-Bench (50,000 voice-agent turns).
+"""Transparent heuristic router used by the open-source PAVO service.
 
-This is the portable Python port of the heuristic classifier used in the demo. The
-full PAVO research repo has a learned model trained on the bench; for the hackathon
-we use a heuristic + small-LM hybrid that approximates the paper's policy at
-near-zero latency (<5ms per route).
+No learned weights or benchmark dataset are included in this repository.  This
+module is a deterministic policy that can be tested and audited locally.
 
 route_turn(transcript, history_depth, role_hint, prior_tier) -> RoutingDecision
 
-Policy (per the paper, simplified):
+Policy:
   1. Hysteresis: if prior_tier was claude-opus, stay opus for 1 more turn unless
      turn looks trivial (length < 20 chars).
   2. Hard escalation keywords: legal / dispute / policy / code / NFPA → claude-opus.
@@ -21,7 +19,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import Literal
-
 
 Tier = Literal["gemma-local", "gemini-flash", "claude-opus"]
 

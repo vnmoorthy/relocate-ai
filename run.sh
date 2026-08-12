@@ -1,157 +1,206 @@
 #!/usr/bin/env bash
-# Relocate launcher — one-shot demo prep.
-# Usage: ./run.sh [--no-tunnel] [--no-ngrok] [--skip-preflight]
+# Local Relocate launcher.
 #
-# What this does, in order:
-#   1. Open SSH tunnel to Lambda (ports 8000, 8001) if not already open
-#   2. Start ngrok tunneling localhost:8000 for AgentPhone webhooks (skipped if --no-ngrok)
-#   3. Run pre-flight smoke tests (skipped if --skip-preflight)
-#   4. Start the FastAPI orchestrator on port 8000 in a background tmux session
-#   5. Start the Next.js dashboard on port 3000 in a background tmux session
-#   6. Print connection info + tail commands
+# Usage:
+#   ./run.sh [--external-pavo] [--ngrok] [--skip-preflight]
+#   ./run.sh stop
 #
-# Stop everything: ./run.sh stop
+# The default path starts a local PAVO API on :8765, the orchestrator on :8000,
+# and the Next.js dashboard on :3000. It never opens a public tunnel unless
+# --ngrok is supplied. Provider credentials remain in orchestrator/.env and are
+# not copied into generated files.
 
 set -euo pipefail
 
-# Resolve repo root regardless of cwd.
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ORCH="$REPO_ROOT/orchestrator"
-WEB="$REPO_ROOT/web"
+ORCH_ROOT="$REPO_ROOT/orchestrator"
+WEB_ROOT="$REPO_ROOT/web"
+RUNTIME_DIR="${TMPDIR:-/tmp}/relocate-${UID}"
+mkdir -p "$RUNTIME_DIR"
 
-LAMBDA_HOST="${LAMBDA_HOST:-ubuntu@163.192.32.38}"
-LAMBDA_KEY="${LAMBDA_KEY:-$HOME/.ssh/lambda_hackathon}"
+PAVO_LOG="$RUNTIME_DIR/pavo.log"
+ORCH_LOG="$RUNTIME_DIR/orchestrator.log"
+WEB_LOG="$RUNTIME_DIR/web.log"
+NGROK_LOG="$RUNTIME_DIR/ngrok.log"
 
 color() { printf "\033[%sm%s\033[0m\n" "$1" "$2"; }
-ok()   { color "32" "✓ $1"; }
+ok() { color "32" "✓ $1"; }
 warn() { color "33" "⚠ $1"; }
-err()  { color "31" "✗ $1"; }
-step() { echo ""; color "1;36" "▶ $1"; }
+err() { color "31" "✗ $1" >&2; }
+step() { printf "\n"; color "1;36" "▶ $1"; }
 
-# -------- stop mode --------
+pid_file() { printf "%s/%s.pid" "$RUNTIME_DIR" "$1"; }
+
+stop_managed_process() {
+  local name="$1"
+  local file
+  file="$(pid_file "$name")"
+  if [[ ! -f "$file" ]]; then
+    warn "$name has no managed PID file"
+    return
+  fi
+  local pid
+  pid="$(<"$file")"
+  if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+    kill "$pid"
+    for _ in {1..20}; do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 0.1
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      warn "$name did not stop after 2s; leaving PID $pid running"
+      return
+    fi
+    ok "$name stopped"
+  else
+    warn "$name PID is no longer running"
+  fi
+  rm -f "$file"
+}
+
 if [[ "${1:-}" == "stop" ]]; then
-  step "Stopping orchestrator + dashboard + tunnel"
-  pkill -f "uvicorn app.main:app" 2>/dev/null && ok "orchestrator stopped" || warn "orchestrator not running"
-  pkill -f "next dev" 2>/dev/null && ok "dashboard stopped" || warn "dashboard not running"
-  pkill -f "ssh.*-L 8000.*$LAMBDA_HOST" 2>/dev/null && ok "tunnel closed" || warn "tunnel not open"
-  pkill -f "ngrok http" 2>/dev/null && ok "ngrok stopped" || warn "ngrok not running"
+  step "Stopping processes launched by run.sh"
+  stop_managed_process ngrok
+  stop_managed_process web
+  stop_managed_process orchestrator
+  stop_managed_process pavo
   exit 0
 fi
 
-# -------- flags --------
-WITH_TUNNEL=1
-WITH_NGROK=1
-WITH_PREFLIGHT=1
+START_LOCAL_PAVO=1
+START_NGROK=0
+RUN_PREFLIGHT=1
 for arg in "$@"; do
   case "$arg" in
-    --no-tunnel) WITH_TUNNEL=0 ;;
-    --no-ngrok) WITH_NGROK=0 ;;
-    --skip-preflight) WITH_PREFLIGHT=0 ;;
-    *) err "Unknown flag: $arg"; exit 1 ;;
+    --external-pavo) START_LOCAL_PAVO=0 ;;
+    --ngrok) START_NGROK=1 ;;
+    --skip-preflight) RUN_PREFLIGHT=0 ;;
+    *) err "Unknown option: $arg"; exit 2 ;;
   esac
 done
 
-# -------- 1. SSH tunnel --------
-if [[ "$WITH_TUNNEL" == "1" ]]; then
-  step "1/5 SSH tunnel to Lambda (ports 8000, 8001)"
-  if pgrep -f "ssh.*-L 8000.*$LAMBDA_HOST" >/dev/null; then
-    ok "tunnel already open"
-  else
-    if [[ ! -f "$LAMBDA_KEY" ]]; then
-      err "SSH key not found at $LAMBDA_KEY"; exit 1
+if [[ ! -f "$ORCH_ROOT/.env" ]]; then
+  err "Missing orchestrator/.env. Copy orchestrator/.env.example and replace every placeholder."
+  exit 1
+fi
+
+set -a
+# shellcheck disable=SC1091
+source "$ORCH_ROOT/.env"
+set +a
+
+if [[ "$RUN_PREFLIGHT" == "1" ]]; then
+  step "Validating local tools and configuration"
+  bash "$ORCH_ROOT/tests/preflight.sh"
+fi
+
+wait_for_health() {
+  local url="$1"
+  for _ in {1..30}; do
+    if curl -fsS --max-time 2 "$url" >/dev/null 2>&1; then
+      return 0
     fi
-    # Tunnel: Mac:8002 → Lambda:8000 (PAVO) and Mac:8001 → Lambda:8001 (Ollama).
-    # Mac:8000 is reserved for the local orchestrator (AgentPhone hits it via ngrok).
-    ssh -i "$LAMBDA_KEY" \
-      -L 8002:localhost:8000 \
-      -L 8001:localhost:8001 \
-      -N -f \
-      -o ServerAliveInterval=20 \
-      -o ExitOnForwardFailure=yes \
-      -o StrictHostKeyChecking=accept-new \
-      "$LAMBDA_HOST"
     sleep 1
-    if curl -sf --max-time 5 http://localhost:8002/healthz >/dev/null; then
-      ok "tunnel open (PAVO healthz reachable on localhost:8002)"
-    else
-      err "tunnel did not come up — check $LAMBDA_HOST + $LAMBDA_KEY"; exit 1
-    fi
-  fi
-fi
+  done
+  return 1
+}
 
-# -------- 2. ngrok --------
-if [[ "$WITH_NGROK" == "1" ]]; then
-  step "2/5 ngrok tunneling localhost:8000 for AgentPhone webhooks"
-  if ! command -v ngrok >/dev/null; then
-    warn "ngrok not installed — skipping. Install: brew install ngrok"
-  elif pgrep -f "ngrok http" >/dev/null; then
-    ok "ngrok already running"
+start_managed() {
+  local name="$1"
+  local log_file="$2"
+  shift 2
+  nohup "$@" >"$log_file" 2>&1 &
+  local service_pid=$!
+  printf "%s\n" "$service_pid" >"$(pid_file "$name")"
+}
+
+if [[ "$START_LOCAL_PAVO" == "1" ]]; then
+  step "Starting local PAVO API on :8765"
+  if curl -fsS --max-time 2 http://127.0.0.1:8765/healthz >/dev/null 2>&1; then
+    warn "PAVO is already reachable; run.sh will not manage that process"
   else
-    nohup ngrok http 8000 --log=stdout > /tmp/move-ngrok.log 2>&1 & disown
-    sleep 3
-    URL=$(curl -s http://localhost:4040/api/tunnels 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['tunnels'][0]['public_url'])" 2>/dev/null || echo "")
-    if [[ -n "$URL" ]]; then
-      ok "ngrok URL: $URL"
-      echo "  ➜ Set PUBLIC_BASE_URL=$URL in $ORCH/.env if AgentPhone webhooks aren't already configured."
+    start_managed pavo "$PAVO_LOG" \
+      env \
+      PAVO_API_KEY="$PAVO_API_KEY" \
+      VLLM_URL="${VLLM_URL:-http://127.0.0.1:11434/v1/chat/completions}" \
+      VLLM_MODEL="${VLLM_MODEL:-gemma2:2b}" \
+      GEMINI_API_KEY="${GEMINI_API_KEY:-}" \
+      GEMINI_MODEL="${GEMINI_MODEL:-gemini-2.0-flash}" \
+      ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
+      uv run --project "$ORCH_ROOT" uvicorn pavo_server.app:app \
+        --app-dir "$REPO_ROOT" --host 127.0.0.1 --port 8765
+    if wait_for_health http://127.0.0.1:8765/healthz; then
+      ok "PAVO ready"
     else
-      warn "ngrok started but couldn't read tunnel URL"
+      err "PAVO failed to become healthy; inspect $PAVO_LOG"
+      exit 1
     fi
+  fi
+  EFFECTIVE_PAVO_URL="http://127.0.0.1:8765/v1"
+else
+  EFFECTIVE_PAVO_URL="${PAVO_BASE_URL:-}"
+  if [[ -z "$EFFECTIVE_PAVO_URL" ]]; then
+    err "--external-pavo requires PAVO_BASE_URL in orchestrator/.env"
+    exit 1
   fi
 fi
 
-# -------- 3. preflight --------
-if [[ "$WITH_PREFLIGHT" == "1" ]]; then
-  step "3/5 Pre-flight smoke tests"
-  bash "$ORCH/tests/preflight.sh" || warn "some pre-flight checks failed — see output above"
+step "Starting orchestrator on :${PORT:-8000}"
+if curl -fsS --max-time 2 "http://127.0.0.1:${PORT:-8000}/healthz" >/dev/null 2>&1; then
+  warn "Orchestrator is already reachable; run.sh will not manage that process"
+else
+  start_managed orchestrator "$ORCH_LOG" \
+    env PAVO_BASE_URL="$EFFECTIVE_PAVO_URL" PAVO_API_KEY="$PAVO_API_KEY" \
+    uv run --directory "$ORCH_ROOT" uvicorn app.main:app \
+      --host 127.0.0.1 --port "${PORT:-8000}"
+  if wait_for_health "http://127.0.0.1:${PORT:-8000}/healthz"; then
+    ok "Orchestrator ready"
+  else
+    err "Orchestrator failed to become healthy; inspect $ORCH_LOG"
+    exit 1
+  fi
 fi
 
-# -------- 4. orchestrator --------
-step "4/5 Starting orchestrator (FastAPI on :8000)"
-# Port plan: orchestrator owns Mac:8000 (ngrok publishes this for AgentPhone webhooks).
-# PAVO server on Lambda:8000 reaches Mac as localhost:8002 via the SSH tunnel above.
-# Ollama on Lambda:8001 reaches Mac as localhost:8001.
-if pgrep -f "uvicorn app.main:app" >/dev/null; then
-  warn "orchestrator already running — restart with: ./run.sh stop && ./run.sh"
+step "Starting dashboard on :3000"
+if curl -fsS --max-time 2 http://127.0.0.1:3000 >/dev/null 2>&1; then
+  warn "Dashboard is already reachable; run.sh will not manage that process"
 else
-  cd "$ORCH"
-  nohup uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/move-orchestrator.log 2>&1 & disown
+  start_managed web "$WEB_LOG" pnpm --dir "$WEB_ROOT" dev
+  if wait_for_health http://127.0.0.1:3000; then
+    ok "Dashboard ready"
+  else
+    err "Dashboard failed to become healthy; inspect $WEB_LOG"
+    exit 1
+  fi
+fi
+
+if [[ "$START_NGROK" == "1" ]]; then
+  step "Starting explicit ngrok tunnel for the orchestrator"
+  if ! command -v ngrok >/dev/null 2>&1; then
+    err "ngrok is not installed"
+    exit 1
+  fi
+  start_managed ngrok "$NGROK_LOG" ngrok http "${PORT:-8000}" --log=stdout
   sleep 2
-  if curl -sf --max-time 3 http://localhost:8000/healthz >/dev/null; then
-    ok "orchestrator up: http://localhost:8000/healthz"
+  PUBLIC_URL="$(curl -fsS --max-time 3 http://127.0.0.1:4040/api/tunnels 2>/dev/null \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["tunnels"][0]["public_url"])' 2>/dev/null || true)"
+  if [[ -n "$PUBLIC_URL" ]]; then
+    warn "Public tunnel enabled: $PUBLIC_URL"
+    warn "Update PUBLIC_BASE_URL and run scripts/update_webhooks.py intentionally."
   else
-    err "orchestrator failed to start — check /tmp/move-orchestrator.log"
+    err "ngrok started but its public URL was not available; inspect $NGROK_LOG"
   fi
 fi
 
-# -------- 5. dashboard --------
-step "5/5 Starting dashboard (Next.js on :3000)"
-if pgrep -f "next dev" >/dev/null; then
-  warn "dashboard already running"
-else
-  cd "$WEB"
-  nohup pnpm dev > /tmp/move-dashboard.log 2>&1 & disown
-  sleep 3
-  ok "dashboard up: http://localhost:3000"
+if [[ "$RUN_PREFLIGHT" == "1" ]]; then
+  step "Checking local service health"
+  PAVO_BASE_URL="$EFFECTIVE_PAVO_URL" bash "$ORCH_ROOT/tests/preflight.sh" --check-services
 fi
 
-# -------- summary --------
-echo ""
-color "1;32" "╔═══════════════════════════════════════════════════════════╗"
-color "1;32" "║                Relocate is alive.                              ║"
-color "1;32" "╚═══════════════════════════════════════════════════════════╝"
-echo ""
-echo "Dashboard:    http://localhost:3000"
-echo "Orchestrator: http://localhost:8000/healthz   (also published via ngrok for AgentPhone)"
-echo "PAVO server:  http://localhost:8002/healthz   (via SSH tunnel → Lambda:8000)"
-echo "Ollama:       http://localhost:8001/api/tags  (via SSH tunnel → Lambda:8001)"
-echo ""
-echo "Tail logs:"
-echo "  tail -f /tmp/move-orchestrator.log"
-echo "  tail -f /tmp/move-dashboard.log"
-echo "  tail -f /tmp/move-ngrok.log"
-echo ""
-echo "Trigger a synthetic dispatch (no AgentPhone needed):"
-echo '  curl -X POST http://localhost:8000/api/test/buyer-trigger -H "Content-Type: application/json" \'
-echo '    -d "{\"spec\":{\"origin_address\":\"123 Main St SF\",\"destination_address\":\"456 Oak Austin\",\"move_date\":\"2026-05-31\"}}"'
-echo ""
-echo "Stop everything: ./run.sh stop"
+printf "\n"
+color "1;32" "Relocate local services are ready."
+printf "Dashboard:    http://127.0.0.1:3000\n"
+printf "Orchestrator: http://127.0.0.1:%s/healthz\n" "${PORT:-8000}"
+printf "PAVO:         %s/healthz\n" "${EFFECTIVE_PAVO_URL%/v1}"
+printf "Logs:         %s\n" "$RUNTIME_DIR"
+printf "Stop:         ./run.sh stop\n"

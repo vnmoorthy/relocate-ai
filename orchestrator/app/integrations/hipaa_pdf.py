@@ -1,4 +1,4 @@
-"""Generate a signed HIPAA-compliant medical records release PDF.
+"""Generate a HIPAA authorization-template PDF from explicit user inputs.
 
 Used by agent #9 (pcp_transfer). Sent as an AgentMail attachment to
 records@onemedical.com.
@@ -8,14 +8,20 @@ Uses reportlab (synchronous; called from a thread executor by the caller).
 from __future__ import annotations
 
 import io
-import datetime as _dt
+import html
 from typing import Any
 
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import LETTER
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import inch
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.lib import colors  # type: ignore[import-untyped]
+from reportlab.lib.pagesizes import LETTER  # type: ignore[import-untyped]
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet  # type: ignore[import-untyped]
+from reportlab.lib.units import inch  # type: ignore[import-untyped]
+from reportlab.platypus import (  # type: ignore[import-untyped]
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 
 INK = colors.HexColor("#0E0E12")
@@ -39,10 +45,23 @@ def build_hipaa_release_pdf(
     signature_name: str | None = None,
     signature_date: str | None = None,
 ) -> bytes:
-    """Return a single-page HIPAA authorization PDF as bytes.
+    """Return a single-page authorization PDF as bytes.
 
-    This is a real HIPAA-compliant authorization template per 45 CFR §164.508.
+    The caller must provide the signature and signature date captured by a real
+    consent ceremony. This function never invents either value.
     """
+    if not isinstance(signature_name, str) or not signature_name.strip():
+        raise ValueError("signature_name must be explicitly provided")
+    if not isinstance(signature_date, str) or not signature_date.strip():
+        raise ValueError("signature_date must be explicitly provided")
+
+    signature = signature_name.strip()
+    signed_on = signature_date.strip()
+
+    def escaped(value: Any) -> str:
+        """Escape ReportLab Paragraph markup supplied by a user/provider."""
+        return html.escape(str(value), quote=True)
+
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf,
@@ -70,8 +89,6 @@ def build_hipaa_release_pdf(
         "fine", parent=styles["BodyText"], textColor=INK_DIM, fontSize=8, leading=10,
     )
 
-    today = signature_date or _dt.date.today().strftime("%B %d, %Y")
-    signature = signature_name or patient_name
     dest_name = destination_provider_name or "(destination provider TBD — package for patient pickup)"
     dest_addr = destination_provider_address or "(forwarded once destination provider is named)"
 
@@ -86,11 +103,11 @@ def build_hipaa_release_pdf(
     story.append(Paragraph("1. Patient information", h2))
     patient_tbl = Table(
         [
-            ["Name", patient_name],
-            ["Date of birth", patient_dob],
-            ["Address", patient_address],
-            ["Phone", patient_phone],
-            ["Email", patient_email],
+            ["Name", Paragraph(escaped(patient_name), body)],
+            ["Date of birth", Paragraph(escaped(patient_dob), body)],
+            ["Address", Paragraph(escaped(patient_address), body)],
+            ["Phone", Paragraph(escaped(patient_phone), body)],
+            ["Email", Paragraph(escaped(patient_email), body)],
         ],
         colWidths=[1.4 * inch, 5.3 * inch],
     )
@@ -111,24 +128,24 @@ def build_hipaa_release_pdf(
 
     story.append(Paragraph("2. I authorize the following provider to release records", h2))
     story.append(Paragraph(
-        f"<b>{current_provider_name}</b><br/>{current_provider_address}", body,
+        f"<b>{escaped(current_provider_name)}</b><br/>{escaped(current_provider_address)}", body,
     ))
 
     story.append(Paragraph("3. To the following recipient", h2))
     story.append(Paragraph(
-        f"<b>{dest_name}</b><br/>{dest_addr}", body,
+        f"<b>{escaped(dest_name)}</b><br/>{escaped(dest_addr)}", body,
     ))
 
     story.append(Paragraph("4. Records to be released", h2))
-    story.append(Paragraph(records_scope, body))
+    story.append(Paragraph(escaped(records_scope), body))
 
     story.append(Paragraph("5. Purpose of disclosure", h2))
-    story.append(Paragraph(purpose, body))
+    story.append(Paragraph(escaped(purpose), body))
 
     story.append(Paragraph("6. Expiration", h2))
     story.append(Paragraph(
-        f"This authorization expires 12 months from the date signed below, or "
-        f"upon completion of the records transfer, whichever occurs first.",
+        "This authorization expires 12 months from the date signed below, or "
+        "upon completion of the records transfer, whichever occurs first.",
         body,
     ))
 
@@ -144,8 +161,8 @@ def build_hipaa_release_pdf(
     story.append(Paragraph("8. Signature", h2))
     sig_tbl = Table(
         [
-            ["Signature (typed/electronic)", signature],
-            ["Date", today],
+            ["Signature (typed/electronic)", Paragraph(escaped(signature), body)],
+            ["Date", Paragraph(escaped(signed_on), body)],
         ],
         colWidths=[2.2 * inch, 4.5 * inch],
     )
@@ -165,8 +182,8 @@ def build_hipaa_release_pdf(
     story.append(sig_tbl)
     story.append(Spacer(1, 8))
     story.append(Paragraph(
-        "Electronic signature collected via Relocate platform on behalf of the "
-        "patient. This authorization is HIPAA-compliant under 45 CFR §164.508.",
+        "The typed signature and date above were supplied explicitly to the "
+        "document generator; this template does not itself prove consent.",
         fine,
     ))
 

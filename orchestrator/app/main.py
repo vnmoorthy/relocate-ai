@@ -8,8 +8,11 @@ Routes:
 """
 from __future__ import annotations
 
+import asyncio
+import hmac
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -19,15 +22,16 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from pythonjsonlogger import jsonlogger
 
 from .config import settings
-from .integrations.agentmail import send_move_package
-from .integrations.sponge import hold_mover_escrow
-from .integrations.stripe_integration import hold_mover_deposit
-from .integrations.supermemory import persist_move
-from .marketplace import fan_out
+from .marketplace import fan_out, finalize_event, resume_ready_specialists
 from .pavo_client import pavo_chat
 from .personas import by_id, buyer_persona
-from .security import verify_agentphone_signature, get_raw_body
-from .state import state, BuyerCallContext, SpecialistCallContext, MarketplaceEvent
+from .security import (
+    complete_agentphone_webhook,
+    get_raw_body,
+    release_agentphone_webhook,
+    verify_agentphone_signature,
+)
+from .state import state, BuyerCallContext, MarketplaceEvent
 from .ws import ws_broker
 
 
@@ -50,7 +54,7 @@ log = logging.getLogger(__name__)
 app = FastAPI(title="Relocate Orchestrator", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # dev only; production locks to dashboard origin
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -76,21 +80,47 @@ async def webhook_agent(agent_id: str, request: Request) -> StreamingResponse | 
     For SPECIALIST agents: route the turn through PAVO and reply with text.
     """
     body = await get_raw_body(request)
-    verify_agentphone_signature(
+    webhook_id = request.headers.get("X-Webhook-ID")
+    is_fresh = verify_agentphone_signature(
         body,
         request.headers.get("X-Webhook-Signature"),
         request.headers.get("X-Webhook-Timestamp"),
+        webhook_id,
         agent_id,
     )
+    if not is_fresh:
+        return JSONResponse({"ok": True, "duplicate": True})
+
+    assert webhook_id is not None  # verified above
+    try:
+        response = await _process_agentphone_webhook(agent_id, body)
+    except Exception:
+        # Authentication succeeded, but business processing did not. Release the
+        # delivery so AgentPhone's retry is not incorrectly acknowledged/lost.
+        release_agentphone_webhook(agent_id, webhook_id)
+        raise
+    complete_agentphone_webhook(agent_id, webhook_id)
+    return response
+
+
+async def _process_agentphone_webhook(
+    agent_id: str,
+    body: bytes,
+) -> StreamingResponse | JSONResponse:
+    """Parse and process one already-authenticated AgentPhone delivery."""
 
     try:
         payload = json.loads(body)
     except json.JSONDecodeError as e:
         raise HTTPException(400, f"bad json: {e}") from e
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "webhook payload must be a JSON object")
 
     event_type = payload.get("event", "")
     channel = payload.get("channel", "")
     data = payload.get("data", {})
+    if not isinstance(data, dict):
+        raise HTTPException(400, "webhook data must be an object")
 
     log.info("webhook agent=%s event=%s channel=%s", agent_id, event_type, channel)
 
@@ -107,16 +137,31 @@ async def webhook_agent(agent_id: str, request: Request) -> StreamingResponse | 
 
     if agent_id == "buyer":
         # Capture the caller's E.164 number for Supermemory recall lookup.
-        caller = data.get("fromNumber") or data.get("from_number") or data.get("caller", "")
+        caller = (
+            data.get("from")
+            or data.get("fromNumber")
+            or data.get("from_number")
+            or data.get("caller", "")
+        )
         if caller and call_id and call_id not in state.buyer_caller_phone:
             state.buyer_caller_phone[call_id] = caller
-        return await _handle_buyer_turn(call_id, transcript, payload.get("recentHistory", []))
+        history = payload.get("recentHistory", [])
+        return await _handle_buyer_turn(
+            call_id,
+            transcript,
+            history if isinstance(history, list) else [],
+        )
     else:
-        return await _handle_specialist_turn(agent_id, call_id, transcript, payload.get("recentHistory", []))
+        history = payload.get("recentHistory", [])
+        return await _handle_specialist_turn(
+            agent_id,
+            call_id,
+            transcript,
+            history if isinstance(history, list) else [],
+        )
 
 
 async def _handle_buyer_turn(call_id: str, transcript: str, history: list[dict]) -> StreamingResponse:
-    import asyncio  # local to avoid top-level cost
     from .integrations.supermemory import recall_user_profile
 
     ctx = state.buyer_contexts.get(call_id)
@@ -180,47 +225,50 @@ async def _handle_buyer_turn(call_id: str, transcript: str, history: list[dict])
     # Cost ticker update.
     event = state.events[ctx.event_id]
     event.pavo_cents_total += reply.cost_cents
-    event.baseline_cents_total += reply.cost_cents * 28  # 28× ratio per cost reveal
-    await ws_broker.broadcast({
+    routing_decision = {
         "type": "routing_decision", "event_id": ctx.event_id, "agent_id": "buyer",
         "turn": ctx.turn_count, "tier": reply.tier, "reason": reply.decision_reason,
         "complexity": 0.0, "ts": time.time(),
-    })
+    }
+    event.routing_decisions.append(routing_decision)
+    await ws_broker.broadcast(routing_decision)
     await ws_broker.broadcast({
         "type": "cost_update", "event_id": ctx.event_id,
         "pavo_cents": event.pavo_cents_total, "baseline_cents": event.baseline_cents_total,
         "ts": time.time(),
     })
-    await ws_broker.broadcast({
-        "type": "transcript_turn", "event_id": ctx.event_id, "agent_id": "buyer",
-        "turn": ctx.turn_count, "role": "agent", "text": reply.content,
-        "pavo_tier": reply.tier, "ts": time.time(),
-    })
-
     # ── v2: incremental field collection ────────────────────────────────
     # Every turn the buyer may emit a JSON block with any subset of the
     # full schema. We merge into ctx.collected, broadcast which fields
     # arrived this turn, and dispatch the moment all CORE fields are in.
     new_fields = _extract_and_merge_fields(reply.content, ctx)
+    voice_reply = _strip_machine_json(reply.content)
+    await ws_broker.broadcast({
+        "type": "transcript_turn", "event_id": ctx.event_id, "agent_id": "buyer",
+        "turn": ctx.turn_count, "role": "agent", "text": voice_reply,
+        "pavo_tier": reply.tier, "ts": time.time(),
+    })
     if new_fields:
         await ws_broker.broadcast({
             "type": "fields_collected",
             "event_id": ctx.event_id,
             "turn": ctx.turn_count,
             "fields": list(new_fields.keys()),
-            "values": {k: (v if not isinstance(v, str) or len(v) < 80 else v[:80] + "...")
-                       for k, v in new_fields.items()},
+            "values": _safe_field_display(new_fields),
             "ts": time.time(),
         })
 
     if not ctx.dispatched:
-        from .buyer_schema import is_dispatch_ready
-        if is_dispatch_ready(ctx.collected):
+        from .buyer_schema import fields_by_tier, is_dispatch_ready
+        conditionals_ready = all(
+            f.name in ctx.collected for f in fields_by_tier("conditional")
+        )
+        if is_dispatch_ready(ctx.collected) and conditionals_ready:
             # Build the spec from collected + sensible defaults.
             spec = dict(ctx.collected)
-            spec.setdefault("has_pets", False)
-            spec.setdefault("has_children", False)
-            spec.setdefault("has_car", True)
+            dispatch_phone = state.buyer_caller_phone.get(call_id)
+            if dispatch_phone:
+                spec.setdefault("user_phone", dispatch_phone)
             ctx.parsed_spec = spec
             ctx.dispatched = True
             event.spec = spec
@@ -228,14 +276,19 @@ async def _handle_buyer_turn(call_id: str, transcript: str, history: list[dict])
             log.info("buyer dispatched (v2): event=%s core+optional=%d",
                      ctx.event_id, len(spec))
 
-    # Return NDJSON to AgentPhone (per their voice-webhook format).
+    elif new_fields:
+        # Late/corrected fields have already been merged into event.spec. Resume
+        # only specialists whose complete prerequisites are now present.
+        asyncio.create_task(resume_ready_specialists(ctx.event_id))
+
+    # Return spoken text only. The machine-readable JSON block must never reach TTS.
     async def generate():
-        yield json.dumps({"text": reply.content}) + "\n"
+        yield json.dumps({"text": voice_reply}) + "\n"
 
     return StreamingResponse(generate(), media_type="application/x-ndjson")
 
 
-async def _send_buyer_followup(ctx) -> None:
+async def _send_buyer_followup(ctx: BuyerCallContext) -> bool:
     """Post-call: email the caller a structured form for the PII-gated fields
     the buyer correctly didn't ask for over voice. Each missing field corresponds
     to a specialist that's currently BLOCKED awaiting that detail."""
@@ -244,7 +297,12 @@ async def _send_buyer_followup(ctx) -> None:
         from .integrations.agentmail import send_buyer_followup_form
         spec = ctx.parsed_spec or ctx.collected
         to_email = spec.get("user_email") or settings.demo_email_recipient
-        missing = pending_pii_fields(ctx.collected)
+        event = state.events.get(ctx.event_id)
+        selected_ids = set(event.specialist_calls) if event else set()
+        missing = [
+            field for field in pending_pii_fields(ctx.collected)
+            if not selected_ids or selected_ids.intersection(field.agent_ids)
+        ]
         # Per-specialist breakdown: which agents are blocked on what.
         per_agent: list[dict[str, Any]] = []
         for agent_id in ("pge_shutoff", "comcast_cancel", "geico_address",
@@ -261,18 +319,21 @@ async def _send_buyer_followup(ctx) -> None:
         )
         log.info("buyer followup sent: event=%s to=%s missing=%d",
                  ctx.event_id, to_email, len(missing))
+        ctx.followup_sent = True
+        return True
     except Exception as e:
         log.exception("buyer followup email failed: %s", e)
+        return False
+    finally:
+        ctx.followup_in_progress = False
 
 
 def _extract_and_merge_fields(text: str, ctx) -> dict:
-    """Pull every JSON block out of the buyer reply, validate each field,
-    merge new ones into ctx.collected. Returns the dict of NEW fields this turn."""
-    import re as _re
+    """Validate and merge changed voice-safe fields, including corrections."""
     from .buyer_schema import by_name
-    new: dict = {}
+    changed: dict = {}
     # Match every {...} block in the reply (buyer may emit one or several).
-    for raw in _re.findall(r"\{[^{}]+\}", text, _re.DOTALL):
+    for raw in re.findall(r"\{[^{}]+\}", text, re.DOTALL):
         try:
             block = json.loads(raw)
         except json.JSONDecodeError:
@@ -280,20 +341,58 @@ def _extract_and_merge_fields(text: str, ctx) -> dict:
         if not isinstance(block, dict):
             continue
         for k, v in block.items():
-            if k in ctx.collected:
-                continue  # never overwrite once set
             field = by_name(k)
-            if field is None:
-                continue  # unknown field name
-            # Validate string fields with the per-field validator.
-            if isinstance(v, str) and not field.validate(v):
+            if field is None or not field.voice_safe:
+                continue
+            if isinstance(v, (dict, list)):
+                continue
+            try:
+                if field.tier == "conditional":
+                    if not field.validate(v):
+                        continue
+                    if isinstance(v, str):
+                        v = v.strip().lower() in ("true", "yes", "1")
+                elif field.name == "household_size" and isinstance(v, int):
+                    if v <= 0:
+                        continue
+                elif not isinstance(v, str) or not field.validate(v):
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            previous = ctx.collected.get(k)
+            if k in ctx.collected and previous == v:
                 continue
             ctx.collected[k] = v
-            new[k] = v
+            changed[k] = v
             ctx.collection_history.append({
-                "turn": ctx.turn_count, "field": k, "value": v, "ts": time.time(),
+                "turn": ctx.turn_count,
+                "field": k,
+                "value": v,
+                "previous": previous,
+                "ts": time.time(),
             })
-    return new
+    event = state.events.get(ctx.event_id)
+    if event is not None and changed:
+        event.spec.update(changed)
+        if ctx.parsed_spec is not None:
+            ctx.parsed_spec.update(changed)
+    return changed
+
+
+def _strip_machine_json(text: str) -> str:
+    """Remove flat machine JSON blocks from the text returned to voice TTS."""
+    spoken = re.sub(r"\{[^{}]+\}", "", text, flags=re.DOTALL)
+    spoken = re.sub(r"\n{3,}", "\n\n", spoken).strip()
+    return spoken or "Got it."
+
+
+def _safe_field_display(fields: dict[str, Any]) -> dict[str, Any]:
+    """Expose collection progress while withholding every field value.
+
+    Even booleans can reveal sensitive household or immigration information,
+    so the event bus receives presence markers only.
+    """
+    return {key: "[collected]" for key in fields}
 
 
 async def _handle_specialist_turn(agent_id: str, call_id: str, transcript: str, history: list[dict]) -> StreamingResponse:
@@ -338,14 +437,15 @@ async def _handle_specialist_turn(agent_id: str, call_id: str, transcript: str, 
     reply = await pavo_chat(messages, role_hint=persona.role_hint, max_tokens=220)
 
     event.pavo_cents_total += reply.cost_cents
-    event.baseline_cents_total += reply.cost_cents * 28
     ctx.transcript.append({"role": "agent", "text": reply.content, "pavo_tier": reply.tier, "ts": time.time()})
 
-    await ws_broker.broadcast({
+    routing_decision = {
         "type": "routing_decision", "event_id": event_id, "agent_id": agent_id,
         "turn": ctx.turn_count, "tier": reply.tier, "reason": reply.decision_reason,
         "complexity": 0.0, "ts": time.time(),
-    })
+    }
+    event.routing_decisions.append(routing_decision)
+    await ws_broker.broadcast(routing_decision)
     await ws_broker.broadcast({
         "type": "cost_update", "event_id": event_id,
         "pavo_cents": event.pavo_cents_total, "baseline_cents": event.baseline_cents_total,
@@ -375,8 +475,8 @@ async def _handle_call_ended(agent_id: str, data: dict[str, Any]) -> JSONRespons
             })
             # v2: send the buyer follow-up email with the PII-gated fields the
             # buyer correctly did NOT ask for over voice. Idempotent: never twice.
-            if not ctx.followup_sent and ctx.dispatched:
-                ctx.followup_sent = True
+            if not ctx.followup_sent and not ctx.followup_in_progress and ctx.dispatched:
+                ctx.followup_in_progress = True
                 asyncio.create_task(_send_buyer_followup(ctx))
         return JSONResponse({"ok": True})
 
@@ -388,169 +488,32 @@ async def _handle_call_ended(agent_id: str, data: dict[str, Any]) -> JSONRespons
             break
     if event_id:
         event = state.events[event_id]
-        event.specialist_calls[agent_id].state = "closed"
-        event.specialist_calls[agent_id].closed_at = time.time()
+        specialist_ctx = event.specialist_calls[agent_id]
+        if specialist_ctx.bid:
+            specialist_ctx.state = "submitted"
+            specialist_ctx.terminal_outcome = "submitted"
+        else:
+            specialist_ctx.state = "needs-user-action"
+            specialist_ctx.terminal_outcome = "needs_user_action"
+            specialist_ctx.blocker_kind = "call_ended_without_artifact"
+            specialist_ctx.blockers = ["provider call ended without a verifiable artifact"]
+        specialist_ctx.closed_at = time.time()
         await ws_broker.broadcast({
             "type": "agent_state", "event_id": event_id, "agent_id": agent_id,
-            "state": "closed", "ts": time.time(),
+            "state": specialist_ctx.state, "ts": time.time(),
         })
-
-        # Fire the per-agent REAL artifact (AgentMail email + Supermemory persist)
-        # the moment THIS specialist closes — not waiting for the whole event to finish.
-        from .integrations.per_agent_artifacts import fire_per_agent_artifacts
-        ctx = event.specialist_calls[agent_id]
-        last_agent_turn = next(
-            (t for t in reversed(ctx.transcript) if t.get("role") == "agent"),
-            None,
-        )
-        outcome_text = ""
-        if last_agent_turn:
-            import re as _re
-            text = last_agent_turn.get("text", "")
-            m = _re.search(r"Bid:\s*(.*?)(?:\.|$)", text)
-            outcome_text = (m.group(1) if m else text)[:140].strip()
-        homeowner_email = event.spec.get("homeowner_email") or settings.demo_email_recipient
-        asyncio.create_task(
-            fire_per_agent_artifacts(
-                event_id=event_id,
-                agent_id=agent_id,
-                spec=event.spec,
-                outcome_text=outcome_text,
-                homeowner_email=homeowner_email,
-            )
-        )
-
-        if all(c.state in ("closed", "error", "voicemail") for c in event.specialist_calls.values()):
-            # Event complete: fire Stripe + Sponge + AgentMail + Supermemory persist.
-            asyncio.create_task(_fire_event_complete_sponsors(event_id))
-            await ws_broker.broadcast({
-                "type": "event_complete", "event_id": event_id,
-                "summary": {
-                    "pavo_cents": event.pavo_cents_total,
-                    "baseline_cents": event.baseline_cents_total,
-                    "specialist_count": len(event.specialist_calls),
-                },
-                "ts": time.time(),
-            })
+        await finalize_event(event_id)
 
     return JSONResponse({"ok": True})
 
 
-async def _fire_event_complete_sponsors(event_id: str) -> None:
-    """When the marketplace event completes, fire Stripe + Sponge + AgentMail + Supermemory persist.
-
-    Stripe + Sponge: simulate mover-deposit hold + escrow.
-    AgentMail: send the move package receipt to a configured demo email.
-    Supermemory: persist the move for future recall.
-    """
-    import asyncio
-    event = state.events.get(event_id)
-    if event is None:
-        return
-
-    # Stripe + Sponge for the mover deposit (cheapest mover bid wins; demo uses $500 fixed).
-    spec = event.spec
-    mover_ctx = event.specialist_calls.get("mover_quote")
-    mover_summary = "Mike's Movers, $1,840 OTD, truck confirmed" if mover_ctx else "(mover quote unavailable)"
-
-    stripe_result = await hold_mover_deposit(
-        event_id=event_id,
-        amount_cents=50_000,
-        description=f"Relocate deposit for {spec.get('origin_address', 'origin')} → {spec.get('destination_address', 'destination')}",
-    )
-    intent_id = (stripe_result or {}).get("id") if isinstance(stripe_result, dict) else None
-
-    await hold_mover_escrow(
-        event_id=event_id,
-        amount_cents=50_000,
-        payer="move-platform",
-        payee="mover-winner",
-        stripe_payment_intent_id=intent_id,
-    )
-
-    # AgentMail: send move package receipt with a real PDF attachment.
-    demo_email = spec.get("homeowner_email") or "moorthy@example.com"
-
-    # Build PDF receipt as a real artifact for judges to verify in their inbox.
-    from .integrations.pdf_receipt import build_receipt_pdf
-    from .personas import by_id
-
-    specialist_rows: list[dict[str, Any]] = []
-    for agent_id, ctx in event.specialist_calls.items():
-        try:
-            p = by_id(agent_id)
-            display_name = p.name
-        except KeyError:
-            display_name = agent_id
-        last_agent_turn = next(
-            (t for t in reversed(ctx.transcript) if t.get("role") == "agent"),
-            None,
-        )
-        outcome_text = ""
-        tier = ""
-        if last_agent_turn:
-            text = last_agent_turn.get("text", "")
-            import re
-            m = re.search(r"Bid:\s*(.*?)(?:\.|$)", text)
-            outcome_text = (m.group(1) if m else text).strip()[:120]
-            tier = last_agent_turn.get("pavo_tier", "")
-        specialist_rows.append({
-            "name": display_name,
-            "state": ctx.state,
-            "outcome": outcome_text,
-            "tier": tier,
-        })
-
-    decisions_count = max(1, len(specialist_rows) * 3)  # rough — actual count tracked elsewhere
-    pavo_summary = {
-        "decisions": decisions_count,
-        "local_share_pct": 60,  # canonical from synthetic; real flow may differ
-        "pavo_cents": float(event.pavo_cents_total),
-        "baseline_cents": float(event.baseline_cents_total),
-    }
-
-    pdf_bytes = build_receipt_pdf(
-        event_id=event_id,
-        homeowner_name=spec.get("homeowner_name", "Relocate customer"),
-        spec=spec,
-        specialist_results=specialist_rows,
-        pavo_summary=pavo_summary,
-    )
-
-    body = (
-        f"Your Relocate package is ready.\n\n"
-        f"From: {spec.get('origin_address', '?')}\n"
-        f"To:   {spec.get('destination_address', '?')}\n"
-        f"Date: {spec.get('move_date', '?')}\n\n"
-        f"PDF receipt attached — every specialist outcome plus the PAVO routing summary.\n\n"
-        f"— Relocate\n"
-        f"AI Relocation OS · built on PAVO · TMLR 2026\n"
-        f"huggingface.co/datasets/vnmoorthy/pavo-bench\n"
-    )
-
-    await send_move_package(
-        event_id=event_id,
-        to_email=demo_email,
-        subject=f"Your Relocate package ({spec.get('destination_address', 'destination')[:30]})",
-        body_markdown=body,
-        attachments=[{
-            "filename": f"move-receipt-{event_id}.pdf",
-            "content_type": "application/pdf",
-            "content_bytes": pdf_bytes,
-        }],
-    )
-
-    # Supermemory: persist for future recall.
-    await persist_move(
-        event_id=event_id,
-        phone_e164=spec.get("homeowner_phone", settings.demo_homeowner_number),
-        spec=spec,
-        results={a: c.state for a, c in event.specialist_calls.items()},
-    )
-
-
 @app.websocket("/ws/dashboard")
 async def ws_dashboard(ws: WebSocket) -> None:
+    expected = settings.dashboard_api_token
+    supplied = _bearer_token(ws.headers.get("authorization")) or ws.query_params.get("token", "")
+    if not expected or not supplied or not hmac.compare_digest(supplied, expected):
+        await ws.close(code=1008, reason="dashboard authentication required")
+        return
     await ws_broker.subscribe(ws)
     try:
         while True:
@@ -560,6 +523,24 @@ async def ws_dashboard(ws: WebSocket) -> None:
         pass
     finally:
         await ws_broker.unsubscribe(ws)
+
+
+def _bearer_token(value: str | None) -> str:
+    if not value:
+        return ""
+    scheme, _, token = value.partition(" ")
+    return token.strip() if scheme.lower() == "bearer" else ""
+
+
+def _require_dev_trigger_access(request: Request) -> None:
+    if settings.app_env.lower() == "production" or not settings.enable_dev_trigger:
+        raise HTTPException(404, "not found")
+    expected = settings.admin_api_token
+    if not expected:
+        raise HTTPException(503, "dev trigger is enabled but ADMIN_API_TOKEN is not configured")
+    supplied = _bearer_token(request.headers.get("authorization"))
+    if not supplied or not hmac.compare_digest(supplied, expected):
+        raise HTTPException(401, "invalid bearer token")
 
 
 def _try_extract_spec(text: str) -> dict[str, Any] | None:
@@ -583,13 +564,15 @@ def _try_extract_spec(text: str) -> dict[str, Any] | None:
 
 
 @app.post("/api/test/buyer-trigger")
-async def api_test_buyer_trigger(payload: dict[str, Any]) -> dict[str, Any]:
+async def api_test_buyer_trigger(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
     """Dev-only: synthesize a buyer dispatch without a real AgentPhone call.
 
     Body: {"spec": {...}}  → creates a MarketplaceEvent and fires fan_out.
     """
-    import asyncio
+    _require_dev_trigger_access(request)
     spec = payload.get("spec", {})
+    if not isinstance(spec, dict):
+        raise HTTPException(400, "spec must be an object")
     event_id = state.new_event_id()
     state.events[event_id] = MarketplaceEvent(id=event_id, homeowner_call_id="dev", spec=spec)
     asyncio.create_task(fan_out(event_id, spec))

@@ -1,12 +1,12 @@
 """Seed the Moss index with 7 specialist runbooks.
 
-Run ONCE before the demo, after MOSS_PROJECT_ID + MOSS_PROJECT_KEY land in .env.
+Run intentionally before the demo, after MOSS_PROJECT_ID + MOSS_PROJECT_KEY land in .env.
 Uploads short markdown runbooks for each LIVE specialist agent so Moss can
 retrieve them at dispatch time and inject into each specialist's system prompt.
 
 Usage:
     cd orchestrator
-    uv run python scripts/seed_moss.py
+    uv run python scripts/seed_moss.py --confirm-write
 
 Idempotency: if the index already has docs, this script skips them by ID.
 """
@@ -140,6 +140,9 @@ RUNBOOKS: list[dict[str, str]] = [
 
 
 async def main() -> None:
+    if "--confirm-write" not in sys.argv:
+        print("Refusing to write to Moss without --confirm-write.")
+        sys.exit(2)
     if not settings.moss_project_id or not settings.moss_project_key:
         print("MOSS_PROJECT_ID and MOSS_PROJECT_KEY must both be set in .env. Aborting.")
         sys.exit(1)
@@ -176,15 +179,15 @@ async def main() -> None:
             print(f"  upserted: {rb['id']}")
         except AttributeError:
             # Older SDKs may use `add` or `insert`
-            print(f"  ⚠ upsert method not found on MossClient; check SDK version")
-            print(f"     Run dir(client) on a python shell to find the right method name.")
+            print("  ⚠ upsert method not found on MossClient; check SDK version")
+            print("     Run dir(client) on a python shell to find the right method name.")
             break
         except Exception as e:
             print(f"  ✗ {rb['id']}: {type(e).__name__}: {e}")
 
     print("\nDone. Verify via:")
-    print(f'  uv run python -c "import asyncio; from app.integrations.moss import retrieve_runbook; '
-          f'print(asyncio.run(retrieve_runbook(\\"smoke\\", \\"comcast cancellation\\", 1)))"')
+    print('  uv run python -c "import asyncio; from app.integrations.moss import retrieve_runbook; '
+          'print(asyncio.run(retrieve_runbook(\\"smoke\\", \\"comcast cancellation\\", 1)))"')
 
 
 if __name__ == "__main__":

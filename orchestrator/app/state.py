@@ -30,6 +30,7 @@ class BuyerCallContext:
     collection_history: list[dict[str, Any]] = field(default_factory=list)
     # True after the post-call follow-up email is sent (idempotency).
     followup_sent: bool = False
+    followup_in_progress: bool = False
 
 
 @dataclass
@@ -38,7 +39,11 @@ class SpecialistCallContext:
     call_id: str
     agent_id: str
     event_id: str
-    state: str = "dispatched"       # dispatched|calling|in-progress|closed|voicemail|error
+    # dispatched|calling|in-progress|submitted|succeeded|needs-user-action|failed
+    state: str = "dispatched"
+    terminal_outcome: str | None = None
+    blocker_kind: str | None = None
+    blockers: list[str] = field(default_factory=list)
     turn_count: int = 0
     transcript: list[dict[str, Any]] = field(default_factory=list)
     bid: dict[str, Any] | None = None
@@ -54,9 +59,14 @@ class MarketplaceEvent:
     spec: dict[str, Any]
     specialist_calls: dict[str, SpecialistCallContext] = field(default_factory=dict)  # agent_id -> ctx
     pavo_cents_total: float = 0.0
-    baseline_cents_total: float = 0.0
+    # Populated only when a measured/configured counterfactual exists.
+    baseline_cents_total: float | None = None
     routing_decisions: list[dict[str, Any]] = field(default_factory=list)
     started_at: float = field(default_factory=time.time)
+    finalization_started: bool = False
+    finalized_at: float | None = None
+    final_outcome: str | None = None
+    awaiting_user_notified: bool = False
 
 
 class AppState:

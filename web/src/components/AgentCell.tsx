@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { publicFeedText, redactDisplayText } from "@/lib/privacy";
+import { tierMeta } from "@/lib/tiers";
 
 interface Props {
   agentId: string;
@@ -9,12 +11,19 @@ interface Props {
   state: string | undefined;
   sinceTs: number | undefined;
   transcript: Array<{ role: string; text: string; ts: number; turn: number; tier?: string }>;
+  demoMode: boolean;
 }
 
 const STATE: Record<
   string,
   { label: string; dot: string; ring: string; text: string; pulse?: boolean }
 > = {
+  idle: {
+    label: "STANDBY",
+    dot: "bg-[var(--ink-500)]",
+    ring: "ring-[var(--border-mid)]",
+    text: "text-[var(--ink-500)]",
+  },
   dispatched: {
     label: "DISPATCHED",
     dot: "bg-[var(--ink-500)]",
@@ -34,11 +43,35 @@ const STATE: Record<
     text: "text-[var(--red)]",
     pulse: true,
   },
-  closed: {
-    label: "CLOSED",
+  submitted: {
+    label: "SUBMITTED",
+    dot: "bg-[var(--tier-haiku)]",
+    ring: "ring-[rgba(96,165,250,0.35)]",
+    text: "text-[var(--tier-haiku)]",
+  },
+  succeeded: {
+    label: "DONE",
     dot: "bg-[var(--mint)]",
-    ring: "ring-[rgba(0,255,163,0.30)]",
+    ring: "ring-[rgba(0,212,154,0.30)]",
     text: "text-[var(--mint)]",
+  },
+  "needs-user-action": {
+    label: "ACTION",
+    dot: "bg-[var(--amber)]",
+    ring: "ring-[rgba(251,191,36,0.35)]",
+    text: "text-[var(--amber)]",
+  },
+  failed: {
+    label: "FAILED",
+    dot: "bg-[var(--red)]",
+    ring: "ring-[rgba(248,113,113,0.40)]",
+    text: "text-[var(--red)]",
+  },
+  closed: {
+    label: "ENDED",
+    dot: "bg-[var(--ink-500)]",
+    ring: "ring-[var(--border-mid)]",
+    text: "text-[var(--ink-500)]",
   },
   voicemail: {
     label: "VOICEMAIL",
@@ -54,32 +87,35 @@ const STATE: Record<
   },
 };
 
-const TIER_BAR: Record<string, string> = {
-  "gemma-local": "var(--tier-local)",
-  "gemini-flash": "var(--tier-flash)",
-  "claude-opus": "var(--tier-opus)",
-  "claude-haiku": "var(--tier-opus)",
-  "fallback-mock": "var(--tier-mock)",
-};
-
-export function AgentCell({ agentId, name, category, state, sinceTs, transcript }: Props) {
+export function AgentCell({ agentId, name, category, state, sinceTs, transcript, demoMode }: Props) {
   const [elapsedSec, setElapsedSec] = useState(0);
 
   useEffect(() => {
-    if (!sinceTs || state === "closed" || state === "error" || state === "voicemail") return;
-    const tick = () => setElapsedSec(Math.floor(Date.now() / 1000 - sinceTs));
+    if (
+      !sinceTs ||
+      state === "submitted" ||
+      state === "succeeded" ||
+      state === "needs-user-action" ||
+      state === "failed" ||
+      state === "closed" ||
+      state === "error" ||
+      state === "voicemail"
+    ) return;
+    const tick = () => setElapsedSec(Math.max(0, Math.floor(Date.now() / 1000 - sinceTs)));
     tick();
     const interval = setInterval(tick, 250);
     return () => clearInterval(interval);
   }, [sinceTs, state]);
 
-  const s = STATE[state ?? "dispatched"] ?? STATE.dispatched;
+  const baseState = STATE[state ?? "idle"] ?? STATE.idle;
+  const s = demoPresentation(state, baseState, demoMode);
   const lastTurns = transcript.slice(-4);
   const lastAgentTurn = [...transcript].reverse().find((t) => t.role === "agent");
-  const isLive = state === "in-progress";
+  const isLive = state === "in-progress" && !demoMode;
 
   return (
-    <div
+    <article
+      aria-labelledby={`agent-${agentId}-title`}
       className={`panel relative flex flex-col h-full overflow-hidden transition-shadow ${
         isLive ? "live-pulse" : ""
       }`}
@@ -87,17 +123,17 @@ export function AgentCell({ agentId, name, category, state, sinceTs, transcript 
       {/* Top status strip */}
       <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5 border-b border-[var(--border-soft)]">
         <div className="flex flex-col">
-          <span className="font-display text-[13px] text-[var(--ink-100)] leading-tight">
+          <h3 id={`agent-${agentId}-title`} className="font-display text-[13px] text-[var(--ink-100)] leading-tight">
             {name}
-          </span>
+          </h3>
           <span className="text-[9px] tracking-[0.18em] text-[var(--ink-500)] uppercase">
             {category}
           </span>
         </div>
         <div className="flex flex-col items-end gap-0.5">
           <div className={`flex items-center gap-1.5 ring-1 ${s.ring} rounded-full px-2 py-0.5`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${s.dot} ${s.pulse ? "live-dot" : ""}`} />
-            <span className={`text-[9px] font-semibold tracking-[0.14em] ${s.text}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${s.dot} ${s.pulse ? "live-dot" : ""}`} aria-hidden="true" />
+            <span className={`text-[9px] font-semibold tracking-[0.14em] ${s.text}`} aria-label={`${name} status: ${s.label.toLowerCase()}`}>
               {s.label}
             </span>
           </div>
@@ -111,13 +147,18 @@ export function AgentCell({ agentId, name, category, state, sinceTs, transcript 
       </div>
 
       {/* Transcript */}
-      <div className="flex-1 overflow-hidden px-3 py-2 flex flex-col gap-1.5 text-[11px] leading-snug">
+      <div
+        className="flex-1 overflow-hidden px-3 py-2 flex flex-col gap-1.5 text-[11px] leading-snug"
+        role="log"
+        aria-live={isLive ? "polite" : "off"}
+        aria-label={`${name} transcript, sensitive values redacted`}
+      >
         {lastTurns.length === 0 ? (
           <span className="text-[var(--ink-500)] italic text-[10px]">Idle…</span>
         ) : (
           lastTurns.map((t, i) => {
             const isAgent = t.role === "agent";
-            const tierColor = t.tier ? TIER_BAR[t.tier] : undefined;
+            const tierColor = t.tier ? tierMeta(t.tier).color : undefined;
             const isLast = i === lastTurns.length - 1;
             return (
               <div
@@ -137,7 +178,11 @@ export function AgentCell({ agentId, name, category, state, sinceTs, transcript 
                   {isAgent ? "AGT" : t.role === "counterparty" ? "REP" : "USR"}
                 </span>
                 <span className="text-[var(--ink-300)] break-words flex-1">
-                  {t.text}
+                  {publicFeedText(
+                    t.text,
+                    demoMode,
+                    "Live transcript hidden on this public dashboard.",
+                  )}
                   {isAgent && isLast && isLive && (
                     <span className="cursor-blink" />
                   )}
@@ -150,9 +195,25 @@ export function AgentCell({ agentId, name, category, state, sinceTs, transcript 
 
       {/* Footer: bid summary if closed, or tier badge if live */}
       <div className="px-3 pb-2 pt-1 flex items-center justify-between border-t border-[var(--border-soft)] min-h-[22px]">
-        {state === "closed" && lastAgentTurn ? (
+        {demoMode && state === "submitted" ? (
+          <span className="text-[9px] font-mono-tight text-[var(--amber)] truncate">
+            synthetic submission event
+          </span>
+        ) : state === "submitted" && lastAgentTurn ? (
+          <span className="text-[9px] font-mono-tight text-[var(--tier-haiku)] truncate" title="Provider accepted the request; the underlying service change is not confirmed complete.">
+            ↗ submitted · {extractBid(lastAgentTurn.text)}
+          </span>
+        ) : state === "needs-user-action" && lastAgentTurn ? (
+          <span className="text-[9px] font-mono-tight text-[var(--amber)] truncate">
+            ! user action · {extractBid(lastAgentTurn.text)}
+          </span>
+        ) : state === "succeeded" && lastAgentTurn ? (
           <span className="text-[9px] font-mono-tight text-[var(--mint)] truncate">
-            ✓ {extractBid(lastAgentTurn.text)}
+            ✓ succeeded · {extractBid(lastAgentTurn.text)}
+          </span>
+        ) : state === "closed" ? (
+          <span className="text-[9px] font-mono-tight text-[var(--ink-500)] truncate">
+            ended · outcome not reported
           </span>
         ) : (
           <span className="text-[9px] tracking-widest text-[var(--ink-500)] uppercase">
@@ -161,34 +222,45 @@ export function AgentCell({ agentId, name, category, state, sinceTs, transcript 
         )}
         {lastAgentTurn?.tier && (
           <span
-            className={`text-[8px] font-semibold tracking-[0.1em] px-1.5 py-0.5 rounded tier-pill-${shortTier(lastAgentTurn.tier)}`}
+            className={`text-[8px] font-semibold tracking-[0.1em] px-1.5 py-0.5 rounded tier-pill-${tierMeta(lastAgentTurn.tier).pillClass}`}
           >
-            {tierLabel(lastAgentTurn.tier)}
+            {tierMeta(lastAgentTurn.tier).shortLabel}
           </span>
         )}
       </div>
-    </div>
+    </article>
   );
+}
+
+function demoPresentation(
+  state: string | undefined,
+  base: { label: string; dot: string; ring: string; text: string; pulse?: boolean },
+  demoMode: boolean,
+) {
+  if (!demoMode) return base;
+  const label =
+    state === "submitted" || state === "succeeded"
+      ? "SIMULATED"
+      : state === "needs-user-action"
+        ? "DEMO PAUSE"
+        : state === "closed"
+          ? "REPLAY END"
+          : state === "in-progress" || state === "calling" || state === "dispatched"
+            ? "REPLAY"
+            : base.label;
+  return {
+    ...base,
+    label,
+    dot: "bg-[var(--amber)]",
+    ring: "ring-[rgba(251,191,36,0.35)]",
+    text: "text-[var(--amber)]",
+    pulse: false,
+  };
 }
 
 function extractBid(text: string): string {
   // Try to find a "Bid:" line; fall back to truncated last sentence.
   const m = text.match(/Bid:\s*(.*?)(?:\.|$)/i);
-  if (m) return m[1].trim().slice(0, 70);
-  return text.slice(0, 70);
-}
-
-function shortTier(t: string): "local" | "flash" | "opus" | "mock" {
-  if (t === "gemma-local") return "local";
-  if (t === "gemini-flash") return "flash";
-  if (t === "claude-opus" || t === "claude-haiku") return "opus";
-  return "mock";
-}
-
-function tierLabel(t: string): string {
-  if (t === "gemma-local") return "G-2B";
-  if (t === "gemini-flash") return "GEM-FL";
-  if (t === "claude-opus") return "C-OPUS";
-  if (t === "claude-haiku") return "C-HKU";
-  return "MOCK";
+  if (m) return redactDisplayText(m[1].trim().slice(0, 70));
+  return redactDisplayText(text.slice(0, 70));
 }

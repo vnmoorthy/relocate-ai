@@ -61,7 +61,7 @@ async def _run_task(
     _require_key(agent_id)
     await emit_sponsor_event(
         event_id=event_id, sponsor="browser_use",
-        action=f"started[{agent_id}]", detail=task_description[:160],
+        action=f"started[{agent_id}]", detail="task parameters redacted",
     )
 
     async with httpx.AsyncClient(
@@ -85,7 +85,7 @@ async def _run_task(
 
         await emit_sponsor_event(
             event_id=event_id, sponsor="browser_use",
-            action=f"task_id[{agent_id}]", detail=task_id,
+            action=f"task_created[{agent_id}]", detail="provider task id retained server-side",
         )
 
         # Poll to completion.
@@ -108,7 +108,8 @@ async def _run_task(
                     )
                 await emit_sponsor_event(
                     event_id=event_id, sponsor="browser_use",
-                    action=f"done[{agent_id}]", detail=str(output)[:160],
+                    action=f"done[{agent_id}]",
+                    detail=f"output keys: {', '.join(sorted(output.keys()))}",
                 )
                 return {"task_id": task_id, **output}
             if status in ("failed", "stopped", "error"):

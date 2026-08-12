@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from functools import partial
 
 from ..config import settings
 from ._common import safe_call
@@ -59,9 +60,8 @@ async def send_move_package(
     """
     has_key = bool(settings.agentmail_api_key) and settings.agentmail_api_key != "REPLACE_ME"
 
-    # Fall back to the configured demo recipient when caller passes a placeholder.
-    if not to_email or "example.com" in to_email:
-        to_email = settings.demo_email_recipient
+    if not to_email:
+        raise RuntimeError("email destination is required")
 
     async def _do() -> dict:
         def _send_sync():
@@ -109,7 +109,7 @@ async def send_move_package(
     return await safe_call(
         event_id=event_id,
         sponsor="agentmail",
-        action="receipt_sent",
+        action="email_sent",
         has_key=has_key,
         real_call=_do,
         stub_detail=f"would email {to_email}: {subject}",
@@ -194,7 +194,7 @@ async def _send_via_agentmail(
             sponsor="agentmail",
             action=f"sent[{agent_id}]",
             has_key=True,
-            real_call=lambda a=addr: _do_one(a),
+            real_call=partial(_do_one, addr),
             stub_detail=f"would email {addr}: {subject}",
         )
         if result:
@@ -381,15 +381,15 @@ async def send_buyer_followup_form(
 ) -> dict | None:
     """Post-call structured-form email to the caller.
 
-    Body is plain text + an HTML table the user can reply to or fill out via a
-    secure link (link URL placeholder; wire to your real intake page when ready).
+    Until a secure intake service exists, the email explicitly keeps sensitive
+    work paused rather than advertising a placeholder link as secure.
 
     The artifact is the AgentMail message_id, which gets persisted on the
     BuyerCallContext + Supermemory for the next call to recall."""
     if not to_email:
         raise RuntimeError("buyer follow-up has no destination email")
 
-    subject = "Two minutes — the last few details to finish your move"
+    subject = "Relocate tasks paused — secure intake is not available"
 
     # Build the per-field section. We give each field a one-line "why we need it"
     # so the user understands the ask.
@@ -407,16 +407,17 @@ async def send_buyer_followup_form(
 
     body_text = f"""{greeting}
 
-Thanks for the call — the swarm is already running. Below are the last few \
-fields I deliberately didn't ask over the phone for safety (account numbers, \
-SSN digits, payment cards). Each one unblocks one of the specialists.
+Thanks for the call. Some low-risk tasks may be running, but the tasks listed \
+below are paused. Relocate deliberately did not ask for these sensitive fields \
+over the phone.
 
-Reply to this email with the fields you have on hand. For passwords / cards \
-/ SSN, use the secure session link at the bottom — those should NEVER be \
-typed into email.
+This message is informational. Replies are not processed by the orchestrator \
+yet. Do not send passwords, payment cards, SSN digits, prescription numbers, \
+account credentials, or other details by email. Tasks requiring those values \
+remain paused until Relocate's secure intake is available.
 
 ==============================================================
-FIELDS NEEDED (fill any you can; we'll chase the rest):
+FIELDS BLOCKING TASKS (do not send these by email):
 ==============================================================
 
 {chr(10).join(field_lines) if field_lines else "  (all collected — nothing pending)"}
@@ -427,14 +428,9 @@ WHICH SPECIALISTS ARE WAITING ON WHICH FIELDS:
 
 {chr(10).join(blocked_lines) if blocked_lines else "  (no specialists blocked)"}
 
-==============================================================
-SECURE-ENTRY LINK (for passwords, SSN, card data — never reply with these):
-==============================================================
-
-  https://relocate.example/secure/{event_id}
-  (Expires in 24 hours. Encrypted, single-use, never logged.)
-
-You'll see each task close as it finishes. Reply any time.
+No sensitive-data intake link is included because that service is not yet \
+implemented. The dashboard will label affected tasks "Needs user action"; it \
+will not claim they are complete.
 
 — Relocate
 """
@@ -445,7 +441,6 @@ You'll see each task close as it finishes. Reply any time.
         to=to_email,
         subject=subject,
         body=body_text,
-        reply_to=to_email,
     )
 
 

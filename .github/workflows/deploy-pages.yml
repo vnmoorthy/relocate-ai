@@ -28,7 +28,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 10.33.2
 
       - uses: actions/setup-node@v4
         with:
@@ -38,10 +38,18 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Verify dashboard
+        run: |
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+
       - name: Build static export
         env:
           GITHUB_PAGES: '1'
-          NEXT_PUBLIC_WS_URL: ${{ vars.NEXT_PUBLIC_WS_URL || 'wss://relocate-orchestrator.example.com/ws/dashboard' }}
+          # GitHub Pages is intentionally replay-only until the product has a
+          # server-issued, short-lived WebSocket ticket flow.
+          NEXT_PUBLIC_WS_URL: ''
         run: pnpm build
 
       - name: Add .nojekyll (so _next/ is served)

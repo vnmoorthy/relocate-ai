@@ -1,218 +1,187 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { WSEvent } from "./types";
+import {
+  applyDashboardEvent,
+  createDashboardState,
+  dashboardEventKey,
+  parseDashboardMessage,
+  reconnectDelay,
+  withConnection,
+  type DashboardState,
+} from "./dashboard-state";
 import { buildDemoTimeline } from "./demo-replay";
+import type { WSEvent } from "./types";
 
-export interface DashboardState {
-  transcripts: Record<string, Array<{ role: string; text: string; ts: number; turn: number; tier?: string }>>;
-  agentStates: Record<string, { state: string; sinceTs: number }>;
-  routingDecisions: Array<{ agent_id: string; tier: string; reason: string; turn: number; ts: number }>;
-  pavoCents: number;
-  baselineCents: number;
-  sponsorEvents: Array<{ sponsor: string; action: string; detail?: string; ts: number }>;
-  // v2: live field-collection state from the buyer. Keys are field names from
-  // buyer_schema.BUYER_FIELDS; values are truncated display strings/numbers/bools.
-  collectedFields: Record<string, string | number | boolean>;
-  connected: boolean;
-  eventId: string | null;
-  // True when we couldn't reach a real orchestrator and are playing the demo
-  // event timeline client-side. Surfaced so the UI can show a "DEMO" badge.
-  demoMode: boolean;
-}
+export type { DashboardState } from "./dashboard-state";
 
-const INITIAL: DashboardState = {
-  transcripts: {},
-  agentStates: {},
-  routingDecisions: [],
-  pavoCents: 0,
-  baselineCents: 0,
-  sponsorEvents: [],
-  collectedFields: {},
-  connected: false,
-  eventId: null,
-  demoMode: false,
-};
+const FALLBACK_DELAY_MS = 1800;
+const REPLAY_LOOP_GAP_MS = 4000;
 
-// How long to wait for a real WebSocket before falling back to demo replay.
-// Short so visitors on the static deploy never see a blank stage.
-const FALLBACK_DELAY_MS = 800;
-// Loop interval after the timeline ends. Cells stay in their "closed" state
-// across the gap (we don't reset state), so the swarm never looks empty.
-const REPLAY_LOOP_GAP_MS = 1500;
-
-/** Heuristic: the WS URL is a placeholder (will never connect) — skip the
- *  WebSocket attempt entirely and go straight to demo replay. */
-function isPlaceholderWsUrl(url: string): boolean {
+export function isPlaceholderWsUrl(url: string): boolean {
   if (!url) return true;
-  if (url.includes("example.com") || url.includes("CHANGE_ME") || url.includes("REPLACE_ME")) return true;
-  // Anything that isn't ws:// or wss:// is malformed.
+  if (url.includes("example.com") || url.includes("CHANGE_ME") || url.includes("REPLACE_ME")) {
+    return true;
+  }
   return !url.startsWith("ws://") && !url.startsWith("wss://");
 }
 
 export function useDashboardWS(wsUrl: string): DashboardState {
-  const [state, setState] = useState<DashboardState>(INITIAL);
+  const placeholder = isPlaceholderWsUrl(wsUrl);
+  const [state, setState] = useState<DashboardState>(() =>
+    createDashboardState(placeholder ? "demo" : "connecting"),
+  );
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    let retryHandle: number | undefined;
-    let fallbackHandle: number | undefined;
+    let reconnectTimer: number | undefined;
     let replayTimers: number[] = [];
-    let everConnected = false;
+    let reconnectAttempt = 0;
+    let hasConnected = false;
+    let replayActive = false;
+    let seenEventId: string | null = null;
+    const seenEvents = new Set<string>();
 
-    const clearReplay = () => {
-      for (const t of replayTimers) window.clearTimeout(t);
+    const clearReplayTimers = () => {
+      for (const timer of replayTimers) window.clearTimeout(timer);
       replayTimers = [];
     };
 
+    const stopReplay = () => {
+      clearReplayTimers();
+      replayActive = false;
+    };
+
+    const acceptEvent = (event: WSEvent) => {
+      if (cancelled) return;
+      if (seenEventId && seenEventId !== event.event_id) seenEvents.clear();
+      seenEventId = event.event_id;
+      const key = dashboardEventKey(event);
+      if (seenEvents.has(key)) return;
+      seenEvents.add(key);
+      setState((current) => applyDashboardEvent(current, event));
+    };
+
     const startReplay = () => {
-      if (cancelled || everConnected) return;
-      clearReplay();
-      setState((s) => ({ ...s, demoMode: true, connected: true, eventId: "mkt_demo_replay" }));
+      if (cancelled || hasConnected || replayActive) return;
+      replayActive = true;
+      clearReplayTimers();
+      seenEvents.clear();
+      seenEventId = "mkt_demo_replay";
+      setState(createDashboardState("demo", "mkt_demo_replay"));
+
       const timeline = buildDemoTimeline();
-      const t0 = Date.now();
-      for (const { at_ms, event } of timeline) {
-        const handle = window.setTimeout(() => {
-          if (cancelled || everConnected) return;
-          const stamped = { ...event, ts: (t0 + at_ms) / 1000 } as WSEvent;
-          setState((s) => applyEvent(s, stamped));
-        }, at_ms);
-        replayTimers.push(handle);
+      const startedAt = Date.now();
+      for (const item of timeline) {
+        const timer = window.setTimeout(() => {
+          if (cancelled || hasConnected || !replayActive) return;
+          acceptEvent({ ...item.event, ts: (startedAt + item.at_ms) / 1000 } as WSEvent);
+        }, item.at_ms);
+        replayTimers.push(timer);
       }
-      // Loop: re-arm without resetting state. New dispatch events overwrite
-      // agent_state="closed" → "dispatched" → ... seamlessly, so the swarm
-      // never blanks out between iterations.
-      const last_ms = timeline.length ? timeline[timeline.length - 1].at_ms : 0;
-      const loopHandle = window.setTimeout(() => {
-        if (cancelled || everConnected) return;
+
+      const lastAt = timeline.at(-1)?.at_ms ?? 0;
+      const loopTimer = window.setTimeout(() => {
+        if (cancelled || hasConnected) return;
+        replayActive = false;
         startReplay();
-      }, last_ms + REPLAY_LOOP_GAP_MS);
-      replayTimers.push(loopHandle);
+      }, lastAt + REPLAY_LOOP_GAP_MS);
+      replayTimers.push(loopTimer);
+    };
+
+    if (placeholder) {
+      const timer = window.setTimeout(startReplay, 0);
+      replayTimers.push(timer);
+      return () => {
+        cancelled = true;
+        stopReplay();
+      };
+    }
+
+    const scheduleReconnect = (connect: () => void) => {
+      if (cancelled || reconnectTimer !== undefined) return;
+      const delay = reconnectDelay(reconnectAttempt);
+      reconnectAttempt += 1;
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = undefined;
+        connect();
+      }, delay);
     };
 
     const connect = () => {
       if (cancelled) return;
-      let ws: WebSocket;
-      try {
-        ws = new WebSocket(wsUrl);
-      } catch {
-        // Browsers throw on invalid URLs (e.g. when wsUrl is the placeholder
-        // on the static deploy). Skip straight to demo mode.
-        startReplay();
+      if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) {
         return;
       }
-      wsRef.current = ws;
 
-      ws.onopen = () => {
-        if (cancelled) return;
-        everConnected = true;
-        clearReplay();
-        if (fallbackHandle) window.clearTimeout(fallbackHandle);
-        setState((s) => ({ ...s, connected: true, demoMode: false }));
+      if (!replayActive) {
+        setState((current) =>
+          withConnection(current, hasConnected ? "reconnecting" : "connecting"),
+        );
+      }
+
+      let socket: WebSocket;
+      try {
+        socket = new WebSocket(wsUrl);
+      } catch {
+        startReplay();
+        scheduleReconnect(connect);
+        return;
+      }
+      wsRef.current = socket;
+
+      socket.onopen = () => {
+        if (cancelled || wsRef.current !== socket) return;
+        const switchingFromDemo = replayActive;
+        hasConnected = true;
+        reconnectAttempt = 0;
+        window.clearTimeout(fallbackTimer);
+        stopReplay();
+        if (switchingFromDemo) seenEvents.clear();
+        setState((current) =>
+          switchingFromDemo ? createDashboardState("live") : withConnection(current, "live"),
+        );
       };
 
-      ws.onmessage = (m) => {
-        try {
-          const ev = JSON.parse(m.data) as WSEvent;
-          setState((s) => applyEvent(s, ev));
-        } catch {
-          /* ignore malformed */
+      socket.onmessage = (message) => {
+        const event = parseDashboardMessage(message.data);
+        if (!event) {
+          setState((current) => ({ ...current, protocolErrors: current.protocolErrors + 1 }));
+          return;
         }
+        acceptEvent(event);
       };
 
-      ws.onclose = () => {
-        if (cancelled) return;
-        if (everConnected) {
-          // Real orchestrator we had a session with — try to reconnect.
-          setState((s) => ({ ...s, connected: false }));
-          retryHandle = window.setTimeout(connect, 1500);
+      socket.onclose = () => {
+        if (cancelled || wsRef.current !== socket) return;
+        wsRef.current = null;
+        if (hasConnected) {
+          setState((current) => withConnection(current, "reconnecting"));
+        } else {
+          startReplay();
         }
-        // If we never connected, fallbackHandle will fire startReplay() below.
+        scheduleReconnect(connect);
       };
 
-      ws.onerror = () => {
-        // onclose will fire next; fallbackHandle handles the "never connected" case.
+      socket.onerror = () => {
+        // The close handler owns retry and UI state transitions.
       };
     };
 
-    // If the URL is obviously a placeholder (static deploy), skip the WS
-    // attempt entirely and start the replay on the next tick.
-    if (isPlaceholderWsUrl(wsUrl)) {
-      const h = window.setTimeout(startReplay, 50);
-      replayTimers.push(h);
-      return () => {
-        cancelled = true;
-        clearReplay();
-      };
-    }
-
-    fallbackHandle = window.setTimeout(() => {
-      if (!everConnected && !cancelled) startReplay();
-    }, FALLBACK_DELAY_MS);
-
+    const fallbackTimer = window.setTimeout(startReplay, FALLBACK_DELAY_MS);
     connect();
 
     return () => {
       cancelled = true;
-      if (retryHandle) window.clearTimeout(retryHandle);
-      if (fallbackHandle) window.clearTimeout(fallbackHandle);
-      clearReplay();
-      wsRef.current?.close();
+      if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
+      window.clearTimeout(fallbackTimer);
+      stopReplay();
+      const socket = wsRef.current;
+      wsRef.current = null;
+      socket?.close();
     };
-  }, [wsUrl]);
+  }, [placeholder, wsUrl]);
 
   return state;
-}
-
-function applyEvent(s: DashboardState, ev: WSEvent): DashboardState {
-  switch (ev.type) {
-    case "transcript_turn": {
-      const prev = s.transcripts[ev.agent_id] ?? [];
-      const next = [...prev, { role: ev.role, text: ev.text, ts: ev.ts, turn: ev.turn, tier: ev.pavo_tier }];
-      // Keep last 8 turns per cell for display.
-      const trimmed = next.slice(-8);
-      return {
-        ...s,
-        transcripts: { ...s.transcripts, [ev.agent_id]: trimmed },
-        eventId: s.eventId ?? ev.event_id,
-      };
-    }
-    case "routing_decision": {
-      const next = [
-        { agent_id: ev.agent_id, tier: ev.tier, reason: ev.reason, turn: ev.turn, ts: ev.ts },
-        ...s.routingDecisions,
-      ].slice(0, 20);
-      return { ...s, routingDecisions: next };
-    }
-    case "agent_state":
-      return {
-        ...s,
-        agentStates: {
-          ...s.agentStates,
-          [ev.agent_id]: { state: ev.state, sinceTs: ev.ts },
-        },
-      };
-    case "cost_update":
-      return { ...s, pavoCents: ev.pavo_cents, baselineCents: ev.baseline_cents };
-    case "event_complete":
-      return s;
-    case "sponsor_event": {
-      const next = [
-        { sponsor: ev.sponsor, action: ev.action, detail: ev.detail, ts: ev.ts },
-        ...s.sponsorEvents,
-      ].slice(0, 12);
-      return { ...s, sponsorEvents: next };
-    }
-    case "fields_collected": {
-      // Merge — never overwrite previously-collected values.
-      const next = { ...s.collectedFields };
-      for (const [k, v] of Object.entries(ev.values)) {
-        if (!(k in next)) next[k] = v;
-      }
-      return { ...s, collectedFields: next, eventId: s.eventId ?? ev.event_id };
-    }
-    default:
-      return s;
-  }
 }

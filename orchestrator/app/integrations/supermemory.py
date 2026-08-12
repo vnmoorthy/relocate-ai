@@ -44,7 +44,7 @@ async def recall_user_profile(event_id: str, phone_e164: str) -> dict | None:
 
 
 async def persist_move(event_id: str, phone_e164: str, spec: dict, results: dict) -> dict | None:
-    """Persist the completed move to Supermemory so next time the user calls we recall it.
+    """Persist observed workflow states for later recall.
 
     Real endpoint per probe: POST /v3/documents (NOT /memories — the docs were renamed).
     Returns {"id": "...", "status": "queued"}.
@@ -53,7 +53,8 @@ async def persist_move(event_id: str, phone_e164: str, spec: dict, results: dict
 
     async def _do() -> dict:
         content = (
-            f"Relocate completed via Relocate marketplace. "
+            "Relocate workflow status snapshot. Submitted means a provider accepted "
+            "a request; needs_user_action means no provider action was claimed. "
             f"Origin: {spec.get('origin_address', '?')}. "
             f"Destination: {spec.get('destination_address', '?')}. "
             f"Relocate date: {spec.get('move_date', '?')}. "

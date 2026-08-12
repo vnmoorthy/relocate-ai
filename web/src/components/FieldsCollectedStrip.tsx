@@ -64,15 +64,16 @@ const LABEL: Record<string, string> = {
 
 export function FieldsCollectedStrip({ collectedFields }: Props) {
   const allFields = [...CORE_FIELDS, ...CONDITIONAL_FIELDS, ...OPTIONAL_FIELDS];
-  const collected = Object.keys(collectedFields);
+  const collected = allFields.filter((field) => field in collectedFields);
   const coreDone = CORE_FIELDS.every((f) => f in collectedFields);
 
   return (
-    <section className="panel px-3 py-2 flex items-center gap-2 overflow-x-auto scrollbar-clean">
-      <span className="text-[9px] tracking-[0.18em] text-[var(--ink-500)] uppercase shrink-0 pr-2 border-r border-[var(--border-soft)]">
+    <section className="panel px-3 py-2 flex items-center gap-2 overflow-x-auto scrollbar-clean" aria-labelledby="fields-heading">
+      <h3 id="fields-heading" className="text-[9px] tracking-[0.18em] text-[var(--ink-500)] uppercase shrink-0 pr-2 border-r border-[var(--border-soft)]">
         Buyer · {collected.length}/{allFields.length} fields
         {coreDone && <span className="text-[var(--mint)] ml-1.5">· dispatch ready</span>}
-      </span>
+      </h3>
+      <div className="flex items-center gap-2" role="list" aria-live="polite">
       {allFields.map((f) => {
         const have = f in collectedFields;
         const isCore = (CORE_FIELDS as readonly string[]).includes(f);
@@ -80,12 +81,14 @@ export function FieldsCollectedStrip({ collectedFields }: Props) {
         return (
           <div
             key={f}
+            role="listitem"
             className={`flex items-center gap-1.5 px-2 py-0.5 rounded border shrink-0 ${
               have
                 ? "bg-[rgba(0,255,163,0.06)] border-[rgba(0,255,163,0.30)]"
                 : "bg-[var(--bg-elev)] border-[var(--border-soft)]"
             }`}
-            title={have ? `${f} = ${String(collectedFields[f]).slice(0, 60)}` : `${f} (not collected)`}
+            title={have ? `${f} collected; value hidden on public dashboard` : `${f} not collected`}
+            aria-label={`${LABEL[f] ?? f}: ${have ? "collected, value hidden" : "not collected"}`}
           >
             <span
               className={`h-1.5 w-1.5 rounded-full ${
@@ -108,6 +111,7 @@ export function FieldsCollectedStrip({ collectedFields }: Props) {
           </div>
         );
       })}
+      </div>
     </section>
   );
 }

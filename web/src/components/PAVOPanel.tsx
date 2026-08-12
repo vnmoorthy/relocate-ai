@@ -2,6 +2,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { publicFeedText } from "@/lib/privacy";
 
 interface Decision {
   agent_id: string;
@@ -35,9 +36,9 @@ export function PAVOPanel({ decisions }: Props) {
     <Card className="h-full bg-slate-900 border-slate-700 text-slate-100">
       <CardHeader className="py-3 px-4 flex flex-row items-center justify-between space-y-0">
         <div className="flex flex-col">
-          <span className="text-sm font-bold tracking-wide">PAVO ROUTING (LIVE)</span>
+          <span className="text-sm font-bold tracking-wide">PAVO ROUTING EVENTS</span>
           <span className="text-[10px] text-slate-400">
-            Pipeline-Aware Voice Orchestration · TMLR 2026
+            Reported tier selections · provider availability is configuration-dependent
           </span>
         </div>
         <div className="flex flex-col items-end">
@@ -62,7 +63,13 @@ export function PAVOPanel({ decisions }: Props) {
                   {d.tier.replace("claude-", "C-").replace("gemma-local", "G-2B").replace("gemini-", "Gem-")}
                 </Badge>
                 <span className="text-slate-400 shrink-0">{d.agent_id}#{d.turn}</span>
-                <span className="text-slate-500 truncate">{d.reason}</span>
+                <span className="text-slate-500 truncate">
+                  {publicFeedText(
+                    d.reason,
+                    false,
+                    "Routing reason hidden on this public dashboard.",
+                  )}
+                </span>
               </div>
             ))
           )}

@@ -1,28 +1,19 @@
-"""Synthetic-input pytest for the PAVO routing classifier.
+"""Synthetic-input tests for the repository's PAVO routing policy.
 
-The classifier lives in pavo_server/route.py on the Lambda box. For local testing,
-we import it directly via sys.path. The 12 cases below cover the policy branches
-documented in the design doc:
+Import through the ``pavo_server`` package so test collection cannot shadow the
+orchestrator's top-level ``app`` package. The cases cover the documented policy
+branches:
 
   1. Hysteresis: prior opus, non-trivial → stays opus
   2. Hard escalation keywords → opus
-  3. Buyer-extract role → haiku floor
-  4. Medium pattern (pricing) → haiku
+  3. Buyer-extract role → Gemini floor
+  4. Medium pattern (pricing) → Gemini
   5. Early-call greeting → gemma-local
   6. Default small-talk → gemma-local
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-import pytest
-
-# Locate pavo_server/route.py
-_REPO = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(_REPO / "pavo_server"))
-
-from route import route_turn  # noqa: E402
+from pavo_server.route import route_turn
 
 
 # -----------------------------------------------------------------------------
@@ -74,7 +65,7 @@ def test_compliance_keyword_routes_to_opus() -> None:
 # -----------------------------------------------------------------------------
 # 3. Buyer-extract role floor
 # -----------------------------------------------------------------------------
-def test_buyer_extract_floors_at_haiku() -> None:
+def test_buyer_extract_floors_at_gemini() -> None:
     d = route_turn(
         transcript="Hi.",  # trivial content but extract role forces floor
         history_depth=1,
@@ -85,9 +76,9 @@ def test_buyer_extract_floors_at_haiku() -> None:
 
 
 # -----------------------------------------------------------------------------
-# 4. Medium patterns → haiku
+# 4. Medium patterns → Gemini
 # -----------------------------------------------------------------------------
-def test_pricing_keyword_routes_to_haiku() -> None:
+def test_pricing_keyword_routes_to_gemini() -> None:
     d = route_turn(
         transcript="What's the early termination fee on the disconnect?",
         history_depth=3,
@@ -96,7 +87,7 @@ def test_pricing_keyword_routes_to_haiku() -> None:
     assert d.tier == "gemini-flash"
 
 
-def test_cancellation_keyword_routes_to_haiku() -> None:
+def test_cancellation_keyword_routes_to_gemini() -> None:
     d = route_turn(
         transcript="I want to cancel my service, what's the final-bill date?",
         history_depth=3,
@@ -105,7 +96,7 @@ def test_cancellation_keyword_routes_to_haiku() -> None:
     assert d.tier == "gemini-flash"
 
 
-def test_quote_keyword_routes_to_haiku() -> None:
+def test_quote_keyword_routes_to_gemini() -> None:
     d = route_turn(
         transcript="Can you give me an out-the-door quote including parts and labor?",
         history_depth=3,

@@ -19,6 +19,18 @@ from ..ws import ws_broker
 log = logging.getLogger(__name__)
 
 
+def _result_shape(result: Any) -> str | None:
+    """Return useful integration telemetry without values, tokens, or PII."""
+    if result is None:
+        return None
+    if isinstance(result, dict):
+        keys = sorted(str(key) for key in result.keys())
+        return f"result keys: {', '.join(keys[:12])}"
+    if isinstance(result, (list, tuple, set)):
+        return f"result items: {len(result)}"
+    return f"result type: {type(result).__name__}"
+
+
 async def emit_sponsor_event(
     *,
     event_id: str,
@@ -32,6 +44,8 @@ async def emit_sponsor_event(
         "event_id": event_id,
         "sponsor": sponsor,
         "action": action,
+        # Callers may operate on account/medical/payment data. Sponsor telemetry
+        # exposes only an explicit non-secret summary, never raw task prompts.
         "detail": detail,
         "ts": time.time(),
     })
@@ -53,18 +67,27 @@ async def safe_call(
     """
     if not has_key:
         await emit_sponsor_event(
-            event_id=event_id, sponsor=sponsor, action="stubbed", detail=stub_detail,
+            event_id=event_id,
+            sponsor=sponsor,
+            action="not_configured",
+            detail="provider integration is not configured",
         )
         return None
     try:
         result = await real_call()
         await emit_sponsor_event(
-            event_id=event_id, sponsor=sponsor, action=action, detail=str(result)[:160] if result else None,
+            event_id=event_id,
+            sponsor=sponsor,
+            action=action,
+            detail=_result_shape(result),
         )
         return result
     except Exception as e:  # broad on purpose — demo must not die on sponsor failure
         log.exception("sponsor %s.%s failed", sponsor, action)
         await emit_sponsor_event(
-            event_id=event_id, sponsor=sponsor, action="error", detail=f"{type(e).__name__}: {str(e)[:140]}",
+            event_id=event_id,
+            sponsor=sponsor,
+            action="error",
+            detail=f"{type(e).__name__}; provider details redacted",
         )
         return None

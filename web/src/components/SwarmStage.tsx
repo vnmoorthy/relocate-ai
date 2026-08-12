@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { AgentCell } from "@/components/AgentCell";
-import { ALL_AGENTS } from "@/lib/types";
+import { ALL_AGENTS, type PavoTier } from "@/lib/types";
+import { tierMeta } from "@/lib/tiers";
+import type { DashboardConnection } from "@/lib/dashboard-state";
 
 const PHONE_E164 = "+16184149537";
 const PHONE_DISPLAY = "+1 (618) 414-9537";
@@ -27,7 +29,10 @@ interface Props {
     Array<{ role: string; text: string; ts: number; turn: number; tier?: string }>
   >;
   routingDecisions: RoutingDecision[];
+  totalDecisions: number;
+  tierCounts: Partial<Record<PavoTier, number>>;
   eventId: string | null;
+  connection: DashboardConnection;
 }
 
 /**
@@ -35,19 +40,36 @@ interface Props {
  *
  * Pre-call: only the glowing singularity is visible — phone number + tap-to-call CTA.
  *
- * On first event: every agent cell (ALL_AGENTS.length, currently 17) bursts
- * out from the core and arranges on a single elliptical orbit around the
- * singularity. All cells are the same size, same affordances — they all do
- * real work (subject to conditional dispatch in marketplace.pick_specialists).
- * Card geometry scales down when N grows so cells never overlap.
+ * On sufficiently wide screens, agent cells orbit the singularity. Compact
+ * screens use a readable grid and keep non-dispatched conditional agents in
+ * standby rather than implying that they ran.
  *
  * During the call: every routing decision spawns a tier-colored particle that flies
  * from the originating cell back to the core (mint=Gemma-local, amber=Gemini Flash,
  * magenta=Claude Opus).
  */
-export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId }: Props) {
+export function SwarmStage({
+  agentStates,
+  transcripts,
+  routingDecisions,
+  totalDecisions,
+  tierCounts,
+  eventId,
+  connection,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const demoMode = connection === "demo";
+  const liveConnected = connection === "live";
+  const stageModeLabel = connection === "demo"
+    ? "demo replay"
+    : connection === "live"
+      ? "live dashboard"
+      : connection === "reconnecting"
+        ? "dashboard reconnecting"
+        : connection === "offline"
+          ? "dashboard offline"
+          : "awaiting live service";
 
   useEffect(() => {
     const update = () => {
@@ -106,8 +128,7 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
 
   // Build positions for every agent. Outer indices: 0, 1, ..., outerCount-1
   // → those map to ALL_AGENTS[0..outerCount-1]. Inner indices follow.
-  const positions = useMemo(() => {
-    return ALL_AGENTS.map((_, i) => {
+  const positions = ALL_AGENTS.map((_, i) => {
       const onOuter = i < outerCount;
       const ring = onOuter ? outer : (inner ?? outer);
       const idxInRing = onOuter ? i : (i - outerCount);
@@ -126,77 +147,47 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
         onOuter,
       };
     });
-  }, [cx, cy, outer.rx, outer.ry, outer.cardW, outer.cardH,
-      inner?.rx, inner?.ry, inner?.cardW, inner?.cardH,
-      outerCount, innerCount]);
-
-  // For SVG-line stroking and singularity sizing we use the outer ring's card.
-  const cardW = outer.cardW;
-  const cardH = outer.cardH;
 
   const callStarted = !!eventId;
 
-  // Spawn-once tracker. On first eventId arriving, mark all agents as "spawning" at once.
-  const firstSeenRef = useRef<Record<string, number>>({});
-  Object.keys(agentStates).forEach((id) => {
-    if (firstSeenRef.current[id] === undefined) {
-      firstSeenRef.current[id] = Date.now();
-    }
-  });
-  useEffect(() => {
-    if (!callStarted) return;
-    for (const a of ALL_AGENTS) {
-      if (firstSeenRef.current[a.id] === undefined) {
-        firstSeenRef.current[a.id] = Date.now();
-      }
-    }
-  }, [callStarted]);
-
-  // Routing-decision return particles
-  type Particle = { id: string; agent_id: string; tier: string; bornAt: number };
-  const [returnParticles, setReturnParticles] = useState<Particle[]>([]);
-  const seenDecisionsRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    const fresh: Particle[] = [];
-    for (const d of routingDecisions) {
-      const key = `${d.agent_id}-${d.turn}-${d.ts}`;
-      if (seenDecisionsRef.current.has(key)) continue;
-      seenDecisionsRef.current.add(key);
-      fresh.push({ id: key, agent_id: d.agent_id, tier: d.tier, bornAt: Date.now() });
-    }
-    if (fresh.length === 0) return;
-    setReturnParticles((prev) => [...prev.slice(-30), ...fresh]);
-    const t = window.setTimeout(() => {
-      setReturnParticles((prev) => prev.filter((p) => Date.now() - p.bornAt < 2500));
-    }, 2500);
-    return () => window.clearTimeout(t);
-  }, [routingDecisions]);
-
-  // Decision counter + local share
-  const counts = useMemo(() => {
-    const c: Record<string, number> = {};
-    for (const d of routingDecisions) c[d.tier] = (c[d.tier] ?? 0) + 1;
-    return c;
-  }, [routingDecisions]);
-  const totalDecisions = routingDecisions.length;
+  const returnParticles = routingDecisions.slice(0, 16).map((decision) => ({
+    id: `${decision.agent_id}-${decision.turn}-${decision.ts}`,
+    agent_id: decision.agent_id,
+    tier: decision.tier,
+  }));
   const localShare = totalDecisions
-    ? Math.round(((counts["gemma-local"] ?? 0) / totalDecisions) * 100)
+    ? Math.round(((tierCounts["gemma-local"] ?? 0) / totalDecisions) * 100)
     : 0;
+
+  const terminalCounts = Object.values(agentStates).reduce(
+    (counts, agent) => {
+      if (agent.state === "submitted") counts.submitted += 1;
+      if (agent.state === "succeeded") counts.succeeded += 1;
+      if (agent.state === "needs-user-action") counts.action += 1;
+      if (agent.state === "failed" || agent.state === "error") counts.failed += 1;
+      return counts;
+    },
+    { submitted: 0, succeeded: 0, action: 0, failed: 0 },
+  );
 
   // Below this stage width the elliptical swarm starts looking cramped no
   // matter the ring count, so we fall back to a 2-column stacked grid.
-  // Anything >= MOBILE_SWARM_THRESHOLD renders the cinematic swarm.
-  const MOBILE_SWARM_THRESHOLD = 640;
-  const useMobileGrid = stageSize.w > 0 && stageSize.w < MOBILE_SWARM_THRESHOLD;
+  // Anything >= COMPACT_SWARM_THRESHOLD renders the cinematic swarm.
+  const COMPACT_SWARM_THRESHOLD = 1280;
+  const useMobileGrid = stageSize.w === 0 || stageSize.w < COMPACT_SWARM_THRESHOLD;
 
   if (useMobileGrid) {
     return (
-      <div ref={containerRef} className="relative w-full h-full overflow-hidden swarm-stage">
+      <div
+        ref={containerRef}
+        className="relative w-full overflow-hidden swarm-stage"
+        aria-label={`${stageModeLabel} agent swarm`}
+      >
         <div className="absolute inset-0 swarm-bg" />
-        <div className="relative z-10 h-full overflow-auto p-3">
+        <div className="relative z-10 p-3">
           <div className="text-center mb-4">
-            <div className="text-[9px] tracking-[0.24em] uppercase text-[var(--ink-500)]">
-              Relocate · live
+            <div className={`text-[9px] tracking-[0.24em] uppercase ${demoMode ? "text-[var(--amber)]" : "text-[var(--mint)]"}`}>
+              Relocate · {stageModeLabel}
             </div>
             <a
               href={`tel:${PHONE_E164}`}
@@ -213,9 +204,13 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
             </a>
           </div>
           {callStarted && (
-            <div className="grid grid-cols-2 gap-2">
+            <>
+              <p className="mb-3 text-center text-[10px] font-mono-tight text-[var(--ink-500)]" aria-live="polite">
+                {totalDecisions} decisions · {terminalCounts.submitted} {demoMode ? "simulated submissions" : "submitted"} · {terminalCounts.succeeded} succeeded · {terminalCounts.action} need action · {terminalCounts.failed} failed
+              </p>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
               {ALL_AGENTS.map((agent) => (
-                <div key={agent.id} className="h-[110px]">
+                <div key={agent.id} className="h-[126px] min-w-0">
                   <AgentCell
                     agentId={agent.id}
                     name={agent.name}
@@ -223,10 +218,12 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
                     state={agentStates[agent.id]?.state}
                     sinceTs={agentStates[agent.id]?.sinceTs}
                     transcript={transcripts[agent.id] ?? []}
+                    demoMode={demoMode}
                   />
                 </div>
               ))}
             </div>
+            </>
           )}
         </div>
       </div>
@@ -234,7 +231,7 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
   }
 
   return (
-    <div ref={containerRef} className="relative w-full h-full overflow-hidden swarm-stage">
+    <div ref={containerRef} className="relative w-full min-h-[760px] overflow-hidden swarm-stage" aria-label={`${stageModeLabel} agent swarm`}>
       <div className="absolute inset-0 swarm-bg" />
 
       {/* Connection lines (only after call started) */}
@@ -242,6 +239,8 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
         <svg
           className="absolute inset-0 w-full h-full pointer-events-none"
           style={{ zIndex: 1 }}
+          aria-hidden="true"
+          focusable="false"
         >
           {ALL_AGENTS.map((agent, i) => {
             const p = positions[i];
@@ -277,12 +276,14 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
       <svg
         className="absolute inset-0 w-full h-full pointer-events-none"
         style={{ zIndex: 2 }}
+        aria-hidden="true"
+        focusable="false"
       >
         {returnParticles.map((p) => {
           const idx = ALL_AGENTS.findIndex((s) => s.id === p.agent_id);
           if (idx === -1 || !positions[idx]) return null;
           const target = positions[idx];
-          const color = tierColor(p.tier);
+          const color = tierMeta(p.tier).color;
           // Path: core (cx,cy) → cell. Particle is PAVO dispatching the
           // routing decision OUT to the agent that's executing it.
           return (
@@ -311,14 +312,14 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
           zIndex: 3,
         }}
       >
-        <div className="swarm-core-ring swarm-core-ring-outer" />
-        <div className="swarm-core-ring swarm-core-ring-mid" />
-        <div className="swarm-core-ring swarm-core-ring-inner" />
+        <div className="swarm-core-ring swarm-core-ring-outer" aria-hidden="true" />
+        <div className="swarm-core-ring swarm-core-ring-mid" aria-hidden="true" />
+        <div className="swarm-core-ring swarm-core-ring-inner" aria-hidden="true" />
         <div className="swarm-core-center">
           {!callStarted ? (
             <div className="flex flex-col items-center gap-1.5 px-1 pointer-events-auto">
               <span className="text-[8px] tracking-[0.24em] uppercase text-[var(--ink-500)]">
-                Relocate · live
+                Relocate · {stageModeLabel}
               </span>
               <a
                 href={`tel:${PHONE_E164}`}
@@ -342,7 +343,7 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
           ) : (
             <div className="flex flex-col items-center gap-0.5">
               <span className="text-[8px] tracking-[0.24em] uppercase text-[var(--ink-500)]">
-                PAVO core
+                {demoMode ? "Demo router" : liveConnected ? "PAVO event feed" : "Dashboard"}
               </span>
               <span className="font-display text-[44px] leading-none mt-1 text-[var(--mint)] font-mono-tight">
                 {totalDecisions}
@@ -352,10 +353,16 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
               </span>
               <span className="mt-2 text-[10px] font-mono-tight">
                 <span className="text-[var(--mint)]">{localShare}%</span>
-                <span className="text-[var(--ink-500)] ml-1">on M3 Air</span>
+                <span className="text-[var(--ink-500)] ml-1">local-route share</span>
               </span>
               <span className="text-[9px] font-mono-tight text-[var(--ink-500)] mt-1">
-                event {eventId}
+                {terminalCounts.submitted} {demoMode ? "simulated" : "submitted"} · {terminalCounts.succeeded} succeeded
+              </span>
+              <span className="text-[8px] font-mono-tight text-[var(--ink-500)] mt-1">
+                {terminalCounts.action} action · {terminalCounts.failed} failed
+              </span>
+              <span className="text-[8px] font-mono-tight text-[var(--ink-500)] mt-1">
+                {demoMode ? "synthetic session" : "event identifier hidden"}
               </span>
             </div>
           )}
@@ -367,26 +374,24 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
         ALL_AGENTS.map((agent, i) => {
           const pos = positions[i];
           if (!pos) return null;
-          const hasSpawned = !!firstSeenRef.current[agent.id];
           const delay = i * 55;
+          const cellStyle: CSSProperties & { "--from-x": string; "--from-y": string } = {
+            left: pos.x,
+            top: pos.y,
+            width: pos.cardW,
+            height: pos.cardH,
+            zIndex: pos.onOuter ? 4 : 5,
+            animation: `swarmSpawn 0.95s cubic-bezier(0.22, 1, 0.36, 1) ${delay}ms backwards`,
+            "--from-x": `${cx - pos.x - pos.cardW / 2}px`,
+            "--from-y": `${cy - pos.y - pos.cardH / 2}px`,
+          };
           return (
             <div
               key={agent.id}
               className={`absolute swarm-cell ${agent.id === "buyer" ? "swarm-cell-buyer" : ""} ${
                 pos.onOuter ? "" : "swarm-cell-inner"
               }`}
-              style={{
-                left: pos.x,
-                top: pos.y,
-                width: pos.cardW,
-                height: pos.cardH,
-                zIndex: pos.onOuter ? 4 : 5,
-                animation: hasSpawned
-                  ? `swarmSpawn 0.95s cubic-bezier(0.22, 1, 0.36, 1) ${delay}ms backwards`
-                  : "none",
-                ["--from-x" as any]: `${cx - pos.x - pos.cardW / 2}px`,
-                ["--from-y" as any]: `${cy - pos.y - pos.cardH / 2}px`,
-              }}
+              style={cellStyle}
             >
               <AgentCell
                 agentId={agent.id}
@@ -395,17 +400,11 @@ export function SwarmStage({ agentStates, transcripts, routingDecisions, eventId
                 state={agentStates[agent.id]?.state}
                 sinceTs={agentStates[agent.id]?.sinceTs}
                 transcript={transcripts[agent.id] ?? []}
+                demoMode={demoMode}
               />
             </div>
           );
         })}
     </div>
   );
-}
-
-function tierColor(t: string): string {
-  if (t === "gemma-local") return "#00ffa3";
-  if (t === "gemini-flash") return "#ffc94a";
-  if (t === "claude-opus" || t === "claude-haiku") return "#ff4dc1";
-  return "#6e6e7a";
 }

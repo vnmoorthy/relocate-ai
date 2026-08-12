@@ -1,6 +1,6 @@
-"""Update all 16 AgentPhone agents' webhook URLs to the current PUBLIC_BASE_URL.
+"""Update provisioned AgentPhone webhook URLs to the current PUBLIC_BASE_URL.
 
-Use when the localhost.run tunnel URL changes (which it does every ~30-60 min).
+Use when a development tunnel URL changes.
 Does NOT create new agents or buy new numbers — only updates webhook URL/secret.
 Updates agents.json in place with any new webhook_secrets returned.
 """

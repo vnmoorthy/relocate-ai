@@ -11,11 +11,11 @@ import io
 import time
 from typing import Any
 
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import LETTER
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import inch
-from reportlab.platypus import (
+from reportlab.lib import colors  # type: ignore[import-untyped]
+from reportlab.lib.pagesizes import LETTER  # type: ignore[import-untyped]
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet  # type: ignore[import-untyped]
+from reportlab.lib.units import inch  # type: ignore[import-untyped]
+from reportlab.platypus import (  # type: ignore[import-untyped]
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -110,7 +110,7 @@ def build_receipt_pdf(
     flow.append(Paragraph("Relocate", styles["brand"]))
     flow.append(
         Paragraph(
-            "AI RELOCATION OS &nbsp;·&nbsp; BUILT ON PAVO &nbsp;·&nbsp; TMLR 2026",
+            "RELOCATION WORKFLOW STATUS &nbsp;·&nbsp; ROUTED BY PAVO",
             styles["tag"],
         )
     )
@@ -177,18 +177,28 @@ def build_receipt_pdf(
     decisions = pavo_summary.get("decisions", 0)
     local_pct = pavo_summary.get("local_share_pct", 0)
     pavo_cents = pavo_summary.get("pavo_cents", 0.0)
-    baseline_cents = pavo_summary.get("baseline_cents", 0.0)
-    saved_cents = max(0.0, baseline_cents - pavo_cents)
-    ratio = (baseline_cents / pavo_cents) if pavo_cents > 0 else 0
+    raw_baseline = pavo_summary.get("baseline_cents")
+    baseline_cents = (
+        float(raw_baseline)
+        if isinstance(raw_baseline, (int, float)) and not isinstance(raw_baseline, bool)
+        else None
+    )
 
     pavo_rows = [
         ["Routing decisions made", str(decisions)],
         ["Routed to Gemma-local", f"{local_pct}%"],
         ["Relocate LLM spend (PAVO-routed)", f"${pavo_cents / 100:.4f}"],
-        ["Fixed-cloud counterfactual", f"${baseline_cents / 100:.4f}"],
-        ["Saved this call", f"${saved_cents / 100:.4f}"],
-        ["Cheaper than fixed-cloud", f"{ratio:.1f}×" if ratio else "—"],
     ]
+    if baseline_cents is None:
+        pavo_rows.append(["Fixed-cloud counterfactual", "Not measured"])
+    else:
+        saved_cents = max(0.0, baseline_cents - pavo_cents)
+        ratio = (baseline_cents / pavo_cents) if pavo_cents > 0 else 0
+        pavo_rows.extend([
+            ["Fixed-cloud counterfactual", f"${baseline_cents / 100:.4f}"],
+            ["Saved this call", f"${saved_cents / 100:.4f}"],
+            ["Cheaper than fixed-cloud", f"{ratio:.1f}×" if ratio else "—"],
+        ])
     pavo_tbl = Table(pavo_rows, colWidths=[3.4 * inch, 3.0 * inch])
     pavo_tbl.setStyle(
         TableStyle(
@@ -204,14 +214,12 @@ def build_receipt_pdf(
     )
     flow.append(pavo_tbl)
 
-    # Paper citation
+    # Counterfactual costs are displayed only when a measured value was supplied.
     flow.append(Spacer(1, 0.2 * inch))
     flow.append(
         Paragraph(
-            "From the paper (TMLR 2026): PAVO is 25% cheaper, 34% faster on median latency, "
-            "71% less energy, and 7.9× fewer coherence failures vs. fixed-cloud baseline "
-            "on the 50,000-turn PAVO-Bench dataset. "
-            "<font color='#00C281'>huggingface.co/datasets/vnmoorthy/pavo-bench</font>",
+            "This document reports only observed workflow states and provider receipts. "
+            "A submitted request does not prove the underlying service change occurred.",
             styles["small"],
         )
     )
@@ -219,8 +227,7 @@ def build_receipt_pdf(
     flow.append(Spacer(1, 0.25 * inch))
     flow.append(
         Paragraph(
-            "Questions? Reply to this email. Relocate handles relocation tasks so you can focus on "
-            "everything else moving rips out from under you.",
+            "Keep this status record with any provider-issued confirmations.",
             styles["small"],
         )
     )

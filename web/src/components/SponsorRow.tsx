@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { sponsorStatus, type SponsorStatus } from "@/lib/dashboard-state";
 
 interface SponsorEvent {
   sponsor: string;
@@ -11,95 +11,75 @@ interface SponsorEvent {
 
 interface Props {
   sponsorEvents: SponsorEvent[];
+  demoMode: boolean;
 }
 
-type Status = "real" | "stub" | "error" | "idle";
+const SPONSORS = [
+  { id: "agentphone", name: "AgentPhone", role: "Inbound voice" },
+  { id: "deepmind", name: "Google DeepMind", role: "Gemma + Gemini" },
+  { id: "agentmail", name: "AgentMail", role: "Email artifacts" },
+  { id: "browser_use", name: "Browser Use", role: "Web forms" },
+  { id: "lob", name: "Lob", role: "Certified mail" },
+  { id: "supermemory", name: "Supermemory", role: "Persist + recall" },
+  { id: "moss", name: "Moss", role: "Runbook RAG" },
+] as const;
 
-// v2 sponsor strip — only sponsors actually wired into a shipping agent.
-// Status is the *default* (when no live event has fired yet); a live event
-// promotes the card to "just-fired" pulse via the recentlyFired mechanism.
-const SPONSORS: Array<{
-  id: string;
-  name: string;
-  role: string;
-  status: Status;
-}> = [
-  { id: "agentphone", name: "AgentPhone", role: "Inbound voice", status: "real" },
-  { id: "deepmind", name: "Google DeepMind", role: "Gemma + Gemini (PAVO)", status: "real" },
-  { id: "agentmail", name: "AgentMail", role: "Email artifacts (6 agents)", status: "real" },
-  { id: "browser_use", name: "Browser Use", role: "Web forms (8 agents)", status: "real" },
-  { id: "lob", name: "Lob", role: "Certified mail (2 agents)", status: "real" },
-  { id: "supermemory", name: "Supermemory", role: "Persist + recall", status: "real" },
-  { id: "moss", name: "Moss", role: "Runbook RAG", status: "stub" },
-];
-
-const STATUS_STYLE: Record<Status, { pill: string; dot: string }> = {
-  real: {
-    pill: "text-[var(--mint)] border-[rgba(0,255,163,0.35)] bg-[rgba(0,255,163,0.06)]",
+const STATUS_STYLE: Record<SponsorStatus, { pill: string; dot: string; label: string }> = {
+  reported: {
+    pill: "text-[var(--mint)] border-[rgba(0,212,154,0.35)] bg-[rgba(0,212,154,0.06)]",
     dot: "bg-[var(--mint)]",
+    label: "REPORTED",
   },
-  stub: {
-    pill: "text-[var(--ink-500)] border-[var(--border-mid)] bg-[rgba(255,255,255,0.02)]",
-    dot: "bg-[var(--ink-500)]",
+  demo: {
+    pill: "text-[var(--amber)] border-[rgba(251,191,36,0.35)] bg-[rgba(251,191,36,0.06)]",
+    dot: "bg-[var(--amber)]",
+    label: "DEMO",
+  },
+  fallback: {
+    pill: "text-[var(--tier-haiku)] border-[rgba(96,165,250,0.35)] bg-[rgba(96,165,250,0.06)]",
+    dot: "bg-[var(--tier-haiku)]",
+    label: "FALLBACK",
   },
   error: {
-    pill: "text-[var(--red)] border-[rgba(255,92,92,0.35)] bg-[rgba(255,92,92,0.06)]",
+    pill: "text-[var(--red)] border-[rgba(248,113,113,0.35)] bg-[rgba(248,113,113,0.06)]",
     dot: "bg-[var(--red)]",
+    label: "ERROR",
   },
   idle: {
-    pill: "text-[var(--ink-500)] border-[var(--border-soft)] bg-transparent",
+    pill: "text-[var(--ink-500)] border-[var(--border-mid)] bg-transparent",
     dot: "bg-[var(--ink-700)]",
+    label: "NO EVENT",
   },
 };
 
-const STATUS_LABEL: Record<Status, string> = {
-  real: "REAL",
-  stub: "STUB",
-  error: "ERR",
-  idle: "IDLE",
-};
-
-export function SponsorRow({ sponsorEvents }: Props) {
-  // Track recent firings for the "just fired" pulse effect.
-  const [recentlyFired, setRecentlyFired] = useState<Record<string, number>>({});
-
-  useEffect(() => {
-    const updates: Record<string, number> = {};
-    const now = Date.now();
-    for (const ev of sponsorEvents) {
-      if (now - ev.ts * 1000 < 4000) {
-        updates[ev.sponsor] = ev.ts;
-      }
-    }
-    setRecentlyFired(updates);
-  }, [sponsorEvents]);
-
+export function SponsorRow({ sponsorEvents, demoMode }: Props) {
   return (
-    <section className="panel px-3 py-2.5 flex items-center gap-2 overflow-x-auto scrollbar-clean">
-      <span className="text-[9px] tracking-[0.18em] text-[var(--ink-500)] uppercase shrink-0 pr-2 border-r border-[var(--border-soft)]">
-        Sponsors
-      </span>
-      {SPONSORS.map((s) => {
-        const style = STATUS_STYLE[s.status];
-        const justFired = !!recentlyFired[s.id];
-        return (
-          <div
-            key={s.id}
-            className={`flex items-center gap-2 px-2.5 py-1 rounded-md border shrink-0 transition-shadow ${
-              justFired ? "live-pulse" : ""
-            } bg-[var(--bg-elev)] border-[var(--border-soft)]`}
-          >
-            <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
-            <span className="text-[11px] font-medium text-[var(--ink-100)]">{s.name}</span>
-            <span className="text-[9px] text-[var(--ink-500)]">{s.role}</span>
-            <span
-              className={`text-[8px] font-semibold tracking-[0.14em] px-1.5 py-0.5 rounded border ${style.pill}`}
+    <section className="panel px-3 py-2.5 flex items-center gap-2 overflow-x-auto scrollbar-clean" aria-labelledby="integration-heading">
+      <h3 id="integration-heading" className="text-[9px] tracking-[0.18em] text-[var(--ink-500)] uppercase shrink-0 pr-2 border-r border-[var(--border-soft)]">
+        Integrations
+      </h3>
+      <div className="flex items-center gap-2" role="list" aria-live="polite">
+        {SPONSORS.map((sponsor) => {
+          const event = sponsorEvents.find((candidate) => candidate.sponsor === sponsor.id);
+          const status = sponsorStatus(event, demoMode);
+          const style = STATUS_STYLE[status];
+          const isLatest = sponsorEvents[0]?.sponsor === sponsor.id;
+          return (
+            <div
+              key={sponsor.id}
+              role="listitem"
+              className={`flex items-center gap-2 px-2.5 py-1 rounded-md border shrink-0 transition-shadow ${isLatest ? "rise-in" : ""} bg-[var(--bg-elev)] border-[var(--border-soft)]`}
             >
-              {STATUS_LABEL[s.status]}
-            </span>
-          </div>
-        );
-      })}
+              <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} aria-hidden="true" />
+              <span className="text-[11px] font-medium text-[var(--ink-100)]">{sponsor.name}</span>
+              <span className="text-[9px] text-[var(--ink-500)]">{sponsor.role}</span>
+              <span className={`text-[8px] font-semibold tracking-[0.14em] px-1.5 py-0.5 rounded border ${style.pill}`}>
+                {style.label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }

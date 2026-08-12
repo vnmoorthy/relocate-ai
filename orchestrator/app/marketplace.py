@@ -15,10 +15,8 @@ for dashboard rehearsal only — it is NOT used to make shipping artifacts.)
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
-from pathlib import Path
 from typing import Any
 
 from .config import settings
@@ -27,22 +25,124 @@ from .integrations import browser_use as bu
 from .integrations import lob_mail as lob
 from .integrations.hipaa_pdf import build_hipaa_release_pdf
 from .integrations.moss import retrieve_runbooks_for_specialists
-from .integrations.supermemory import recall_user_profile
-from .personas import all_specialists, Persona, by_id
+from .integrations.supermemory import persist_move, recall_user_profile
+from .personas import all_specialists, Persona
 from .state import state, SpecialistCallContext
 from .ws import ws_broker
 
 
 log = logging.getLogger(__name__)
 
+TERMINAL_PROVIDER_STATES = frozenset({
+    "submitted", "succeeded", "needs-user-action", "failed", "voicemail",
+})
 
-def _load_agents_registry() -> dict[str, dict[str, Any]]:
-    """agents.json shape: {"agents": [{"agent_id": ..., "agentphone_id": ..., ...}]}"""
-    path = Path(__file__).parent.parent / "agents.json"
-    if not path.exists():
-        return {}
-    data = json.loads(path.read_text())
-    return {entry["agent_id"]: entry for entry in data.get("agents", [])}
+
+class NeedsUserAction(RuntimeError):
+    """The provider action cannot safely continue without human intervention."""
+
+
+# These workflows have legal, medical, or signature boundaries that the
+# repository does not yet implement. Keeping the policy at dispatch prevents a
+# configured provider key (or a direct adapter mock) from bypassing the guard.
+MANDATORY_USER_ACTION: dict[str, str] = {
+    "comcast_cancel": (
+        "A customer-reviewed, signed cancellation-letter workflow is required "
+        "before certified mail can be purchased."
+    ),
+    "id_card_update": (
+        "A customer-reviewed, wet-signed DMV form workflow is required before "
+        "certified mail can be purchased."
+    ),
+    "pcp_transfer": (
+        "A secure HIPAA consent and electronic-signature ceremony is required "
+        "before medical records can be requested."
+    ),
+    "pharmacy": (
+        "A secure patient-authorized prescription-transfer workflow is required "
+        "before pharmacy data can be transmitted."
+    ),
+}
+
+
+# Explicit execution prerequisites. These are intentionally narrower than the
+# buyer's conversational schema: a task is not allowed to contact a provider
+# until every field it actually transmits is present.
+REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
+    "pge_shutoff": (
+        "origin_address", "move_date", "pge_account_number", "pge_last4_ssn",
+    ),
+    "comcast_cancel": (
+        "origin_address", "move_date", "user_name", "user_email",
+        "comcast_account_number", "comcast_authorization_signed",
+    ),
+    "geico_address": (
+        "destination_address", "move_date", "geico_email", "geico_password",
+    ),
+    "usps_coa": (
+        "origin_address", "destination_address", "destination_zip", "move_date",
+        "user_email", "usps_verify_card", "usps_verify_exp", "usps_verify_cvv",
+    ),
+    "spectrum_austin": (
+        "destination_address", "move_date", "user_name", "user_email", "user_phone",
+    ),
+    "mover_quote": (
+        "origin_address", "destination_address", "move_date", "user_email",
+    ),
+    "school_district": (
+        "destination_address", "move_date", "user_email", "child_name", "child_grade",
+    ),
+    "pcp_transfer": (
+        "origin_address", "user_name", "user_email", "user_phone", "user_dob",
+        "hipaa_authorization_signed", "hipaa_signature_name", "hipaa_signature_date",
+    ),
+    "vet_transfer": (
+        "user_name", "user_email", "pet_name", "pet_species", "vet_email",
+    ),
+    "gym_cancel": (
+        "user_name", "user_email", "move_date", "equinox_member_id",
+        "gym_authorization_signed",
+    ),
+    "pharmacy": (
+        "destination_address", "user_name", "user_email", "user_dob",
+        "source_pharmacy_name", "source_pharmacy_phone", "rx_numbers",
+    ),
+    "flight_book": (
+        "origin_address", "destination_address", "move_date",
+    ),
+    "water_board": (
+        "origin_address", "move_date", "sfpuc_username", "sfpuc_password",
+    ),
+    "uscis_ar11": (
+        "origin_address", "destination_address", "move_date", "user_name",
+        "user_dob", "a_number",
+    ),
+    "id_card_update": (
+        "origin_address", "destination_address", "move_date", "user_name",
+        "user_dob", "ca_dl_number", "dmv_authorization_signed",
+    ),
+    "bank_notify": ("destination_address", "move_date", "user_email"),
+}
+
+
+def missing_prerequisites(agent_id: str, spec: dict[str, Any]) -> list[str]:
+    missing: list[str] = []
+    for field_name in REQUIRED_FIELDS.get(agent_id, ()):
+        value = spec.get(field_name)
+        if field_name.endswith("_signed"):
+            present = value is True
+        else:
+            present = value is not None and value != ""
+        if not present:
+            missing.append(field_name)
+    return missing
+
+
+def _public_artifact_summary(p: Persona, artifact: dict[str, Any]) -> str:
+    """Describe an artifact without broadcasting values, tokens, or PII."""
+    safe_keys = sorted(k for k in artifact if "token" not in k.lower())
+    key_text = ", ".join(safe_keys[:8]) or "provider receipt"
+    return f"{p.name}: request submitted; receipt fields: {key_text}"
 
 
 def pick_specialists(spec: dict[str, Any]) -> list[Persona]:
@@ -82,7 +182,7 @@ async def _emit_agent_state(event_id: str, agent_id: str, new_state: str) -> Non
     if ctx is None:
         return
     ctx.state = new_state
-    if new_state == "closed":
+    if new_state in TERMINAL_PROVIDER_STATES:
         ctx.closed_at = time.time()
     await ws_broker.broadcast({
         "type": "agent_state",
@@ -91,6 +191,28 @@ async def _emit_agent_state(event_id: str, agent_id: str, new_state: str) -> Non
         "state": new_state,
         "ts": time.time(),
     })
+
+
+async def _mark_needs_user_action(
+    event_id: str,
+    agent_id: str,
+    *,
+    blocker_kind: str,
+    blockers: list[str],
+) -> None:
+    event = state.events.get(event_id)
+    if event is None or agent_id not in event.specialist_calls:
+        return
+    ctx = event.specialist_calls[agent_id]
+    ctx.terminal_outcome = "needs_user_action"
+    ctx.blocker_kind = blocker_kind
+    ctx.blockers = blockers
+    ctx.bid = {
+        "outcome": "needs_user_action",
+        "reason": blocker_kind,
+        "missing_fields": blockers if blocker_kind == "missing_fields" else [],
+    }
+    await _emit_agent_state(event_id, agent_id, "needs-user-action")
 
 
 async def fan_out(event_id: str, spec: dict[str, Any]) -> None:
@@ -107,8 +229,9 @@ async def fan_out(event_id: str, spec: dict[str, Any]) -> None:
     asyncio.create_task(
         retrieve_runbooks_for_specialists(event_id, spec, [p.category for p in specialists])
     )
-    homeowner_phone = spec.get("homeowner_phone", settings.demo_homeowner_number)
-    asyncio.create_task(recall_user_profile(event_id, homeowner_phone))
+    user_phone = spec.get("user_phone")
+    if user_phone:
+        asyncio.create_task(recall_user_profile(event_id, user_phone))
 
     # Create SpecialistCallContext + announce dispatched for every chosen specialist.
     for p in specialists:
@@ -122,24 +245,85 @@ async def fan_out(event_id: str, spec: dict[str, Any]) -> None:
             "ts": ctx.started_at,
         })
 
-    # Run every specialist concurrently. _run_one captures its own exceptions and
-    # marks the ctx as error — one specialist failing must not crash the wave.
-    await asyncio.gather(*[_run_one(p, event_id, spec) for p in specialists])
+    # Only provider-ready specialists may execute. Missing prerequisites are an
+    # honest NEEDS_USER_ACTION outcome, never a fabricated fallback success.
+    ready: list[Persona] = []
+    for p in specialists:
+        missing = missing_prerequisites(p.agent_id, spec)
+        if missing:
+            await _mark_needs_user_action(
+                event_id,
+                p.agent_id,
+                blocker_kind="missing_fields",
+                blockers=missing,
+            )
+        else:
+            ready.append(p)
+
+    # Run ready specialists concurrently. _run_one captures its own exceptions so
+    # one provider cannot crash the wave.
+    await asyncio.gather(*[_run_one(p, event_id, spec) for p in ready])
+    await finalize_event(event_id)
+
+
+async def resume_ready_specialists(event_id: str) -> None:
+    """Resume field-blocked specialists after a late/corrected spec update."""
+    event = state.events.get(event_id)
+    if event is None or event.finalized_at is not None:
+        return
+
+    personas = {p.agent_id: p for p in pick_specialists(event.spec)}
+    ready: list[Persona] = []
+    for agent_id, ctx in event.specialist_calls.items():
+        if ctx.state != "needs-user-action" or ctx.blocker_kind != "missing_fields":
+            continue
+        persona = personas.get(agent_id)
+        if persona is None:
+            continue
+        missing = missing_prerequisites(agent_id, event.spec)
+        if missing:
+            ctx.blockers = missing
+            if isinstance(ctx.bid, dict):
+                ctx.bid["missing_fields"] = missing
+            continue
+        ctx.state = "dispatched"
+        ctx.terminal_outcome = None
+        ctx.blocker_kind = None
+        ctx.blockers = []
+        ctx.bid = None
+        ctx.closed_at = None
+        event.awaiting_user_notified = False
+        await _emit_agent_state(event_id, agent_id, "dispatched")
+        ready.append(persona)
+
+    if ready:
+        await asyncio.gather(*[_run_one(p, event_id, event.spec) for p in ready])
+    await finalize_event(event_id)
 
 
 async def _run_one(p: Persona, event_id: str, spec: dict[str, Any]) -> None:
     """Dispatch one specialist to its mode-specific handler.
 
-    Graceful degradation: if the primary integration's API key is missing
-    (BROWSER_USE_API_KEY / LOB_API_KEY), we fall back to an AgentMail
-    "structured playbook" email — the customer gets a real artifact with
-    the exact steps to complete the task themselves. Other errors still
-    surface as an error state on the dashboard.
+    Missing/obsolete integrations are terminal NEEDS_USER_ACTION outcomes.
+    They are never converted into a fake provider completion.
     """
     await _emit_agent_state(event_id, p.agent_id, "calling")
+    policy_reason = MANDATORY_USER_ACTION.get(p.agent_id)
+    if policy_reason:
+        await _mark_needs_user_action(
+            event_id,
+            p.agent_id,
+            blocker_kind="secure_user_workflow_required",
+            blockers=[policy_reason],
+        )
+        return
+
     try:
         if p.voice_mode == "browser":
-            artifact = await _run_browser(p, event_id, spec)
+            # The repository's Browser Use adapter is v1. The provider now uses
+            # v2 tasks + a protected secrets channel, so fail safely until that
+            # migration is implemented and contract-tested.
+            raise NeedsUserAction("Browser Use v1 adapter disabled pending v2 migration")
         elif p.voice_mode == "email":
             artifact = await _run_email(p, event_id, spec)
         elif p.voice_mode == "mail":
@@ -148,92 +332,151 @@ async def _run_one(p: Persona, event_id: str, spec: dict[str, Any]) -> None:
             raise RuntimeError(
                 f"specialist {p.agent_id} has unsupported voice_mode={p.voice_mode}"
             )
-        # Stamp the artifact on the ctx + close.
+        if not isinstance(artifact, dict) or not artifact:
+            raise RuntimeError(f"provider returned no artifact for {p.agent_id}")
+
+        # A provider receipt proves submission, not downstream completion.
         event = state.events[event_id]
         ctx = event.specialist_calls[p.agent_id]
         ctx.bid = artifact
+        ctx.terminal_outcome = "submitted"
+        ctx.blocker_kind = None
+        ctx.blockers = []
+        public_summary = _public_artifact_summary(p, artifact)
         ctx.transcript.append({
-            "role": "agent", "text": f"Bid: {json.dumps(artifact)[:240]}",
-            "pavo_tier": "fallback-mock", "ts": time.time(),
+            "role": "agent", "text": public_summary,
+            "ts": time.time(),
         })
         await ws_broker.broadcast({
             "type": "transcript_turn", "event_id": event_id, "agent_id": p.agent_id,
             "turn": 1, "role": "agent",
-            "text": f"Bid: {json.dumps(artifact)[:240]}",
+            "text": public_summary,
             "ts": time.time(),
         })
-        await _emit_agent_state(event_id, p.agent_id, "closed")
+        await _emit_agent_state(event_id, p.agent_id, "submitted")
+    except NeedsUserAction as e:
+        log.warning("specialist %s needs user action: %s", p.agent_id, e)
+        await _mark_needs_user_action(
+            event_id,
+            p.agent_id,
+            blocker_kind="integration_unavailable",
+            blockers=[str(e)],
+        )
     except RuntimeError as e:
-        msg = str(e)
-        if "_API_KEY missing" in msg:
-            # Soft fallback: deliver the per-agent playbook email instead of
-            # the autonomous form submission / certified letter. Customer gets
-            # a real, verifiable artifact (real AgentMail message_id).
-            log.info("specialist %s key-missing → AgentMail playbook fallback", p.agent_id)
-            try:
-                fallback = await _email_playbook_fallback(p, event_id, spec, missing_key=msg)
-                event = state.events[event_id]
-                ctx = event.specialist_calls[p.agent_id]
-                ctx.bid = fallback
-                ctx.transcript.append({
-                    "role": "agent",
-                    "text": f"Bid: emailed playbook — {fallback.get('message_id', '?')}",
-                    "pavo_tier": "fallback-mock",
-                    "ts": time.time(),
-                })
-                await ws_broker.broadcast({
-                    "type": "transcript_turn", "event_id": event_id, "agent_id": p.agent_id,
-                    "turn": 1, "role": "agent",
-                    "text": f"Bid: emailed playbook — {fallback.get('message_id', '?')}",
-                    "ts": time.time(),
-                })
-                await _emit_agent_state(event_id, p.agent_id, "closed")
-                return
-            except Exception as fb_e:  # noqa: BLE001
-                log.exception("playbook fallback also failed for %s", p.agent_id)
-                msg = f"primary missing key + fallback failed: {fb_e}"
-        # Other errors (or fallback failures) → real error state
+        if "_API_KEY missing" in str(e):
+            log.warning("specialist %s integration unavailable", p.agent_id)
+            await _mark_needs_user_action(
+                event_id,
+                p.agent_id,
+                blocker_kind="integration_unavailable",
+                blockers=["provider integration is not configured"],
+            )
+            return
         log.exception("specialist %s failed", p.agent_id)
-        event = state.events.get(event_id)
-        if event and p.agent_id in event.specialist_calls:
-            event.specialist_calls[p.agent_id].bid = {"error": f"{type(e).__name__}: {msg[:240]}"}
-        await _emit_agent_state(event_id, p.agent_id, "error")
+        failed_event = state.events.get(event_id)
+        if failed_event is not None and p.agent_id in failed_event.specialist_calls:
+            ctx = failed_event.specialist_calls[p.agent_id]
+            ctx.terminal_outcome = "failed"
+            ctx.bid = {"outcome": "failed", "error_type": type(e).__name__}
+        await _emit_agent_state(event_id, p.agent_id, "failed")
     except Exception as e:  # noqa: BLE001 — one specialist's failure mustn't kill the wave
         log.exception("specialist %s failed", p.agent_id)
-        event = state.events.get(event_id)
-        if event and p.agent_id in event.specialist_calls:
-            event.specialist_calls[p.agent_id].bid = {"error": f"{type(e).__name__}: {str(e)[:240]}"}
-        await _emit_agent_state(event_id, p.agent_id, "error")
+        failed_event = state.events.get(event_id)
+        if failed_event is not None and p.agent_id in failed_event.specialist_calls:
+            ctx = failed_event.specialist_calls[p.agent_id]
+            ctx.terminal_outcome = "failed"
+            ctx.bid = {"outcome": "failed", "error_type": type(e).__name__}
+        await _emit_agent_state(event_id, p.agent_id, "failed")
 
 
-async def _email_playbook_fallback(
-    p: Persona, event_id: str, spec: dict[str, Any], missing_key: str
-) -> dict[str, Any]:
-    """When a browser/mail-mode agent can't autonomously complete, send the
-    customer a structured AgentMail playbook with the exact steps to finish
-    the task themselves. Real artifact, not a stub.
+async def finalize_event(event_id: str) -> None:
+    """Finalize a provider wave exactly once when no user-blocked work remains.
+
+    Repeated calls are safe. NEEDS_USER_ACTION is reported but intentionally does
+    not finalize the event, allowing a later secure spec update to resume it.
     """
-    from .integrations.per_agent_artifacts import (
-        fire_per_agent_artifacts,
-        PLAYBOOKS,
-    )
-    homeowner_email = spec.get("homeowner_email") or spec.get("user_email") or settings.demo_email_recipient
-    if p.agent_id in PLAYBOOKS:
-        await fire_per_agent_artifacts(
-            event_id=event_id,
-            agent_id=p.agent_id,
-            spec=spec,
-            outcome_text=f"Agent prepared the task. {missing_key.split('—')[0].strip()}.",
-            homeowner_email=homeowner_email,
+    event = state.events.get(event_id)
+    if event is None or event.finalized_at is not None or event.finalization_started:
+        return
+    if not event.specialist_calls:
+        return
+
+    contexts = list(event.specialist_calls.values())
+    if any(ctx.state not in TERMINAL_PROVIDER_STATES for ctx in contexts):
+        return
+
+    needs_user = [ctx.agent_id for ctx in contexts if ctx.state == "needs-user-action"]
+    if needs_user:
+        if not event.awaiting_user_notified:
+            event.awaiting_user_notified = True
+            await ws_broker.broadcast({
+                "type": "event_waiting_for_user",
+                "event_id": event_id,
+                "agents": needs_user,
+                "count": len(needs_user),
+                "ts": time.time(),
+            })
+        return
+
+    # The flag is set before the first await so concurrent webhook/task completions
+    # cannot run the finalizer twice in this process.
+    event.finalization_started = True
+    try:
+        failed = [ctx.agent_id for ctx in contexts if ctx.state == "failed"]
+        submitted = [
+            ctx.agent_id for ctx in contexts if ctx.state in {"submitted", "succeeded"}
+        ]
+        outcome = "partial_failure" if failed else "submitted"
+
+        result_lines = [
+            f"- {ctx.agent_id}: {ctx.terminal_outcome or ctx.state}"
+            for ctx in contexts
+        ]
+        body = (
+            "Your Relocate provider-dispatch summary is ready.\n\n"
+            + "\n".join(result_lines)
+            + "\n\n'Submitted' means the provider accepted a request; it does not "
+              "claim the underlying service change is complete.\n"
         )
-        return {
-            "mode": "email_playbook",
-            "agent_id": p.agent_id,
-            "delivered_to": homeowner_email,
-            "message_id": "<async>",
-            "next_step": "customer completes the 30-second final action via the email link",
-        }
-    raise RuntimeError(f"no playbook for {p.agent_id} — cannot fall back")
+
+        email_result: dict[str, Any] | None = None
+        user_email = event.spec.get("user_email")
+        if user_email:
+            email_result = await am.send_move_package(
+                event_id=event_id,
+                to_email=user_email,
+                subject=f"Relocate provider-dispatch summary ({event_id})",
+                body_markdown=body,
+            )
+
+        persist_result: dict[str, Any] | None = None
+        user_phone = event.spec.get("user_phone")
+        if user_phone:
+            persist_result = await persist_move(
+                event_id=event_id,
+                phone_e164=user_phone,
+                spec=event.spec,
+                results={ctx.agent_id: ctx.terminal_outcome or ctx.state for ctx in contexts},
+            )
+
+        event.final_outcome = outcome
+        event.finalized_at = time.time()
+        await ws_broker.broadcast({
+            "type": "event_finalized",
+            "event_id": event_id,
+            "outcome": outcome,
+            "summary": {
+                "submitted_count": len(submitted),
+                "failed_count": len(failed),
+                "summary_email_sent": bool(email_result),
+                "memory_persisted": bool(persist_result),
+            },
+            "ts": event.finalized_at,
+        })
+    except Exception:  # noqa: BLE001 - release the in-process idempotency claim for retry
+        event.finalization_started = False
+        log.exception("event finalization failed: %s", event_id)
+        raise
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -241,7 +484,11 @@ async def _email_playbook_fallback(
 # ──────────────────────────────────────────────────────────────────────
 
 
-async def _run_browser(p: Persona, event_id: str, spec: dict[str, Any]) -> dict:
+async def _run_browser(
+    p: Persona,
+    event_id: str,
+    spec: dict[str, Any],
+) -> dict[str, Any] | None:
     """Browser-mode specialists: 8 in the v2.1 roster."""
     await _emit_agent_state(event_id, p.agent_id, "in-progress")
     if p.agent_id == "pge_shutoff":
@@ -271,7 +518,11 @@ async def _run_browser(p: Persona, event_id: str, spec: dict[str, Any]) -> dict:
     raise RuntimeError(f"no browser handler for agent {p.agent_id}")
 
 
-async def _run_email(p: Persona, event_id: str, spec: dict[str, Any]) -> dict:
+async def _run_email(
+    p: Persona,
+    event_id: str,
+    spec: dict[str, Any],
+) -> dict[str, Any] | None:
     """Email-mode specialists: 5 in the v2 roster (mover, school, pcp, vet, gym)."""
     await _emit_agent_state(event_id, p.agent_id, "in-progress")
     user_email = spec.get("user_email", settings.demo_email_recipient)
@@ -290,6 +541,8 @@ async def _run_email(p: Persona, event_id: str, spec: dict[str, Any]) -> dict:
             patient_email=user_email,
             current_provider_name="One Medical SF",
             current_provider_address="One Medical SF — current provider on file",
+            signature_name=spec["hipaa_signature_name"],
+            signature_date=spec["hipaa_signature_date"],
         )
         return await am.request_pcp_records(
             event_id=event_id, spec=spec, user_email=user_email, release_pdf_bytes=release_pdf,

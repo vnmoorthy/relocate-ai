@@ -4,6 +4,10 @@ export type AgentState =
   | "dispatched"
   | "calling"
   | "in-progress"
+  | "submitted"
+  | "succeeded"
+  | "needs-user-action"
+  | "failed"
   | "closed"
   | "voicemail"
   | "error";
@@ -16,6 +20,8 @@ export type WSEvent =
   | AgentStateEvent
   | CostUpdateEvent
   | EventCompleteEvent
+  | EventWaitingForUserEvent
+  | EventFinalizedEvent
   | SponsorEvent
   | FieldsCollectedEvent;
 
@@ -53,7 +59,8 @@ export interface CostUpdateEvent {
   type: "cost_update";
   event_id: string;
   pavo_cents: number;
-  baseline_cents: number;
+  /** Optional measured/configured counterfactual. Null means no baseline exists. */
+  baseline_cents: number | null;
   ts: number;
 }
 
@@ -61,6 +68,27 @@ export interface EventCompleteEvent {
   type: "event_complete";
   event_id: string;
   summary: Record<string, unknown>;
+  ts: number;
+}
+
+export interface EventWaitingForUserEvent {
+  type: "event_waiting_for_user";
+  event_id: string;
+  agents: string[];
+  count: number;
+  ts: number;
+}
+
+export interface EventFinalizedEvent {
+  type: "event_finalized";
+  event_id: string;
+  outcome: "submitted" | "partial_failure";
+  summary: {
+    submitted_count: number;
+    failed_count: number;
+    summary_email_sent: boolean;
+    memory_persisted: boolean;
+  };
   ts: number;
 }
 
@@ -86,12 +114,10 @@ export interface FieldsCollectedEvent {
 
 // v2 roster — 17 agents (1 buyer + 16 specialists).
 //
-// Honesty note on "100% real":
-//  - browser/email/mail mode agents complete autonomously (real artifact)
-//  - some agents (uscis_ar11, id_card_update, bank_notify) hand off the FINAL
-//    click to the customer because federal/state law or bank security require
-//    the account holder's signature or SSN. Those agents drive the form to
-//    the signature step and deliver a click-to-sign link as their artifact.
+// Provider acceptance is represented as `submitted`, not `succeeded`.
+// Some agents (uscis_ar11, id_card_update, bank_notify) hand off the final
+// click to the customer because federal/state law or bank security can require
+// the account holder's signature or identity verification.
 //
 // Removed in v2: wells_fargo direct-login (replaced by bank_notify script),
 // subscriptions (consumer credentials too fragile),
