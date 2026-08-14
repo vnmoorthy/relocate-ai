@@ -173,7 +173,7 @@ export function SwarmStage({
         <div className="absolute inset-0 swarm-bg" />
         <div className="relative z-10 p-3">
           <div className="text-center mb-4 pt-1">
-            <div className="tm-label text-[var(--mint)]">Relocate · agent swarm</div>
+            <div className="tm-label text-[var(--ink-300)]">Relocate · agent swarm</div>
             <div className="font-display text-[34px] leading-none tabular-nums text-[var(--ink-100)] mt-1.5">
               {ALL_AGENTS.length}
             </div>
@@ -276,8 +276,8 @@ export function SwarmStage({
               ? "rgba(129,140,248,0.70)"
               : "rgba(129,140,248,0.30)"
             : active
-              ? "rgba(0,212,154,0.70)"
-              : "rgba(0,212,154,0.26)";
+              ? "rgba(255,255,255,0.55)"
+              : "rgba(255,255,255,0.16)";
           return (
             <line
               key={agent.id}
@@ -379,7 +379,7 @@ export function SwarmStage({
                 decisions
               </span>
               <span className="mt-2 tm-label">
-                <span className="text-[var(--mint)]">{localShare}%</span>
+                <span className="text-[var(--ink-100)]">{localShare}%</span>
                 <span className="text-[var(--ink-500)] ml-1.5">local-route share</span>
               </span>
               <span className="core-divider" aria-hidden="true" />

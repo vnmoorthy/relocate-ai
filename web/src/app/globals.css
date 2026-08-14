@@ -576,8 +576,8 @@ main {
 /* Ambient ground: center telemetry glow + faint top sheen */
 .swarm-bg {
   background:
-    radial-gradient(circle at 50% 50%, rgba(0, 212, 154, 0.09), transparent 28%),
-    radial-gradient(circle at 50% 50%, rgba(0, 212, 154, 0.035), transparent 55%),
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.05), transparent 28%),
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.02), transparent 55%),
     radial-gradient(140% 90% at 50% 0%, rgba(255, 255, 255, 0.02), transparent 60%);
   pointer-events: none;
 }
@@ -591,8 +591,8 @@ main {
   border-radius: 999px;
   background: radial-gradient(
     circle,
-    rgba(0, 212, 154, 0.13) 0%,
-    rgba(0, 212, 154, 0.05) 42%,
+    rgba(255, 255, 255, 0.10) 0%,
+    rgba(255, 255, 255, 0.04) 42%,
     transparent 68%
   );
 }
@@ -611,9 +611,9 @@ main {
     from 0deg,
     transparent 0deg,
     transparent 292deg,
-    rgba(0, 212, 154, 0.03) 310deg,
-    rgba(0, 212, 154, 0.14) 352deg,
-    rgba(0, 212, 154, 0.32) 359deg,
+    rgba(255, 255, 255, 0.02) 310deg,
+    rgba(255, 255, 255, 0.10) 352deg,
+    rgba(255, 255, 255, 0.24) 359deg,
     transparent 360deg
   );
   -webkit-mask-image: radial-gradient(circle, transparent 26%, #000 32%, #000 64%, transparent 70%);
@@ -635,21 +635,21 @@ main {
 .swarm-core-ring-outer {
   width: 300px;
   height: 300px;
-  border: 1px solid rgba(0, 212, 154, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.10);
 }
 .swarm-core-ring-mid {
   width: 216px;
   height: 216px;
-  border: 1px dashed rgba(0, 212, 154, 0.20);
+  border: 1px dashed rgba(255, 255, 255, 0.14);
   animation: spinSlow 40s linear infinite;
 }
 .swarm-core-ring-inner {
   width: 140px;
   height: 140px;
-  border: 1px solid rgba(0, 212, 154, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.28);
   box-shadow:
-    0 0 36px 2px rgba(0, 212, 154, 0.18),
-    inset 0 0 22px 2px rgba(0, 212, 154, 0.08);
+    0 0 36px 2px rgba(255, 255, 255, 0.10),
+    inset 0 0 22px 2px rgba(255, 255, 255, 0.05);
   animation: corePulse 5s ease-in-out infinite;
 }
 /* Dark disc under the numeral so the sweep never washes out the telemetry */
@@ -684,8 +684,8 @@ main {
   font-size: 56px;
   line-height: 1;
   letter-spacing: -0.03em;
-  color: var(--brand);
-  text-shadow: 0 0 28px rgba(0, 212, 154, 0.35);
+  color: var(--text-primary);
+  text-shadow: 0 0 28px rgba(255, 255, 255, 0.22);
 }
 .core-divider {
   display: block;
@@ -702,13 +702,13 @@ main {
 @keyframes corePulse {
   0%, 100% {
     box-shadow:
-      0 0 36px 2px rgba(0, 212, 154, 0.18),
-      inset 0 0 22px 2px rgba(0, 212, 154, 0.08);
+      0 0 36px 2px rgba(255, 255, 255, 0.10),
+      inset 0 0 22px 2px rgba(255, 255, 255, 0.05);
   }
   50% {
     box-shadow:
-      0 0 52px 6px rgba(0, 212, 154, 0.34),
-      inset 0 0 30px 3px rgba(0, 212, 154, 0.16);
+      0 0 52px 6px rgba(255, 255, 255, 0.20),
+      inset 0 0 30px 3px rgba(255, 255, 255, 0.09);
   }
 }
 

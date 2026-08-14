@@ -132,7 +132,7 @@ export function AgentCell({ agentId, name, category, state, sinceTs, transcript,
           <>
             <span
               className={`tm-label shrink-0 ${
-                lastTurn.role === "agent" ? "text-[var(--mint)]" : "text-[var(--ink-500)]"
+                lastTurn.role === "agent" ? "text-[var(--ink-300)]" : "text-[var(--ink-500)]"
               }`}
             >
               {lastTurn.role === "agent" ? "AGT" : lastTurn.role === "counterparty" ? "REP" : "USR"}
