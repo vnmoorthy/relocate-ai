@@ -11,6 +11,7 @@ import {
   type DashboardState,
 } from "./dashboard-state";
 import { buildDemoTimeline } from "./demo-replay";
+import { resolveWsToken } from "./ws-token";
 import type { WSEvent } from "./types";
 
 export type { DashboardState } from "./dashboard-state";
@@ -123,7 +124,14 @@ export function useDashboardWS(wsUrl: string): DashboardState {
 
       let socket: WebSocket;
       try {
-        socket = new WebSocket(wsUrl);
+        // The orchestrator authenticates the socket via a bearer.<token>
+        // subprotocol offer (never a query string). Without a token the plain
+        // connection is closed by the server and the UI falls back to the
+        // labeled demo replay.
+        const token = resolveWsToken();
+        socket = token
+          ? new WebSocket(wsUrl, ["relocate-dashboard", `bearer.${token}`])
+          : new WebSocket(wsUrl);
       } catch {
         startReplay();
         scheduleReconnect(connect);

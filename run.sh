@@ -97,7 +97,9 @@ fi
 wait_for_health() {
   local url="$1"
   for _ in {1..30}; do
-    if curl -fsS --max-time 2 "$url" >/dev/null 2>&1; then
+    # Next.js dev's first response (initial compilation) can take >2s.
+    # Keep the loop bounded, but give the server a slightly larger window.
+    if curl -fsS --max-time 5 "$url" >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
@@ -165,7 +167,10 @@ step "Starting dashboard on :3000"
 if curl -fsS --max-time 2 http://127.0.0.1:3000 >/dev/null 2>&1; then
   warn "Dashboard is already reachable; run.sh will not manage that process"
 else
-  start_managed web "$WEB_LOG" pnpm --dir "$WEB_ROOT" dev
+  # `orchestrator/.env` often defines `PORT` (for the API), and Next.js
+  # inherits it—causing the dashboard to bind to :8000 instead of :3000.
+  # Force :3000 so the health check and demo flow are stable.
+  start_managed web "$WEB_LOG" env PORT=3000 pnpm --dir "$WEB_ROOT" dev
   if wait_for_health http://127.0.0.1:3000; then
     ok "Dashboard ready"
   else
@@ -200,6 +205,18 @@ fi
 printf "\n"
 color "1;32" "Relocate local services are ready."
 printf "Dashboard:    http://127.0.0.1:3000\n"
+if [[ -n "${DASHBOARD_API_TOKEN:-}" ]]; then
+  if [[ "$DASHBOARD_API_TOKEN" =~ [^A-Za-z0-9._~-] ]]; then
+    warn "DASHBOARD_API_TOKEN contains characters the browser WebSocket subprotocol rejects; regenerate with: openssl rand -hex 32"
+  else
+    # The page reads the token from the URL hash (never sent to a server),
+    # stores it in sessionStorage, strips it from the URL, and authenticates
+    # the dashboard WebSocket via a subprotocol offer. Local development only.
+    printf "Live view:    http://127.0.0.1:3000/#ws-token=%s\n" "$DASHBOARD_API_TOKEN"
+  fi
+else
+  warn "DASHBOARD_API_TOKEN is unset; the dashboard will stay in demo-replay mode"
+fi
 printf "Orchestrator: http://127.0.0.1:%s/healthz\n" "${PORT:-8000}"
 printf "PAVO:         %s/healthz\n" "${EFFECTIVE_PAVO_URL%/v1}"
 printf "Logs:         %s\n" "$RUNTIME_DIR"
