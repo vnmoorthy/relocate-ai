@@ -214,7 +214,7 @@ test("sponsor status is derived from received events and current mode", () => {
   assert.equal(sponsorStatus({ action: "error" }, false), "error");
 });
 
-test("demo timeline is sorted, conditional, finalized, and uses submitted terminal states", () => {
+test("demo timeline is sorted, conditional, finalized, and uses honest terminal states", () => {
   const timeline = buildDemoTimeline();
   assert.ok(timeline.length > 0);
   assert.deepEqual(
@@ -236,20 +236,82 @@ test("demo timeline is sorted, conditional, finalized, and uses submitted termin
   assert.equal(agentIds.size, 17);
   assert.ok(
     events.some(
-      (event) =>
-        event.type === "agent_state" &&
-        event.agent_id !== "buyer" &&
-        event.state === "submitted",
-    ),
-  );
-  assert.ok(
-    events.some(
       (event) => event.type === "agent_state" && event.agent_id === "buyer" && event.state === "closed",
     ),
   );
+
+  // Terminal-state table: 12 submitted, 3 needs-user-action handoffs, 1 failed.
+  const terminal = new Map<string, string>();
+  for (const event of events) {
+    if (
+      event.type === "agent_state" &&
+      event.agent_id !== "buyer" &&
+      (event.state === "submitted" || event.state === "needs-user-action" || event.state === "failed")
+    ) {
+      terminal.set(event.agent_id, event.state);
+    }
+  }
+  assert.equal(terminal.size, 16);
+  assert.equal(terminal.get("spectrum_austin"), "failed");
+  assert.equal(terminal.get("uscis_ar11"), "needs-user-action");
+  assert.equal(terminal.get("pcp_transfer"), "needs-user-action");
+  assert.equal(terminal.get("gym_cancel"), "needs-user-action");
+  const terminalCounts = { submitted: 0, "needs-user-action": 0, failed: 0 } as Record<string, number>;
+  for (const state of terminal.values()) terminalCounts[state] += 1;
+  assert.equal(terminalCounts.submitted, 12);
+  assert.equal(terminalCounts["needs-user-action"], 3);
+  assert.equal(terminalCounts.failed, 1);
+
+  // The signature/consent handoffs surface as an explicit waiting event.
+  const waiting = events.find((event) => event.type === "event_waiting_for_user");
+  assert.ok(waiting && waiting.type === "event_waiting_for_user");
+  assert.deepEqual(
+    [...waiting.agents].toSorted(),
+    ["gym_cancel", "pcp_transfer", "uscis_ar11"],
+  );
+  assert.equal(waiting.count, 3);
+
   const finalized = events.find((event) => event.type === "event_finalized");
   assert.ok(finalized && finalized.type === "event_finalized");
-  assert.equal(finalized.summary?.submitted_count, 16);
+  assert.equal(finalized.outcome, "partial_failure");
+  assert.equal(finalized.summary?.submitted_count, 12);
+  assert.equal(finalized.summary?.failed_count, 1);
+});
+
+test("demo timeline pacing: ~60s stage arc with no dead air and a mid-run failure", () => {
+  const timeline = buildDemoTimeline();
+
+  // Finalization lands in the 55–65s window.
+  const finalAt = timeline.at(-1)?.at_ms ?? 0;
+  assert.ok(finalAt >= 55_000 && finalAt <= 65_000, `final event at ${finalAt}ms`);
+
+  // No stretch longer than 5s where nothing changes on screen.
+  for (let i = 1; i < timeline.length; i++) {
+    const gap = timeline[i].at_ms - timeline[i - 1].at_ms;
+    assert.ok(gap <= 5000, `dead air of ${gap}ms before index ${i}`);
+  }
+
+  // The spectrum failure lands mid-run, while other specialists are still open,
+  // so failure isolation is visible on stage.
+  const failedAt = timeline.find(
+    (item) =>
+      item.event.type === "agent_state" &&
+      item.event.agent_id === "spectrum_austin" &&
+      item.event.state === "failed",
+  )?.at_ms;
+  assert.ok(typeof failedAt === "number");
+  const terminalAfterFailure = timeline.filter(
+    (item) =>
+      item.event.type === "agent_state" &&
+      item.event.agent_id !== "buyer" &&
+      item.event.agent_id !== "spectrum_austin" &&
+      (item.event.state === "submitted" || item.event.state === "needs-user-action") &&
+      item.at_ms > failedAt,
+  );
+  assert.ok(terminalAfterFailure.length >= 12, "most specialists outlive the failure");
+
+  // Deterministic between loops.
+  assert.deepEqual(buildDemoTimeline(), timeline);
 });
 
 test("display redaction hides common identifiers", () => {
