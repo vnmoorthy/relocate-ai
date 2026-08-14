@@ -33,17 +33,18 @@ interface Props {
 }
 
 /**
- * Swarm-from-singularity stage.
+ * Swarm-from-singularity stage — mission-control theater.
  *
- * Pre-call: only the glowing singularity is visible — agent count + swarm status.
+ * Pre-call: only the router core is visible — agent count + swarm status —
+ * sitting on a faint polar grid with a slow radar sweep.
  *
- * On sufficiently wide screens, agent cells orbit the singularity. Compact
- * screens use a readable grid and keep non-dispatched conditional agents in
- * standby rather than implying that they ran.
+ * On sufficiently wide screens, console nodes orbit the core. Compact screens
+ * use a readable grid and keep non-dispatched conditional agents in standby
+ * rather than implying that they ran.
  *
- * During the call: every routing decision spawns a tier-colored particle that flies
- * from the originating cell back to the core (mint=Gemma-local, amber=Gemini Flash,
- * magenta=Claude Opus).
+ * During the call: every routing decision fires a tier-colored comet from the
+ * core out along the spoke to the executing node (mint=Gemma-local,
+ * amber=Gemini Flash, magenta=Claude Opus).
  */
 export function SwarmStage({
   agentStates,
@@ -71,7 +72,7 @@ export function SwarmStage({
     return () => ro.disconnect();
   }, []);
 
-  // Uniform cell geometry — adaptive sizing that never overlaps. Algorithm:
+  // Uniform node geometry — adaptive sizing that never overlaps. Algorithm:
   //   1. Try single-ring layout. If that forces cardW below MIN_CARD_W, split
   //      into two concentric rings (outer + inner). Each ring sizes itself.
   //   2. The buyer (index 0) always anchors the OUTER ring at -90° (top).
@@ -79,25 +80,24 @@ export function SwarmStage({
   const N = ALL_AGENTS.length;
   const MARGIN = 24;
   const GAP = 18;
-  const MAX_CARD_W = 168;
+  const MAX_CARD_W = 172;
   const MIN_CARD_W = 140;            // smaller looks cramped — switch to two-ring instead
-  const ASPECT = 96 / 168;           // preserve card aspect ratio
+  const CARD_H = 72;                 // fixed console-node height (orbital view)
   const cx = stageSize.w / 2;
   const cy = stageSize.h / 2;
 
-  // Geometry helper for one ring of cells on an ellipse.
+  // Geometry helper for one ring of nodes on an ellipse.
   const ringFor = (count: number, radiusScale: number) => {
     const rx0 = Math.max(0, (stageSize.w * radiusScale - MAX_CARD_W - MARGIN) / 2);
-    const ry0 = Math.max(0, (stageSize.h * radiusScale - MAX_CARD_W * ASPECT - MARGIN) / 2);
+    const ry0 = Math.max(0, (stageSize.h * radiusScale - CARD_H - MARGIN) / 2);
     const peri = stageSize.w > 0
       ? Math.PI * (3 * (rx0 + ry0) - Math.sqrt((3 * rx0 + ry0) * (rx0 + 3 * ry0)))
       : count * 200;
     const widthForFit = Math.max(100, Math.floor(peri / count) - GAP);
     const cardW = Math.min(MAX_CARD_W, widthForFit);
-    const cardH = Math.round(cardW * ASPECT);
     const rx = Math.max(0, (stageSize.w * radiusScale - cardW - MARGIN) / 2);
-    const ry = Math.max(0, (stageSize.h * radiusScale - cardH - MARGIN) / 2);
-    return { cardW, cardH, rx, ry, peri };
+    const ry = Math.max(0, (stageSize.h * radiusScale - CARD_H - MARGIN) / 2);
+    return { cardW, cardH: CARD_H, rx, ry, peri };
   };
 
   // Try single ring first; if the cardW it'd need is below MIN_CARD_W, split.
@@ -110,7 +110,7 @@ export function SwarmStage({
   const innerCount = useTwoRings ? N - outerCount : 0;
   const outer = useTwoRings ? ringFor(outerCount, 1.0) : single;
   // Inner ring sized to 60% radius — wide enough to never collide with the outer
-  // ring at typical card sizes, tight enough to keep the singularity readable.
+  // ring at typical node sizes, tight enough to keep the core readable.
   const inner = useTwoRings ? ringFor(Math.max(1, innerCount), 0.60) : null;
 
   // Build positions for every agent. Outer indices: 0, 1, ..., outerCount-1
@@ -172,25 +172,23 @@ export function SwarmStage({
       >
         <div className="absolute inset-0 swarm-bg" />
         <div className="relative z-10 p-3">
-          <div className="text-center mb-4">
-            <div className="text-[9px] tracking-[0.24em] uppercase text-[var(--mint)]">
-              Relocate · agent swarm
+          <div className="text-center mb-4 pt-1">
+            <div className="tm-label text-[var(--mint)]">Relocate · agent swarm</div>
+            <div className="font-display text-[34px] leading-none tabular-nums text-[var(--ink-100)] mt-1.5">
+              {ALL_AGENTS.length}
             </div>
-            <div className="font-mono-tight text-[22px] font-bold text-[var(--mint)] mt-1">
-              {ALL_AGENTS.length} agents
-            </div>
-            <p className="mt-1 text-[10px] tracking-[0.15em] uppercase text-[var(--ink-500)]">
-              1 concierge + {ALL_AGENTS.length - 1} specialists
+            <p className="tm-label text-[var(--ink-500)] mt-1.5">
+              agents · 1 concierge + {ALL_AGENTS.length - 1} specialists
             </p>
           </div>
           {callStarted && (
             <>
-              <p className="mb-3 text-center text-[10px] font-mono-tight text-[var(--ink-500)]" aria-live="polite">
+              <p className="mb-3 text-center tm-label text-[var(--ink-500)]" aria-live="polite">
                 {totalDecisions} decisions · {terminalCounts.submitted} submitted · {terminalCounts.succeeded} succeeded · {terminalCounts.action} need action · {terminalCounts.failed} failed
               </p>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            <div className="swarm-grid grid grid-cols-2 md:grid-cols-3 gap-2">
               {ALL_AGENTS.map((agent) => (
-                <div key={agent.id} className="h-[126px] min-w-0">
+                <div key={agent.id} className="h-[88px] min-w-0">
                   <AgentCell
                     agentId={agent.id}
                     name={agent.name}
@@ -210,11 +208,57 @@ export function SwarmStage({
     );
   }
 
+  // Polar-grid geometry for the radar backdrop.
+  const gridBase = Math.min(stageSize.w, stageSize.h) / 2;
+  const gridRings = [0.34, 0.62, 0.9, 1.24].map((f) => gridBase * f);
+  const tickR = gridBase * 0.9;
+
   return (
     <div ref={containerRef} className="relative w-full min-h-[760px] overflow-hidden swarm-stage" aria-label="Agent swarm">
       <div className="absolute inset-0 swarm-bg" />
 
-      {/* Connection lines — hub-and-spoke geometry is always visible; spokes brighten when active */}
+      {/* Polar radar grid — barely-there structure behind everything */}
+      <svg
+        className="absolute inset-0 w-full h-full pointer-events-none"
+        style={{ zIndex: 0 }}
+        aria-hidden="true"
+        focusable="false"
+      >
+        <line x1={0} y1={cy} x2={stageSize.w} y2={cy} stroke="rgba(255,255,255,0.03)" strokeWidth={1} />
+        <line x1={cx} y1={0} x2={cx} y2={stageSize.h} stroke="rgba(255,255,255,0.03)" strokeWidth={1} />
+        {gridRings.map((r, ri) => (
+          <circle
+            key={ri}
+            cx={cx}
+            cy={cy}
+            r={r}
+            fill="none"
+            stroke={`rgba(255,255,255,${ri === 2 ? 0.05 : 0.035})`}
+            strokeWidth={1}
+          />
+        ))}
+        {Array.from({ length: 24 }, (_, k) => {
+          const major = k % 6 === 0;
+          const a = (k * 15 * Math.PI) / 180;
+          const r1 = tickR - (major ? 9 : 5);
+          const cos = Math.cos(a);
+          const sin = Math.sin(a);
+          return (
+            <line
+              key={`tick-${k}`}
+              x1={cx + cos * r1}
+              y1={cy + sin * r1}
+              x2={cx + cos * tickR}
+              y2={cy + sin * tickR}
+              stroke={`rgba(255,255,255,${major ? 0.09 : 0.06})`}
+              strokeWidth={1}
+            />
+          );
+        })}
+      </svg>
+
+      {/* Spokes — hub-and-spoke data paths; dashes flow out of the core,
+          brighter + faster while an agent is live */}
       <svg
         className="absolute inset-0 w-full h-full pointer-events-none"
         style={{ zIndex: 1 }}
@@ -229,11 +273,11 @@ export function SwarmStage({
           const isBuyer = agent.id === "buyer";
           const stroke = isBuyer
             ? active
-              ? "rgba(129,140,248,0.55)"
-              : "rgba(129,140,248,0.20)"
+              ? "rgba(129,140,248,0.70)"
+              : "rgba(129,140,248,0.30)"
             : active
-              ? "rgba(0,212,154,0.40)"
-              : "rgba(0,212,154,0.20)";
+              ? "rgba(0,212,154,0.70)"
+              : "rgba(0,212,154,0.26)";
           return (
             <line
               key={agent.id}
@@ -242,15 +286,15 @@ export function SwarmStage({
               x2={p.cellCx}
               y2={p.cellCy}
               stroke={stroke}
-              strokeWidth={active ? 1.5 : 1}
-              strokeDasharray={isBuyer ? "0" : "3 5"}
-              className={active ? "swarm-line-active" : ""}
+              strokeWidth={1}
+              strokeDasharray="2 10"
+              className={`swarm-spoke ${active ? "swarm-spoke--active" : ""}`}
             />
           );
         })}
       </svg>
 
-      {/* Return-flow particles (cell → core, tier-colored) */}
+      {/* Routing comets (core → node, tier-colored, short fading trail) */}
       <svg
         className="absolute inset-0 w-full h-full pointer-events-none"
         style={{ zIndex: 2 }}
@@ -262,24 +306,35 @@ export function SwarmStage({
           if (idx === -1 || !positions[idx]) return null;
           const target = positions[idx];
           const color = tierMeta(p.tier).color;
-          // Path: core (cx,cy) → cell. Particle is PAVO dispatching the
+          // Path: core (cx,cy) → node. The comet is PAVO dispatching the
           // routing decision OUT to the agent that's executing it.
+          const pathStr = `path("M ${cx} ${cy} L ${target.cellCx} ${target.cellCy}")`;
+          const segments = [
+            { r: 5, fillOpacity: 1, delay: 0, glow: true },
+            { r: 3.2, fillOpacity: 0.5, delay: 0.08, glow: false },
+            { r: 2, fillOpacity: 0.25, delay: 0.16, glow: false },
+          ];
           return (
-            <circle
-              key={p.id}
-              r={3.5}
-              fill={color}
-              style={{
-                offsetPath: `path("M ${cx} ${cy} L ${target.cellCx} ${target.cellCy}")`,
-                animation: `swarmReturn 1.4s ease-out forwards`,
-                filter: `drop-shadow(0 0 8px ${color})`,
-              }}
-            />
+            <g key={p.id}>
+              {segments.map((seg, si) => (
+                <circle
+                  key={si}
+                  r={seg.r}
+                  fill={color}
+                  fillOpacity={seg.fillOpacity}
+                  style={{
+                    offsetPath: pathStr,
+                    animation: `swarmReturn 1.4s ease-out ${seg.delay}s both`,
+                    filter: seg.glow ? `drop-shadow(0 0 10px ${color})` : undefined,
+                  }}
+                />
+              ))}
+            </g>
           );
         })}
       </svg>
 
-      {/* Singularity core */}
+      {/* Router core — the sun of the composition */}
       <div
         className="absolute swarm-core"
         style={{
@@ -290,44 +345,48 @@ export function SwarmStage({
           zIndex: 3,
         }}
       >
+        <div className="swarm-core-glow" aria-hidden="true" />
+        <div className="swarm-sweep" aria-hidden="true" />
         <div className="swarm-core-ring swarm-core-ring-outer" aria-hidden="true" />
         <div className="swarm-core-ring swarm-core-ring-mid" aria-hidden="true" />
         <div className="swarm-core-ring swarm-core-ring-inner" aria-hidden="true" />
+        <div className="swarm-core-disc" aria-hidden="true" />
         <div className="swarm-core-center">
           {!callStarted ? (
-            <div className="flex flex-col items-center gap-1.5 px-1">
-              <span className="text-[10px] tracking-[0.12em] uppercase text-[var(--ink-500)]">
+            <div className="flex flex-col items-center gap-1 px-1">
+              <span className="tm-label text-[var(--ink-500)]">
                 Relocate · swarm
               </span>
-              <span className="font-display text-[44px] leading-none mt-1 text-[var(--mint)] font-mono-tight">
+              <span className="core-numeral mt-1">
                 {ALL_AGENTS.length}
               </span>
-              <span className="text-[10px] tracking-[0.12em] uppercase text-[var(--ink-500)] mt-0.5">
+              <span className="tm-label text-[var(--ink-500)] mt-0.5">
                 agents standing by
               </span>
-              <span className="text-[10px] tracking-[0.12em] uppercase text-[var(--ink-500)] mt-2 text-center leading-tight">
+              <span className="tm-label text-[var(--ink-700)] mt-2 text-center leading-relaxed">
                 one concierge ·<br />{ALL_AGENTS.length - 1} specialists coordinate your move
               </span>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-0.5">
-              <span className="text-[10px] tracking-[0.12em] uppercase text-[var(--ink-500)]">
+              <span className="tm-label text-[var(--ink-500)]">
                 PAVO router
               </span>
-              <span className="font-display text-[44px] leading-none mt-1 text-[var(--mint)] font-mono-tight">
+              <span className="core-numeral mt-1">
                 {totalDecisions}
               </span>
-              <span className="text-[10px] tracking-[0.12em] uppercase text-[var(--ink-500)] mt-0.5">
+              <span className="tm-label text-[var(--ink-500)] mt-0.5">
                 decisions
               </span>
-              <span className="mt-2 text-[10px] font-mono-tight">
+              <span className="mt-2 tm-label">
                 <span className="text-[var(--mint)]">{localShare}%</span>
-                <span className="text-[var(--ink-500)] ml-1">local-route share</span>
+                <span className="text-[var(--ink-500)] ml-1.5">local-route share</span>
               </span>
-              <span className="text-[10px] font-mono-tight text-[var(--ink-300)] mt-1">
+              <span className="core-divider" aria-hidden="true" />
+              <span className="tm-label text-[var(--ink-300)]">
                 {terminalCounts.submitted} submitted · {terminalCounts.succeeded} succeeded
               </span>
-              <span className="text-[10px] font-mono-tight text-[var(--ink-300)] mt-1">
+              <span className="tm-label text-[var(--ink-300)] mt-1">
                 {terminalCounts.action} action · {terminalCounts.failed} failed
               </span>
             </div>
@@ -335,7 +394,7 @@ export function SwarmStage({
         </div>
       </div>
 
-      {/* All N cells — adaptive sizing (single ring or two concentric rings) */}
+      {/* All N nodes — adaptive sizing (single ring or two concentric rings) */}
       {callStarted &&
         ALL_AGENTS.map((agent, i) => {
           const pos = positions[i];
