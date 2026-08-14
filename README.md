@@ -116,8 +116,10 @@ webhook security, and the outbound allowlist. The dashboard has its own
 
 ## What's real today
 
-This is a working **orchestration prototype**, not a production relocation
-service. Honest inventory:
+Relocate is an open-source relocation-orchestration platform in **developer
+preview**. The orchestration layer is built and tested; provider execution
+ships behind explicit safety gates, and the roadmap to production lives in
+[STATUS.md](STATUS.md). Current inventory:
 
 - ✅ Inbound voice webhook flow, incremental field extraction, conditional
   fan-out, live WebSocket dashboard, deterministic router with provider

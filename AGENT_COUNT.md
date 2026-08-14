@@ -87,10 +87,10 @@ These earlier IDs are intentionally absent:
 
 | `agent_id` | reason |
 |---|---|
-| `wells_fargo` | Direct bank login, SSN, and 2FA handling is outside the safe prototype scope; `bank_notify` is human-led. |
+| `wells_fargo` | Direct bank login, SSN, and 2FA handling is outside the current safe execution scope; `bank_notify` is human-led. |
 | `subscriptions` | A multi-service credential/CAPTCHA sweep was too broad and fragile. |
 | `ca_dmv` | The prior direct identity-bound portal concept was removed; `id_card_update` is a mail/user-action preparation flow. |
-| `ca_voter` | Identity-bound voter registration is outside the prototype scope. |
+| `ca_voter` | Identity-bound voter registration is outside the current scope. |
 
 For implementation maturity and the work required before launch, see
 [STATUS.md](STATUS.md#agent-by-agent-reality).

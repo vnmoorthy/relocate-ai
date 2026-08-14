@@ -50,10 +50,12 @@ lifecycle. Its responsibilities include:
 mode-specific adapters. Each specialist catches its own error so one failure
 does not stop the rest of the wave.
 
-`orchestrator/app/state.py` is the current event store. It uses process-local
-dictionaries. This is the most important architectural limitation: restarts
-lose active state, scheduled work is not durable, and replicas would not share
-contexts or idempotency records.
+`orchestrator/app/state.py` is the current event store: an in-memory working
+set mirrored to single-node SQLite (`persistence.py`). Restarts recover
+events, buyer contexts, and webhook dedupe records; specialists that were in
+flight during a crash resurface as `needs-user-action` with an explicit
+restart blocker. The remaining limitation is scale-out: scheduled work is not
+durable, and replicas do not share state or idempotency records.
 
 ### PAVO service
 
@@ -135,7 +137,7 @@ started with `asyncio.create_task`. Neither mechanism survives a process crash.
 
 ## State and lifecycle
 
-The prototype has three in-memory structures:
+The current single-node implementation has three in-memory structures:
 
 - `BuyerCallContext`: one inbound call, collected fields, dispatch status, and
   follow-up status;
@@ -144,8 +146,9 @@ The prototype has three in-memory structures:
   and timestamps.
 
 The data model now distinguishes blockers, provider submission, failure, and a
-separate terminal outcome. It is still process-local and not a durable,
-versioned workflow state machine. Production must keep workflow termination and
+separate terminal outcome, and every mutation is mirrored to single-node
+SQLite for restart recovery. It is not yet a versioned, multi-replica workflow
+state machine. Production must keep workflow termination and
 business success separate.
 
 Recommended core states:
@@ -194,7 +197,9 @@ displayed as `succeeded` without final provider confirmation.
   returns an error if every provider fails; it does not fabricate a completion.
 - Provider timeouts and failures exist, but retries and reconciliation are not
   yet backed by a durable job system.
-- An orchestrator restart loses in-flight state and process-local replay claims.
+- An orchestrator restart recovers persisted state; in-flight specialists are
+  honestly marked `needs-user-action`, and in-flight webhook claims stay
+  retryable. Multi-replica deployments remain unsupported.
 
 ## Target production architecture
 

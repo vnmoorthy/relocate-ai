@@ -16,8 +16,9 @@ submission IDs as completed relocation transactions.
 
 ### 0:00–0:15 — Problem and boundary
 
-> “Relocate is a prototype for turning one moving conversation into a set of
-> parallel specialist workflows. This screen is running a deterministic
+> “Relocate is a relocation-orchestration platform in developer preview: it
+> turns one moving conversation into a set of parallel specialist workflows.
+> This screen is running a deterministic
 > simulation — you can see the SIMULATION tag on the panel, the same way SpaceX
 > stamps its renders; I’ll distinguish implemented code from live-provider
 > validation as we go.”

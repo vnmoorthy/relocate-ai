@@ -4,19 +4,19 @@ Last audited: 2026-08-13
 
 ## Executive assessment
 
-Relocate is a substantial hackathon prototype, not an empty scaffold. The
-repository has a working orchestration model, a complete 17-persona roster,
-provider adapter code, an interactive dashboard, a heuristic routing service,
-and a safe mocked test path. Those pieces are enough to develop and demonstrate
-the product locally.
+Relocate is in developer preview. The repository ships a working orchestration
+model, a complete 17-persona roster, provider adapter code, an interactive
+dashboard, a heuristic routing service, and a side-effect-free mocked test
+path. Those pieces support full local development and demonstration of the
+product today.
 
-It is not ready to handle real customers. The largest gaps are durable state,
-background job execution, authenticated data intake, privacy and consent
+It is not yet ready to handle real customers. The remaining work is durable
+background job execution, multi-replica state, authenticated data intake, privacy and consent
 controls, verified provider contracts, production deployment, and operational
-monitoring. Provider adapter code is broader than the runtime's safe execution
-policy and has not been proven by repeatable sandbox acceptance in CI. A
-successful API submission also does not mean the underlying provider completed
-the customer's task.
+monitoring; the phased plan below sequences it. Provider adapter code is
+broader than the runtime's safe execution policy and has not been proven by
+repeatable sandbox acceptance in CI. A successful API submission also does not
+mean the underlying provider completed the customer's task.
 
 Status labels used below:
 
@@ -30,7 +30,7 @@ Status labels used below:
 | Subsystem | Status | What exists | What is still required |
 |---|---|---|---|
 | Persona roster | **Built** | `orchestrator/app/personas.py`, the web roster, and `AGENT_COUNT.md` describe one buyer plus 16 specialists. A consistency test detects drift. | Replace dated provider details in prompts with configuration; version persona changes; review every target and claim with counsel/provider terms. |
-| Buyer schema and collection | **Built (prototype)** | Incremental JSON extraction, field validation, core-field dispatch readiness, conditional flags, a follow-up-email path, and call-end dispatch: a core-complete call that ends before the household questions still fans out with what was confirmed. Unanswered pets/children/visa questions skip their specialists; an unanswered car question defaults to dispatching the car agents, which land as needs-user-action. A turn still in flight at hang-up re-runs the end-of-call dispatch after its fields merge. | Use structured model output instead of regex JSON extraction; add correction/overwrite semantics; add locale/date normalization; store consent and provenance for every field. |
+| Buyer schema and collection | **Built (preview)** | Incremental JSON extraction, field validation, core-field dispatch readiness, conditional flags, a follow-up-email path, and call-end dispatch: a core-complete call that ends before the household questions still fans out with what was confirmed. Unanswered pets/children/visa questions skip their specialists; an unanswered car question defaults to dispatching the car agents, which land as needs-user-action. A turn still in flight at hang-up re-runs the end-of-call dispatch after its fields merge. | Use structured model output instead of regex JSON extraction; add correction/overwrite semantics; add locale/date normalization; store consent and provenance for every field. |
 | Inbound voice | **Partial** | AgentPhone provisioning scripts, a buyer webhook, streaming NDJSON replies, call lifecycle handling, and per-agent webhook secrets. | Contract-test the exact current AgentPhone webhook/signature format; add a stable hosted webhook, rate limits, vendor sandbox tests, retry/idempotency tests, and a human escalation path. A local `agents.json` is generated deployment state, not source. |
 | Conditional specialist selection | **Built** | Pets, children, car, and visa flags select 11–16 specialists. Mocked tests cover full and reduced rosters. | Express prerequisites as data rather than scattered conditionals; surface why each agent was skipped or blocked. |
 | Concurrent fan-out | **Built (single process)** | Async mode dispatch, state broadcasts, isolated specialist errors, and artifact capture. | Move work to a durable queue; add leases, retry policy, timeouts, cancellation, idempotency keys, outbox delivery, concurrency/rate controls per provider, and recovery after restart. |
@@ -40,16 +40,16 @@ Status labels used below:
 | Memory/runbook integrations | **Partial** | Supermemory recall/persist and Moss retrieval adapters are called from orchestration. | Define retention/deletion rules, tenant isolation, data minimization, redaction, authorization, provider DPAs, failure policy, and contract tests. |
 | Stripe/Sponge | **Partial/unused product path** | Sponsor adapter functions and dashboard events exist. | Define the actual payment/escrow product contract, connect it to an authenticated order, use only test mode until reviewed, add ledger/reconciliation/refunds/webhooks, or remove it from the shipping surface. |
 | PAVO service | **Built (heuristic)** | Authenticated FastAPI API, request validation, deterministic routing, local/Gemini/Anthropic adapters, fallback behavior, cost configuration, health endpoints, and tests. | The learned router described in older project material is not here. To ship that claim, add licensed weights/training/evaluation artifacts and reproducible benchmarks. Otherwise market this component as a heuristic router. Add provider rate limiting and production telemetry. |
-| Dashboard | **Built (simulation + prototype live client)** | Static Next.js UI, a deterministic simulation with honest mixed terminal states (panel stamped `SIMULATION`, flipping to `LIVE` on a real session), roster visualization, cost/artifact views, WebSocket state reduction, reconnect logic, and static export. A local live view authenticates via a URL-hash token handoff into a WebSocket subprotocol offer (no query-string tokens; nothing baked into the build). | Host an authenticated backend; issue short-lived session-bound WebSocket credentials; add customer accounts, authorization per move, accessible state/error UX, audit history, and end-to-end live tests. Public static JavaScript must not contain long-lived secrets. |
-| Webhook security | **Partial** | Fail-closed secret lookup, timestamp-bound HMAC comparison, header validation, and a bounded process-local replay cache. Completed duplicates are acknowledged; a retry that races an in-flight delivery gets 409 so it is never silently swallowed. | Verify the signature construction against the vendor contract, store replay/idempotency records durably, rotate secrets, rate-limit endpoints, redact payload logs, and protect a multi-replica deployment. |
+| Dashboard | **Built (simulation + local live client)** | Static Next.js UI, a deterministic simulation with honest mixed terminal states (panel stamped `SIMULATION`, flipping to `LIVE` on a real session), roster visualization, cost/artifact views, WebSocket state reduction, reconnect logic, and static export. A local live view authenticates via a URL-hash token handoff into a WebSocket subprotocol offer (no query-string tokens; nothing baked into the build). | Host an authenticated backend; issue short-lived session-bound WebSocket credentials; add customer accounts, authorization per move, accessible state/error UX, audit history, and end-to-end live tests. Public static JavaScript must not contain long-lived secrets. |
+| Webhook security | **Partial** | Fail-closed secret lookup, timestamp-bound HMAC comparison, header validation, and a bounded replay cache whose completed-delivery records persist to SQLite across restarts (interrupted deliveries deliberately stay retryable). Completed duplicates are acknowledged; a retry that races an in-flight delivery gets 409 so it is never silently swallowed. | Verify the signature construction against the vendor contract, rotate secrets, rate-limit endpoints, redact payload logs, and protect a multi-replica deployment. |
 | Admin/dev trigger | **Partial** | Configuration supports disabling the synthetic trigger and separating admin/dashboard tokens. | Use real identity-aware admin auth, short-lived credentials, audit logs, environment policy, and network restrictions. Dev-only routes must be impossible to enable accidentally in production. |
-| Persistence | **Not built** | Events and call contexts live in Python dictionaries. | PostgreSQL schema/migrations, encrypted sensitive fields, transactions, tenant/user ownership, retention/deletion jobs, backups, and restore drills. |
+| Persistence | **Built (single-node SQLite)** | Events, buyer contexts, and webhook dedupe records are mirrored to SQLite (WAL) and reload on startup; specialists that were in flight during a crash recover as honest `needs-user-action` with an explicit restart blocker, never silently resumed. | PostgreSQL schema/migrations for multi-replica deployments, encrypted sensitive fields, transactions, tenant/user ownership, retention/deletion jobs, backups, and restore drills. |
 | Durable jobs | **Not built** | `asyncio.create_task` and in-request fan-out run in the API process. | Redis/SQS/Pub/Sub plus workers, retry/dead-letter queues, scheduled polling, idempotent handlers, graceful shutdown, and job observability. |
 | Secure customer intake | **Not built** | The follow-up email refers to a future secure intake experience. | Authenticated one-time links, encrypted forms, expiry/revocation, field-level access policy, consent, validation, secrets isolation, and an alternative human-support path. Never collect passwords or full payment credentials in ordinary email. |
 | Production observability | **Partial** | JSON logs, basic health responses, and dashboard events. | Correlation IDs, metrics, traces, SLOs, provider latency/error dashboards, PII-safe logging, alerting, on-call runbooks, synthetic checks, and cost/usage budgets. |
 | CI and packaging | **Built (baseline)** | Locked Python dependencies, backend lint/type/test jobs, frontend lint/type/test/build jobs, secret/dependency review, container builds, and a static Pages workflow. | Add minimum coverage policy, container/image scanning, SBOM/signing, migration tests, load/security tests, provider sandbox schedules, protected branches, and release provenance. |
 | Deployment | **Partial scaffold** | Three Dockerfiles, nginx static hosting, Compose health dependencies, loopback port binding, read-only backend filesystems, and local launch/preflight scripts. | A real hosting platform, TLS, secret manager, private networking, managed database/queue, WAF/rate limits, autoscaling, migrations, staged rollout, rollback, backups, and disaster recovery. |
-| Legal/privacy/support | **Not built** | Prompts avoid soliciting some sensitive fields and docs describe prototype boundaries. | Terms, privacy notice, consent receipts, data-processing inventory, deletion/export workflow, vendor agreements, regulated-data review, accessibility review, incident response, customer support, and explicit approval for irreversible actions. |
+| Legal/privacy/support | **Not built** | Prompts avoid soliciting some sensitive fields and docs state the current capability boundaries. | Terms, privacy notice, consent receipts, data-processing inventory, deletion/export workflow, vendor agreements, regulated-data review, accessibility review, incident response, customer support, and explicit approval for irreversible actions. |
 
 ## Agent-by-agent reality
 

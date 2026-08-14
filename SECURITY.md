@@ -1,11 +1,14 @@
 # Security policy
 
-## Prototype warning
+## Developer preview status
 
-Relocate is a hackathon prototype and is not approved for production customer
-data. Do not use it with real passwords, SSNs, payment cards, prescription
-numbers, medical records, government identifiers, or accounts unless you have
-performed an independent security/legal review and have explicit authorization.
+Relocate is in developer preview and is not yet certified for production
+customer data; the hardening roadmap is in
+[Production security gates](#production-security-gates) below and in
+[STATUS.md](STATUS.md). Do not use it with real passwords, SSNs, payment cards,
+prescription numbers, medical records, government identifiers, or accounts
+unless you have performed an independent security/legal review and have
+explicit authorization.
 
 Normal automated tests are designed to be side-effect free. Live-provider
 acceptance is separately gated because it can send messages or mail, interact
@@ -50,8 +53,8 @@ rotate exposed credentials, and coordinate disclosure after a fix is available.
 - Missing completion providers return an error; the PAVO service does not
   fabricate a response after all providers fail.
 
-These controls reduce obvious prototype risks. They do not make the system
-production-secure.
+These controls establish safe defaults for the developer preview. They do not
+make the system production-secure.
 
 ## Known security and privacy gaps
 
@@ -70,8 +73,9 @@ production-secure.
 
 ### Webhooks and idempotency
 
-- Webhook replay claims are stored only in process memory. They disappear on
-  restart and do not coordinate across replicas.
+- Completed webhook-delivery records persist to single-node SQLite and reload
+  on restart (interrupted deliveries deliberately stay retryable); replicas do
+  not coordinate, so run exactly one orchestrator instance.
 - The implemented HMAC construction must be contract-tested against the exact
   current AgentPhone specification before exposure; header names and signed
   payload formats are vendor contracts, not assumptions.
@@ -81,7 +85,7 @@ production-secure.
 
 ### Sensitive data
 
-- Active move state is process-local and has no formal encryption, retention,
+- Active move state lives in single-node SQLite with no formal encryption, retention,
   deletion, or tenant-isolation policy.
 - The follow-up email mentions a secure form, but that authenticated encrypted
   intake experience is not built.

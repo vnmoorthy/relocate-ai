@@ -2,8 +2,9 @@
 
 PAVO exposes one authenticated completion endpoint and selects among a local
 OpenAI-compatible vLLM server, Gemini, and Anthropic. The router included here is
-the deterministic heuristic in `route.py`; this repository does **not** contain
-learned routing weights or the claimed PAVO-Bench dataset.
+the deterministic heuristic in `route.py`; learned routing weights and the
+PAVO-Bench dataset referenced in earlier project material are **not** part of
+this repository.
 
 ## Configuration
 

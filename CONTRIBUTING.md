@@ -1,14 +1,14 @@
 # Contributing to Relocate
 
-Relocate is a prototype with external-integration code that can create real
-side effects. Contributions are welcome, but local and CI workflows must remain
-safe by default.
+Relocate is in developer preview and contains external-integration code that
+can create real side effects. Contributions are welcome, but local and CI
+workflows must remain safe by default.
 
 ## Before you start
 
 Read:
 
-- [README.md](README.md) for the prototype boundaries and quick start;
+- [README.md](README.md) for the capability boundaries and quick start;
 - [STATUS.md](STATUS.md) for the authoritative built/partial/missing inventory;
 - [ARCHITECTURE.md](ARCHITECTURE.md) for data flow and trust boundaries;
 - [SECURITY.md](SECURITY.md) before changing webhooks, auth, sensitive data, or
