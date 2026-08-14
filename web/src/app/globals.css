@@ -690,6 +690,60 @@ main {
   50% { filter: drop-shadow(0 0 10px rgba(129, 140, 248, 0.20)); }
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Ambient background video (SpaceX-style full-bleed sections)
+   ────────────────────────────────────────────────────────────────────────── */
+.bg-video-wrap {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--bg-base);
+}
+.bg-video-media {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.bg-video-motion {
+  opacity: 0;
+  transition: opacity 0.9s ease;
+}
+.bg-video-motion--on {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bg-video-motion { display: none; }
+}
+
+/* Legibility scrims over section videos. */
+.hero-text-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(to top, rgba(6, 6, 7, 0.88) 0%, rgba(6, 6, 7, 0.35) 38%, rgba(6, 6, 7, 0.12) 62%, rgba(6, 6, 7, 0.45) 100%),
+    linear-gradient(100deg, rgba(6, 6, 7, 0.55) 0%, rgba(6, 6, 7, 0.05) 55%);
+}
+.section-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(to top, rgba(6, 6, 7, 0.92) 0%, rgba(6, 6, 7, 0.62) 45%, rgba(6, 6, 7, 0.42) 100%),
+    linear-gradient(100deg, rgba(6, 6, 7, 0.5) 0%, rgba(6, 6, 7, 0.08) 60%);
+}
+.section-scrim--heavy {
+  background:
+    linear-gradient(to top, rgba(6, 6, 7, 0.96) 0%, rgba(6, 6, 7, 0.8) 45%, rgba(6, 6, 7, 0.6) 100%),
+    linear-gradient(100deg, rgba(6, 6, 7, 0.6) 0%, rgba(6, 6, 7, 0.18) 60%);
+}
+
 /* Transcript clip: fade the last visible line instead of hard-cutting glyphs
    at the boundary of small (orbital) agent cards. */
 .transcript-clip {

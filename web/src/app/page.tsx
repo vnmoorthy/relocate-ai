@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ArtifactsPanel } from "@/components/ArtifactsPanel";
+import { BackgroundVideo } from "@/components/BackgroundVideo";
 import { CostTicker } from "@/components/CostTicker";
 import { FieldsCollectedStrip } from "@/components/FieldsCollectedStrip";
 import { PAVOFlow } from "@/components/PAVOFlow";
@@ -67,10 +68,12 @@ export default function Page() {
 
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section aria-labelledby="hero-title" className="hero flex flex-col">
-        <div className="hero-stars--far" aria-hidden="true" />
-        <div className="hero-stars" aria-hidden="true" />
-        <div className="hero-horizon" aria-hidden="true" />
+        <BackgroundVideo
+          src="/videos/hero-city-dusk.mp4"
+          poster="/videos/hero-city-dusk-poster.jpg"
+        />
         <div className="hero-vignette" aria-hidden="true" />
+        <div className="hero-text-scrim" aria-hidden="true" />
 
         <div className="relative z-[2] flex-1 w-full max-w-[1500px] mx-auto px-5 sm:px-10 flex flex-col justify-end pb-28 sm:pb-32 pt-[calc(var(--nav-h)+2rem)]">
           <p className="kicker mb-5">AI relocation concierge</p>
@@ -189,9 +192,14 @@ export default function Page() {
       <section
         id="system"
         aria-labelledby="system-heading"
-        className="w-full min-h-[90svh] flex flex-col justify-end border-t border-[var(--border-subtle)] scroll-mt-14"
+        className="relative overflow-hidden w-full min-h-[90svh] flex flex-col justify-end border-t border-[var(--border-subtle)] scroll-mt-14"
       >
-        <div className="w-full max-w-[1500px] mx-auto px-5 sm:px-10 pt-[14svh] pb-16 sm:pb-24">
+        <BackgroundVideo
+          src="/videos/bg-packing.mp4"
+          poster="/videos/bg-packing-poster.jpg"
+        />
+        <div className="section-scrim section-scrim--heavy" aria-hidden="true" />
+        <div className="relative z-[2] w-full max-w-[1500px] mx-auto px-5 sm:px-10 pt-[14svh] pb-16 sm:pb-24">
           <p className="kicker mb-4">02 · How it works</p>
           <h2 id="system-heading" className="display-sub max-w-[900px]">
             Dial. Brief.<br />Dispatch.
@@ -221,9 +229,14 @@ export default function Page() {
       <section
         id="router"
         aria-labelledby="router-heading"
-        className="w-full min-h-[90svh] flex flex-col justify-end border-t border-[var(--border-subtle)] scroll-mt-14"
+        className="relative overflow-hidden w-full min-h-[90svh] flex flex-col justify-end border-t border-[var(--border-subtle)] scroll-mt-14"
       >
-        <div className="w-full max-w-[1500px] mx-auto px-5 sm:px-10 pt-[14svh] pb-16 sm:pb-24">
+        <BackgroundVideo
+          src="/videos/bg-city-night.mp4"
+          poster="/videos/bg-city-night-poster.jpg"
+        />
+        <div className="section-scrim" aria-hidden="true" />
+        <div className="relative z-[2] w-full max-w-[1500px] mx-auto px-5 sm:px-10 pt-[14svh] pb-16 sm:pb-24">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-end">
             <div>
               <p className="kicker mb-4">03 · The router</p>
