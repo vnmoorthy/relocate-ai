@@ -78,7 +78,7 @@ export default function Page() {
         <div className="relative z-[2] flex-1 w-full max-w-[1500px] mx-auto px-5 sm:px-10 flex flex-col justify-end pb-28 sm:pb-32 pt-[calc(var(--nav-h)+2rem)]">
           <p className="kicker mb-5">AI relocation concierge</p>
           <h1 id="hero-title" className="display-headline max-w-[1100px]">
-            One call.<br />Seventeen agents.
+            One call.<br />Relocate.
           </h1>
           <p className="mt-6 max-w-[560px] text-[15px] sm:text-[16px] leading-[1.65] text-[var(--text-secondary)]">
             One phone call briefs a swarm that coordinates your entire move —
@@ -87,7 +87,7 @@ export default function Page() {
           </p>
           <div className="mt-9 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
             <a href="#dashboard" className="btn-solid">Watch the swarm</a>
-            <a href="#run" className="btn-outline">Run it locally</a>
+            <a href="#access" className="btn-outline">Get early access</a>
           </div>
         </div>
 
@@ -113,7 +113,7 @@ export default function Page() {
             Watch a full move fan out — utilities, movers, schools, federal
             forms — each specialist reporting a real terminal state.
           </p>
-          <a href="#run" className="arrow-link mt-6">Run it yourself →</a>
+          <a href={REPO_URL} target="_blank" rel="noreferrer" className="arrow-link mt-6">It’s open source →</a>
         </div>
 
         <div className="w-full max-w-[1500px] mx-auto px-3 sm:px-10 pb-16 sm:pb-24">
@@ -288,10 +288,10 @@ export default function Page() {
         </div>
       </section>
 
-      {/* ── 04 · Run it ──────────────────────────────────────────────────── */}
+      {/* ── 04 · Early access ────────────────────────────────────────────── */}
       <section
-        id="run"
-        aria-labelledby="run-heading"
+        id="access"
+        aria-labelledby="access-heading"
         className="relative overflow-hidden w-full min-h-[90svh] flex flex-col justify-end border-t border-[var(--border-subtle)] scroll-mt-14"
       >
         <BackgroundVideo
@@ -302,25 +302,30 @@ export default function Page() {
         <div className="relative z-[2] w-full max-w-[1500px] mx-auto px-5 sm:px-10 pt-[14svh] pb-20 sm:pb-28">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-end">
             <div>
-              <p className="kicker mb-4">04 · Run it</p>
-              <h2 id="run-heading" className="display-sub">
-                Clone. Run.<br />Watch.
+              <p className="kicker mb-4">04 · Early access</p>
+              <h2 id="access-heading" className="display-sub">
+                Moving<br />soon?
               </h2>
               <p className="mt-5 max-w-[560px] text-[15px] leading-[1.65] text-[var(--text-secondary)]">
-                One script starts the router, the orchestrator, and this
-                dashboard on localhost. Provider keys stay optional — and every
-                outbound send is blocked until you configure a recipient
-                allowlist.
+                Relocate is onboarding a small group of early movers. Tell us
+                where you&rsquo;re headed and you&rsquo;ll be first in line when
+                the doors open.
               </p>
-              <div className="mt-8">
+              <div className="mt-8 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+                <a
+                  href="mailto:vnarasingamoorthy@gmail.com?subject=Early%20access%20request%20%E2%80%94%20Relocate&body=Hi%20%E2%80%94%20I%27d%20like%20early%20access%20to%20Relocate.%0A%0AMoving%20from%3A%20%0AMoving%20to%3A%20%0AApprox.%20date%3A%20%0A"
+                  className="btn-solid"
+                >
+                  Request early access
+                </a>
                 <a href={REPO_URL} target="_blank" rel="noreferrer" className="btn-outline">
                   View on GitHub
                 </a>
               </div>
             </div>
-            <div className="code-card" role="figure" aria-label="Commands to run Relocate locally">
+            <div className="code-card" role="figure" aria-label="For engineers: run Relocate locally">
               <div className="code-card-bar">
-                <span>terminal</span>
+                <span>for engineers · open source</span>
               </div>
               <div className="code-card-body scrollbar-clean">
                 <div className="code-line">
@@ -329,11 +334,7 @@ export default function Page() {
                 </div>
                 <div className="code-line">
                   <span className="code-prompt" aria-hidden="true">$</span>
-                  <span className="text-[var(--text-primary)]">cd relocate-ai</span>
-                </div>
-                <div className="code-line">
-                  <span className="code-prompt" aria-hidden="true">$</span>
-                  <span className="text-[var(--text-primary)]">./run.sh</span>
+                  <span className="text-[var(--text-primary)]">cd relocate-ai &amp;&amp; ./run.sh</span>
                 </div>
               </div>
             </div>

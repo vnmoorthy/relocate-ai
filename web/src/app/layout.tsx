@@ -29,7 +29,7 @@ export const metadata: Metadata = {
   title: "Relocate — AI relocation concierge",
   description,
   openGraph: {
-    title: "One call. Seventeen agents.",
+    title: "One call. Relocate.",
     description,
     url: "https://vnmoorthy.github.io/relocate-ai/",
     siteName: "Relocate",
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary",
-    title: "One call. Seventeen agents.",
+    title: "One call. Relocate.",
     description,
   },
 };
