@@ -17,6 +17,11 @@ const WS_URL =
 
 const REPO_URL = "https://github.com/vnmoorthy/relocate-ai";
 
+// The live concierge demo line (AgentPhone). Served by the operator's
+// supervised deployment — see demo-line.sh.
+const PHONE_E164 = "+16184149537";
+const PHONE_DISPLAY = "+1 (618) 414-9537";
+
 const SPECIALIST_COUNT = ALL_AGENTS.length - 1;
 
 export default function Page() {
@@ -86,9 +91,12 @@ export default function Page() {
             forwarding, preparing USCIS and DMV forms for your signature.
           </p>
           <div className="mt-9 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-            <a href="#dashboard" className="btn-solid">Watch the swarm</a>
-            <a href="#access" className="btn-outline">Get early access</a>
+            <a href={`tel:${PHONE_E164}`} className="btn-solid">Call {PHONE_DISPLAY}</a>
+            <a href="#dashboard" className="btn-outline">Watch the swarm</a>
           </div>
+          <p className="mt-4 text-[12px] tracking-[0.08em] uppercase text-[var(--text-tertiary)]">
+            Live concierge demo line · US · talk to the swarm yourself
+          </p>
         </div>
 
         <a href="#dashboard" className="scroll-cue" aria-label="Scroll to the swarm">
@@ -312,9 +320,12 @@ export default function Page() {
                 the doors open.
               </p>
               <div className="mt-8 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+                <a href={`tel:${PHONE_E164}`} className="btn-solid">
+                  Call {PHONE_DISPLAY}
+                </a>
                 <a
                   href="mailto:vnarasingamoorthy@gmail.com?subject=Early%20access%20request%20%E2%80%94%20Relocate&body=Hi%20%E2%80%94%20I%27d%20like%20early%20access%20to%20Relocate.%0A%0AMoving%20from%3A%20%0AMoving%20to%3A%20%0AApprox.%20date%3A%20%0A"
-                  className="btn-solid"
+                  className="btn-outline"
                 >
                   Request early access
                 </a>

@@ -113,11 +113,15 @@ pnpm build
 
 Start locally with `./run.sh`. It prints a `http://127.0.0.1:3000/#ws-token=…`
 URL for the authenticated live view; open that URL (not the bare dashboard) if
-the demo should show live orchestrator events instead of the simulation. A
-public tunnel is opt-in via `--ngrok`; do not enable it until the exposed
-webhook routes and authentication have been reviewed. The current phone number
-is deployment state and should be read from the authorized AgentPhone account,
-not hard-coded into presentation material.
+the demo should show live orchestrator events instead of the simulation.
+
+The published concierge number is served by the operator's supervised
+deployment: run `./demo-line.sh` before any window in which the number must
+answer. It keeps the machine awake, the local model warm, the stack and public
+tunnel up, and re-points the AgentPhone webhook automatically if the tunnel URL
+changes. The line is down whenever that machine is off or offline — take the
+number off the site (or park a voicemail greeting) before any extended
+offline period.
 
 ## Live narration rules
 
