@@ -69,14 +69,10 @@ async def _isolated_state() -> AsyncIterator[None]:
     """Keep the process-global demo state isolated between tests."""
     state.buyer_contexts.clear()
     state.events.clear()
-    state.specialist_call_to_agent.clear()
-    state.seen_first_turns.clear()
     state.buyer_caller_phone.clear()
     yield
     state.buyer_contexts.clear()
     state.events.clear()
-    state.specialist_call_to_agent.clear()
-    state.seen_first_turns.clear()
     state.buyer_caller_phone.clear()
 
 

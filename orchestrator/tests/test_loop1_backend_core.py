@@ -21,8 +21,6 @@ from app.state import BuyerCallContext, MarketplaceEvent, SpecialistCallContext,
 def _clean_process_state() -> None:
     state.buyer_contexts.clear()
     state.events.clear()
-    state.specialist_call_to_agent.clear()
-    state.seen_first_turns.clear()
     state.buyer_caller_phone.clear()
     security._WEBHOOK_DELIVERIES.clear()
 
@@ -75,21 +73,24 @@ def test_agentphone_signature_binds_timestamp_and_dedupes_webhook_id(
     security._SECRETS.clear()
     security._SECRETS["buyer"] = secret
 
-    assert security.verify_agentphone_signature(
-        body,
-        headers["x-webhook-signature"],
-        headers["x-webhook-timestamp"],
-        headers["x-webhook-id"],
-        "buyer",
-    ) is True
+    def verify() -> str:
+        return security.verify_agentphone_signature(
+            body,
+            headers["x-webhook-signature"],
+            headers["x-webhook-timestamp"],
+            headers["x-webhook-id"],
+            "buyer",
+        )
+
+    assert verify() == "claimed"
+    # A concurrent retry of a delivery still being processed must not be
+    # acknowledged as a duplicate — it stays claimable if the first fails.
+    assert verify() == "in_flight"
     security.complete_agentphone_webhook("buyer", "wh_1")
-    assert security.verify_agentphone_signature(
-        body,
-        headers["x-webhook-signature"],
-        headers["x-webhook-timestamp"],
-        headers["x-webhook-id"],
-        "buyer",
-    ) is False
+    assert verify() == "completed"
+    security.release_agentphone_webhook("buyer", "wh_1")
+    # Release only frees "processing" claims; a completed delivery stays deduped.
+    assert verify() == "completed"
 
     body_only = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
     with pytest.raises(HTTPException, match="bad webhook signature"):
@@ -125,6 +126,131 @@ def test_failed_webhook_processing_releases_id_for_provider_retry(
     assert calls == 2
     assert response.status_code == 200
     assert security._WEBHOOK_DELIVERIES[("buyer", "wh_retry")][0] == "completed"
+
+
+def test_in_flight_duplicate_webhook_returns_409_not_ack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        main, "verify_agentphone_signature", lambda *_args, **_kwargs: "in_flight",
+    )
+    response = asyncio.run(
+        main.webhook_agent("buyer", _request(b"{}", {"x-webhook-id": "wh_flight"})),
+    )
+    assert response.status_code == 409
+
+
+def test_call_end_dispatches_core_complete_spec_without_household_flags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from app.integrations import agentmail
+
+    event = MarketplaceEvent(id="event-hangup", homeowner_call_id="call-hangup", spec={})
+    state.events[event.id] = event
+    ctx = BuyerCallContext(
+        call_id="call-hangup",
+        event_id=event.id,
+        collected={
+            "origin_address": "123 Main St, San Francisco, CA 94103",
+            "destination_address": "456 Oak Ave, Austin, TX 78701",
+            "move_date": "2030-01-15",
+            "user_email": "mover@test.invalid",
+        },
+    )
+    state.buyer_contexts[ctx.call_id] = ctx
+    fanouts: list[tuple[str, dict[str, Any]]] = []
+
+    async def fake_fan_out(event_id: str, spec: dict[str, Any]) -> None:
+        fanouts.append((event_id, dict(spec)))
+
+    async def fake_followup(**_kwargs: Any) -> dict[str, str]:
+        return {"message_id": "msg-hangup"}
+
+    monkeypatch.setattr(main, "fan_out", fake_fan_out)
+    monkeypatch.setattr(agentmail, "send_buyer_followup_form", fake_followup)
+    monkeypatch.setattr(main.ws_broker, "broadcast", AsyncMock())
+
+    async def scenario() -> None:
+        await main._handle_call_ended("buyer", {"callId": ctx.call_id})
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    asyncio.run(scenario())
+
+    assert ctx.dispatched is True
+    assert fanouts and fanouts[0][0] == event.id
+    assert event.spec["origin_address"].startswith("123")
+    # Household flags were never answered; the spec must not fabricate them.
+    assert "has_pets" not in event.spec
+    assert ctx.followup_sent is True
+
+
+def test_late_in_flight_turn_after_hangup_still_dispatches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """call_ended often races the final buyer turn, whose fields merge only
+    after a multi-second completion await. The end-of-call dispatch must re-run
+    once that late turn lands, or a core-complete call silently dies."""
+    from unittest.mock import AsyncMock
+
+    from app.integrations import agentmail
+
+    event = MarketplaceEvent(id="event-race", homeowner_call_id="call-race", spec={})
+    state.events[event.id] = event
+    ctx = BuyerCallContext(
+        call_id="call-race",
+        event_id=event.id,
+        collected={
+            "origin_address": "123 Main St, San Francisco, CA 94103",
+            "destination_address": "456 Oak Ave, Austin, TX 78701",
+            "move_date": "2030-01-15",
+            # user_email arrives in the still-in-flight final turn.
+        },
+    )
+    state.buyer_contexts[ctx.call_id] = ctx
+    fanouts: list[str] = []
+
+    class Reply:
+        content = 'Got it. {"user_email":"mover@test.invalid"}'
+        tier = "gemma-local"
+        cost_cents = 0.1
+        decision_reason = "test"
+
+    async def pavo(*_args: Any, **_kwargs: Any) -> Reply:
+        return Reply()
+
+    async def fake_fan_out(event_id: str, _spec: dict[str, Any]) -> None:
+        fanouts.append(event_id)
+
+    async def fake_followup(**_kwargs: Any) -> dict[str, str]:
+        return {"message_id": "msg-race"}
+
+    monkeypatch.setattr(main, "pavo_chat", pavo)
+    monkeypatch.setattr(main, "fan_out", fake_fan_out)
+    monkeypatch.setattr(agentmail, "send_buyer_followup_form", fake_followup)
+    monkeypatch.setattr(main.ws_broker, "broadcast", AsyncMock())
+
+    async def scenario() -> None:
+        # Hang-up processed first: core still incomplete, nothing dispatches.
+        await main._handle_call_ended("buyer", {"callId": ctx.call_id})
+        assert ctx.call_ended is True
+        assert ctx.dispatched is False
+        assert not fanouts
+        # The in-flight turn now completes and merges the final CORE field.
+        response = await main._handle_buyer_turn("call-race", "email is mover@test.invalid", [])
+        async for _chunk in response.body_iterator:  # type: ignore[union-attr]
+            pass
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    asyncio.run(scenario())
+
+    assert ctx.dispatched is True
+    assert fanouts == [event.id]
+    assert event.spec["user_email"] == "mover@test.invalid"
+    assert ctx.followup_sent is True
 
 
 def test_buyer_followup_marks_sent_only_after_success_and_retries_failure(
@@ -197,6 +323,40 @@ def test_field_corrections_sync_event_and_sensitive_values_are_not_broadcast() -
         "origin_address": "[collected]",
         "user_email": "[collected]",
     }
+
+
+def test_example_regurgitation_is_dropped_but_coincidences_merge() -> None:
+    from app.buyer_schema import by_name
+
+    def example(name: str) -> str:
+        field = by_name(name)
+        assert field is not None
+        return field.example
+
+    event = MarketplaceEvent(id="event-regurg", homeowner_call_id="call-regurg", spec={})
+    state.events[event.id] = event
+    ctx = BuyerCallContext(call_id="call-regurg", event_id=event.id, turn_count=1)
+    state.buyer_contexts[ctx.call_id] = ctx
+
+    # A block copying 3+ schema example values wholesale is regurgitation:
+    # those values must not merge; genuinely-stated fields in the same block do.
+    regurgitated = json.dumps({
+        "origin_address": "9 Real Caller Way, San Francisco, CA 94110",
+        "user_name": example("user_name"),
+        "pet_name": example("pet_name"),
+        "vet_email": example("vet_email"),
+        "bank_name": example("bank_name"),
+    })
+    merged = main._extract_and_merge_fields(regurgitated, ctx)
+    assert set(merged) == {"origin_address"}
+
+    # One coincidental example match alone (a real bank named Chase) merges.
+    ctx2 = BuyerCallContext(call_id="call-chase", event_id=event.id, turn_count=1)
+    state.buyer_contexts[ctx2.call_id] = ctx2
+    merged2 = main._extract_and_merge_fields(
+        json.dumps({"bank_name": example("bank_name")}), ctx2,
+    )
+    assert merged2 == {"bank_name": example("bank_name")}
 
 
 def test_browser_adapter_and_missing_fields_are_needs_user_action() -> None:

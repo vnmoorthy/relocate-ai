@@ -99,6 +99,13 @@ def _load_authorized_spec() -> dict:
         "PROVIDER_ACCEPTANCE_EMAIL_ALLOWLIST must explicitly include every outbound target: "
         f"{sorted(missing_targets)}"
     )
+    # The runtime enforces its own fail-safe allowlist; the acceptance run must
+    # declare the same targets there or every send blocks as needs-user-action.
+    missing_runtime = expected_targets - set(settings.agentmail_allowlist)
+    assert not missing_runtime, (
+        "AGENTMAIL_ALLOWED_RECIPIENTS must include every outbound target for the "
+        f"runtime allowlist: {sorted(missing_runtime)}"
+    )
     return spec
 
 

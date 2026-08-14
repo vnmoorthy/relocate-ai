@@ -1,10 +1,9 @@
-"""In-memory state for the demo. Redis post-MVP.
+"""In-memory state for the prototype. Durable storage is not built yet: restarts
+lose active events, and multiple orchestrator replicas are not safe.
 
 Two main entities:
-- BuyerCallContext: per-inbound-call state (judge → buyer agent).
-- MarketplaceEvent: aggregate of all 7 LIVE specialist outcomes for one move.
-
-Pattern per /plan-eng-review architecture issue 5 (buyer agent state schema).
+- BuyerCallContext: per-inbound-call state for the buyer concierge.
+- MarketplaceEvent: aggregate of every dispatched specialist outcome for one move.
 """
 from __future__ import annotations
 
@@ -28,6 +27,9 @@ class BuyerCallContext:
     collected: dict[str, Any] = field(default_factory=dict)
     # Track which fields came in on which turn for the dashboard timeline.
     collection_history: list[dict[str, Any]] = field(default_factory=list)
+    # True once agent.call_ended has been observed. Late in-flight turns check
+    # this to re-run end-of-call dispatch/follow-up after their fields merge.
+    call_ended: bool = False
     # True after the post-call follow-up email is sent (idempotency).
     followup_sent: bool = False
     followup_in_progress: bool = False
@@ -70,14 +72,10 @@ class MarketplaceEvent:
 
 
 class AppState:
-    """Process-local state. Webhook idempotency via seen_call_ids per specialist."""
+    """Process-local state. Webhook replay protection lives in security.py."""
     def __init__(self) -> None:
         self.buyer_contexts: dict[str, BuyerCallContext] = {}
         self.events: dict[str, MarketplaceEvent] = {}
-        # specialist_call_id -> agent_id  (dedup webhook retries)
-        self.specialist_call_to_agent: dict[str, str] = {}
-        # agent_id -> set of call_ids we've seen first-turn for (idempotency)
-        self.seen_first_turns: dict[str, set[str]] = {}
         # buyer call_id -> caller phone number (E.164) — used for Supermemory recall lookup
         self.buyer_caller_phone: dict[str, str] = {}
 

@@ -19,6 +19,10 @@ from ..ws import ws_broker
 log = logging.getLogger(__name__)
 
 
+class RecipientNotAllowed(RuntimeError):
+    """An outbound message targeted an address missing from the runtime allowlist."""
+
+
 def _result_shape(result: Any) -> str | None:
     """Return useful integration telemetry without values, tokens, or PII."""
     if result is None:

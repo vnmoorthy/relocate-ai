@@ -1,8 +1,7 @@
 """Push refreshed AgentPhone agent configs — voice, begin_message, system_prompt, tuning.
 
-After updating personas.py (voice swapped to ElevenLabs, prompts rewritten for natural
-dialogue, begin_message set for buyer), this script syncs the changes to AgentPhone
-for all 16 provisioned agents. Idempotent.
+After updating personas.py, this script syncs voice, prompt, and tuning changes
+to AgentPhone for every provisioned agent. Idempotent.
 """
 from __future__ import annotations
 
@@ -68,7 +67,7 @@ async def main() -> None:
             print(f"  [ok]  {persona.agent_id:18s} voice={voice_label:20s} speed={persona.voice_speed}")
 
     print()
-    print("Done. Agents now use ElevenLabs voices + conversational prompts.")
+    print("Done. Agent voices and conversational prompts are synced.")
 
 
 if __name__ == "__main__":

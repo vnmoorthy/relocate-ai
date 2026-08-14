@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     browseruse_api_key: str = ""
     sponge_api_key: str = ""
     supermemory_api_key: str = ""
+    # Fail-safe outbound-email policy: every AgentMail recipient must appear in
+    # this comma-separated allowlist. An empty list blocks all outbound email.
+    agentmail_allowed_recipients: str = ""
     # Moss takes two credentials, not one API key.
     moss_project_id: str = ""
     moss_project_key: str = ""
@@ -48,10 +51,6 @@ class Settings(BaseSettings):
 
     # AgentPhone concurrency.
     agentphone_parallel_cap: int = 6
-
-    # Synthetic mode — skip AgentPhone entirely and run fake 4-turn conversations
-    # per specialist via PAVO directly. Useful for rehearsal + backup video.
-    synthetic_mode: bool = False
 
     # App.
     app_env: str = "development"
@@ -74,6 +73,19 @@ class Settings(BaseSettings):
         """Return a conservative, credential-safe CORS allowlist."""
         origins = [origin.strip() for origin in self.cors_allowed_origins.split(",")]
         return [origin for origin in origins if origin and origin != "*"]
+
+    @property
+    def agentmail_allowlist(self) -> frozenset[str]:
+        """Lower-cased outbound-email allowlist. Empty means every send is blocked.
+
+        Deliberately not cached so tests and operators can adjust the policy
+        without recreating the settings singleton.
+        """
+        return frozenset(
+            addr.strip().lower()
+            for addr in self.agentmail_allowed_recipients.split(",")
+            if addr.strip()
+        )
 
 
 # ``BaseSettings`` resolves required values from the environment at runtime;

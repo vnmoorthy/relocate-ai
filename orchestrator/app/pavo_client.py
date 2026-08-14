@@ -6,14 +6,16 @@ It exposes /v1/chat/completions which does routing + completion in one round tri
 Response shape:
   {
     "content": "<assistant text>",
-    "x_pavo_tier": "gemma-local" | "claude-haiku" | "claude-opus",
+    "x_pavo_tier": "gemma-local" | "gemini-flash" | "claude-opus",
     "x_pavo_cost_cents": <float>,
     "x_pavo_latency_ms": <int>,
     "x_pavo_decision_reason": "<short string>"
   }
 
 Fallback: if PAVO is unreachable and Anthropic is configured, route the turn
-directly to Claude Haiku. If neither real provider is available, fail explicitly.
+directly to Claude Haiku (reported as tier "claude-haiku" with
+decision_reason "pavo-server-fallback"). If neither real provider is
+available, fail explicitly rather than fabricating a reply.
 """
 from __future__ import annotations
 

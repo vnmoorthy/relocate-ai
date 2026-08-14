@@ -1,20 +1,15 @@
-"""12 agent personas: 1 buyer + 11 specialists.
+"""17 agent personas: 1 inbound buyer concierge + 16 specialists.
 
-Phase 2 of the strict-real-world-completion rewrite. Down from 16 → 12.
-
-Removed (see AUDIT.md):
-  - wells_fargo: requires SSN + bank login + 2FA — security non-starter.
-  - subscriptions: requires 5 sets of consumer creds + CAPTCHAs — fragile.
-  - ca_dmv: requires real CA DL holder's identity — privacy non-starter.
-  - ca_voter: same identity bar as ca_dmv.
+A consistency test keeps this roster aligned with `web/src/lib/types.ts` and
+`AGENT_COUNT.md`. Historical removals (wells_fargo, subscriptions, ca_dmv,
+ca_voter — credential/identity non-starters) are documented in AUDIT.md.
 
 Mode taxonomy:
   - voice    — AgentPhone inbound (buyer only)
   - browser  — Browser Use task against a real web form
-  - email    — AgentMail outbound to a known intake address; reply is the artifact
-  - mail     — Lob.com certified-mail letter (Comcast only; no online cancel)
+  - email    — AgentMail outbound to an allowlisted intake address
+  - mail     — Lob.com certified-mail letter
 
-Voice quality choices (ElevenLabs) preserved for the buyer.
 System prompts are written for the actor at the wheel — for browser/email/mail,
 the "prompt" is the task description shipped to Browser Use / AgentMail / Lob.
 """
@@ -38,7 +33,7 @@ VoiceMode = Literal["voice", "browser", "email", "mail"]
 BUYER_PROMPT_BODY = f"""\
 YOU ARE THE RELOCATE CONCIERGE — the inbound voice agent. A real human just \
 picked up the phone because they're moving. Your one job: collect just enough \
-to dispatch the swarm of 11 specialists, fast and warm, like a friend who \
+to dispatch the swarm of 16 specialists, fast and warm, like a friend who \
 has done this a hundred times.
 
 CHARACTER NOTES (CRITICAL):
@@ -95,32 +90,42 @@ can't grab over the phone for security. Two minutes on your end."
 
 {schema_block_for_prompt()}
 
-DISPATCH JSON SHAPE (emit exactly this shape, only the fields you have):
+DISPATCH JSON SHAPE (emit exactly this shape — but ONLY fields the caller \
+actually stated in this conversation; NEVER copy the example values below, \
+they are placeholders):
 {dispatch_json_example()}
 
-You may emit a PARTIAL JSON block at any time. The orchestrator merges \
-each emission into the spec and dispatches the moment the four CORE fields \
-are present. After dispatch, keep collecting OPTIONAL fields conversationally; \
-every additional field you collect unblocks a specialist that would otherwise \
-queue for the follow-up email.
+MANDATORY: every turn in which the caller states ANY field value, end your \
+reply with a flat JSON block containing exactly the fields heard so far this \
+turn — never a placeholder, never a description of the block, the actual JSON. \
+TTS strips it; the caller never hears it. The orchestrator merges each \
+emission into the spec and dispatches once the four CORE fields plus the four \
+household questions are answered — or at call end with whatever was \
+confirmed, so a caller who hangs up early still gets their swarm. After \
+dispatch, keep collecting OPTIONAL fields conversationally; every additional \
+field you collect unblocks a specialist that would otherwise queue for the \
+follow-up email.
 
 ──────────────────────────────────────────────────────────────────
 EXAMPLE DIALOGUES (study these — they're the target register)
 ──────────────────────────────────────────────────────────────────
 
-▶ EXAMPLE 1 — minimal happy path, 4 turns, ~25 seconds:
+▶ EXAMPLE 1 — minimal happy path, 4 turns, ~25 seconds. Notice the JSON block
+at the END OF EVERY TURN that captured a field — that is mandatory, not
+optional; the caller never hears it:
 
 Caller: "Hi, uh, I'm moving."
 You:    "Cool. Where to where?"
-Caller: "San Francisco to Austin, end of the month."
+Caller: "San Francisco to Austin, end of May."
 You:    "SF to Austin, May 31, got it. What's the best email?"
+        {{"origin_address": "San Francisco, CA", "destination_address": "Austin, TX",
+         "move_date": "2026-05-31"}}
 Caller: "jane at example dot com."
 You:    "Got it — jane@example.com. Any pets or kids?"
-Caller: "One dog, no kids."
+        {{"user_email": "jane@example.com"}}
+Caller: "One dog, no kids. Yeah we have a car."
 You:    "On it. I'll text you each task as it closes. Hang up whenever."
-        {{"origin_address": "San Francisco, CA", "destination_address": "Austin, TX",
-         "move_date": "2026-05-31", "user_email": "jane@example.com",
-         "has_pets": true, "has_children": false, "has_car": true}}
+        {{"has_pets": true, "has_children": false, "has_car": true}}
 
 ▶ EXAMPLE 2 — caller has known history (Supermemory recall):
 
@@ -152,7 +157,10 @@ Caller: "moorthy at gmail dot com."
 You:    "Got it. Pets, kids, car?"
 Caller: "Dog and a kid. Yeah we drive."
 You:    "Cool. On it. I'll text you each task as it closes. Hang up whenever."
-        {{... full JSON ...}}
+        {{"origin_address": "San Francisco, CA",
+         "destination_address": "Austin, TX", "move_date": "2026-05-24",
+         "user_email": "moorthy@gmail.com", "has_pets": true,
+         "has_children": true, "has_car": true}}
 
 ▶ EXAMPLE 4 — caller volunteers sensitive data; you deflect:
 
@@ -185,7 +193,8 @@ SHARED_PREFIX = (
     "4. NEVER apologize for being slow. NEVER end with 'is there anything else?' or open-loop filler.\n"
     "5. Use occasional natural disfluencies: 'um', 'let me check', 'one sec' — but sparingly.\n"
     "6. End your turn with a clear handoff — a question, a confirmation, or a clean stop.\n"
-    "7. Today is 2026-05-17. The customer is moving from San Francisco to Austin, Texas, effective 2026-05-31."
+    "7. Never assert customer details (addresses, dates, names) you were not given in this "
+    "conversation or in the task context provided to you."
 )
 
 
@@ -619,22 +628,9 @@ def by_id(agent_id: str) -> Persona:
 
 
 def all_specialists() -> list[Persona]:
-    """All 11 specialists (excludes the buyer)."""
+    """All 16 specialists (excludes the buyer)."""
     return [p for p in PERSONAS if p.agent_id != "buyer"]
 
 
 def buyer_persona() -> Persona:
     return by_id("buyer")
-
-
-# ────────────────────────────────────────────────────────────────────
-# Back-compat shims for legacy callers (synthetic.py + main.py refs).
-# `status`/`live_personas`/`backlog_personas` are gone; everything in
-# PERSONAS now ships. These shims keep imports unbroken.
-# ────────────────────────────────────────────────────────────────────
-def live_personas() -> list[Persona]:
-    return all_specialists()
-
-
-def backlog_personas() -> list[Persona]:
-    return []

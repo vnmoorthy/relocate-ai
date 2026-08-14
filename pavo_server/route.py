@@ -9,8 +9,8 @@ Policy:
   1. Hysteresis: if prior_tier was claude-opus, stay opus for 1 more turn unless
      turn looks trivial (length < 20 chars).
   2. Hard escalation keywords: legal / dispute / policy / code / NFPA → claude-opus.
-  3. Pricing / quote / specifics → claude-haiku.
-  4. Buyer-extract role → claude-haiku floor (we need structured JSON output).
+  3. Pricing / quote / specifics → gemini-flash.
+  4. Buyer-extract role → gemini-flash floor (we need structured JSON output).
   5. Early-call greeting turns (history_depth < 2) → clamp to gemma-local.
   6. Default → gemma-local.
 """

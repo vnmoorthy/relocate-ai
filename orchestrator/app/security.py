@@ -56,8 +56,14 @@ def _load_secrets() -> None:
     _SECRETS_MTIME_NS = mtime_ns
 
 
-def _begin_webhook(agent_id: str, webhook_id: str, now: float) -> bool:
-    """Atomically claim processing. False means completed or already in flight."""
+def _begin_webhook(agent_id: str, webhook_id: str, now: float) -> str:
+    """Atomically claim processing.
+
+    Returns "claimed" when this caller owns the delivery, "in_flight" when the
+    first delivery is still processing (the retry must NOT be acknowledged —
+    if the original attempt later fails and is released, an acked retry would
+    be lost), or "completed" when the delivery already finished.
+    """
     cutoff = now - _REPLAY_TTL_SECONDS
     key = (agent_id, webhook_id)
     with _SEEN_LOCK:
@@ -66,12 +72,13 @@ def _begin_webhook(agent_id: str, webhook_id: str, now: float) -> bool:
             if seen_at >= cutoff:
                 break
             _WEBHOOK_DELIVERIES.popitem(last=False)
-        if key in _WEBHOOK_DELIVERIES:
-            return False
+        existing = _WEBHOOK_DELIVERIES.get(key)
+        if existing is not None:
+            return "in_flight" if existing[0] == "processing" else "completed"
         _WEBHOOK_DELIVERIES[key] = ("processing", now)
         while len(_WEBHOOK_DELIVERIES) > _MAX_SEEN_WEBHOOKS:
             _WEBHOOK_DELIVERIES.popitem(last=False)
-    return True
+    return "claimed"
 
 
 def complete_agentphone_webhook(agent_id: str, webhook_id: str) -> None:
@@ -99,11 +106,13 @@ def verify_agentphone_signature(
     webhook_id_header: str | None,
     agent_id: str,
     max_age_seconds: int = 300,
-) -> bool:
+) -> str:
     """Verify AgentPhone's timestamp-bound HMAC and claim its delivery ID.
 
-    Returns False for an already-processed, otherwise-valid delivery so callers
-    can acknowledge retries without repeating side effects.
+    Returns "claimed" when the caller should process the delivery, "completed"
+    for an already-processed valid delivery (acknowledge without side effects),
+    or "in_flight" for a concurrent retry of a delivery still being processed
+    (respond non-2xx so the vendor retries after the first attempt settles).
     """
     _load_secrets()
     secret = _SECRETS.get(agent_id)

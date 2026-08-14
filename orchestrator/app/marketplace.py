@@ -1,21 +1,23 @@
-"""Marketplace fan-out: when buyer dispatches, run the 11 specialists in parallel.
+"""Marketplace fan-out: when the buyer dispatches, run the chosen specialists
+(11–16 of the 16 configured, depending on household flags) in parallel.
 
 Each persona declares its `voice_mode`:
-  - "browser" → Browser Use task against a real web form
-  - "email"   → AgentMail outbound to a known intake address
-  - "mail"    → Lob.com certified-mail letter
-  - "voice"   → AgentPhone outbound (currently only the buyer is inbound voice;
-                no shipping specialists are outbound voice in v2)
+  - "browser" → Browser Use task against a real web form (runtime-blocked
+                pending the protected-secrets v2 migration)
+  - "email"   → AgentMail outbound to an allowlisted intake address
+  - "mail"    → Lob.com certified-mail letter (runtime-blocked pending a
+                customer review + signature workflow)
+  - "voice"   → AgentPhone inbound (buyer only; no outbound-voice specialists)
 
-There is no `SYNTHETIC_MODE` short-circuit for shipping agents anymore. Either
-the real integration runs and returns a real artifact, or the agent fails and
-the e2e test surfaces it. (Synthetic mode is preserved as a separate dev path
-for dashboard rehearsal only — it is NOT used to make shipping artifacts.)
+There is no synthetic short-circuit for shipping agents. Either the real
+integration runs and returns a real artifact, or the agent reports an honest
+needs-user-action/failed outcome that the e2e tests surface.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from typing import Any
 
@@ -23,6 +25,7 @@ from .config import settings
 from .integrations import agentmail as am
 from .integrations import browser_use as bu
 from .integrations import lob_mail as lob
+from .integrations._common import RecipientNotAllowed
 from .integrations.hipaa_pdf import build_hipaa_release_pdf
 from .integrations.moss import retrieve_runbooks_for_specialists
 from .integrations.supermemory import persist_move, recall_user_profile
@@ -217,6 +220,15 @@ async def _mark_needs_user_action(
 
 async def fan_out(event_id: str, spec: dict[str, Any]) -> None:
     """Run every chosen specialist in parallel and store the artifact on the ctx.bid."""
+    # USPS needs the bare destination ZIP; derive it from the address so the
+    # caller is never asked for a value they already provided. US addresses put
+    # the ZIP last, so take the LAST 5-digit group — the first can be a street
+    # number ("10600 Menchaca Rd, Austin, TX 78748").
+    if spec.get("destination_address") and not spec.get("destination_zip"):
+        zip_groups = re.findall(r"\b(\d{5})(?:-\d{4})?\b", str(spec["destination_address"]))
+        if zip_groups:
+            spec["destination_zip"] = zip_groups[-1]
+
     specialists = pick_specialists(spec)
     log.info("fan_out event=%s specialists=%d", event_id, len(specialists))
 
@@ -362,6 +374,14 @@ async def _run_one(p: Persona, event_id: str, spec: dict[str, Any]) -> None:
             blocker_kind="integration_unavailable",
             blockers=[str(e)],
         )
+    except RecipientNotAllowed as e:
+        log.warning("specialist %s blocked by recipient allowlist: %s", p.agent_id, e)
+        await _mark_needs_user_action(
+            event_id,
+            p.agent_id,
+            blocker_kind="recipient_not_allowlisted",
+            blockers=[str(e)],
+        )
     except RuntimeError as e:
         if "_API_KEY missing" in str(e):
             log.warning("specialist %s integration unavailable", p.agent_id)
@@ -442,12 +462,17 @@ async def finalize_event(event_id: str) -> None:
         email_result: dict[str, Any] | None = None
         user_email = event.spec.get("user_email")
         if user_email:
-            email_result = await am.send_move_package(
-                event_id=event_id,
-                to_email=user_email,
-                subject=f"Relocate provider-dispatch summary ({event_id})",
-                body_markdown=body,
-            )
+            try:
+                email_result = await am.send_move_package(
+                    event_id=event_id,
+                    to_email=user_email,
+                    subject=f"Relocate provider-dispatch summary ({event_id})",
+                    body_markdown=body,
+                )
+            except RecipientNotAllowed as e:
+                # The summary email is best-effort; an unallowlisted recipient
+                # must not wedge finalization.
+                log.warning("summary email blocked by recipient allowlist: %s", e)
 
         persist_result: dict[str, Any] | None = None
         user_phone = event.spec.get("user_phone")
@@ -523,7 +548,11 @@ async def _run_email(
     event_id: str,
     spec: dict[str, Any],
 ) -> dict[str, Any] | None:
-    """Email-mode specialists: 5 in the v2 roster (mover, school, pcp, vet, gym)."""
+    """Email-mode specialists: 6 (mover, school, pcp, vet, gym, bank).
+
+    pcp_transfer is additionally policy-blocked in MANDATORY_USER_ACTION, so at
+    runtime only the other five can reach their adapters.
+    """
     await _emit_agent_state(event_id, p.agent_id, "in-progress")
     user_email = spec.get("user_email", settings.demo_email_recipient)
 

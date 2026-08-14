@@ -13,7 +13,6 @@ import os
 os.environ.setdefault("AGENTPHONE_API_KEY", "ap_test_no_network")
 os.environ.setdefault("PAVO_API_KEY", "pavo_test_no_network")
 os.environ.setdefault("PUBLIC_BASE_URL", "http://testserver")
-os.environ.setdefault("SYNTHETIC_MODE", "false")
 
 # Explicitly blank every integration credential. A unit test that needs an
 # integration must monkeypatch its boundary rather than reaching the network.
@@ -25,6 +24,7 @@ _acceptance_enabled = (
 )
 if not _acceptance_enabled:
     for _name in (
+        "AGENTMAIL_ALLOWED_RECIPIENTS",
         "AGENTMAIL_API_KEY",
         "ANTHROPIC_API_KEY",
         "BROWSERUSE_API_KEY",

@@ -16,13 +16,30 @@ import logging
 from functools import partial
 
 from ..config import settings
-from ._common import safe_call
+from ._common import RecipientNotAllowed, safe_call
 
 
 log = logging.getLogger(__name__)
 
 
 _INBOX_ID: str | None = None  # cached after first call
+
+
+def assert_recipients_allowed(recipients: list[str]) -> None:
+    """Fail-safe outbound policy: every recipient must be explicitly allowlisted.
+
+    AGENTMAIL_ALLOWED_RECIPIENTS defaults to empty, which blocks every send —
+    including to real institutional intake addresses hardcoded in this module.
+    """
+    allowlist = settings.agentmail_allowlist
+    blocked = sorted(
+        addr for addr in recipients if addr.strip().lower() not in allowlist
+    )
+    if blocked:
+        raise RecipientNotAllowed(
+            "outbound email blocked; add the intended recipient(s) to "
+            f"AGENTMAIL_ALLOWED_RECIPIENTS: {', '.join(blocked)}"
+        )
 
 
 def _resolve_inbox(client) -> str:
@@ -62,6 +79,8 @@ async def send_move_package(
 
     if not to_email:
         raise RuntimeError("email destination is required")
+    if has_key:
+        assert_recipients_allowed([to_email])
 
     async def _do() -> dict:
         def _send_sync():
@@ -147,6 +166,9 @@ async def _send_via_agentmail(
         )
 
     recipients = to if isinstance(to, list) else [to]
+    # Enforced before ANY recipient is contacted so a partially-allowlisted
+    # multi-recipient send cannot leak the permitted subset.
+    assert_recipients_allowed(recipients)
     sent_ids: list[dict] = []
 
     async def _do_one(addr: str) -> dict:

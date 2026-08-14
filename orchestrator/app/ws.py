@@ -21,8 +21,12 @@ class WSBroker:
         self._clients: set[WebSocket] = set()
         self._lock = asyncio.Lock()
 
-    async def subscribe(self, ws: WebSocket) -> None:
-        await ws.accept()
+    @property
+    def client_count(self) -> int:
+        return len(self._clients)
+
+    async def subscribe(self, ws: WebSocket, subprotocol: str | None = None) -> None:
+        await ws.accept(subprotocol=subprotocol)
         async with self._lock:
             self._clients.add(ws)
         log.info("ws subscribe: %d clients", len(self._clients))
@@ -33,20 +37,31 @@ class WSBroker:
         log.info("ws unsubscribe: %d clients", len(self._clients))
 
     async def broadcast(self, event: dict[str, Any]) -> None:
-        """Send the event JSON to every connected client. Drop disconnected clients."""
-        if not self._clients:
+        """Send the event JSON to every connected client. Drop disconnected clients.
+
+        Sends run concurrently and outside the lock so one slow or stuck client
+        cannot stall the other clients or block subscribe/unsubscribe.
+        """
+        async with self._lock:
+            clients = list(self._clients)
+        if not clients:
             return
         payload = json.dumps(event)
-        dead: list[WebSocket] = []
-        async with self._lock:
-            for ws in self._clients:
-                try:
-                    await ws.send_text(payload)
-                except Exception as e:
-                    log.warning("ws send failed: %s", e)
-                    dead.append(ws)
-            for ws in dead:
-                self._clients.discard(ws)
+
+        async def _send(ws: WebSocket) -> WebSocket | None:
+            try:
+                await ws.send_text(payload)
+                return None
+            except Exception as e:
+                log.warning("ws send failed: %s", e)
+                return ws
+
+        results = await asyncio.gather(*[_send(ws) for ws in clients])
+        dead = [ws for ws in results if ws is not None]
+        if dead:
+            async with self._lock:
+                for ws in dead:
+                    self._clients.discard(ws)
 
 
 ws_broker = WSBroker()

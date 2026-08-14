@@ -67,7 +67,7 @@ async def healthz() -> dict[str, Any]:
         "status": "ok",
         "events": len(state.events),
         "active_buyer_calls": len(state.buyer_contexts),
-        "ws_clients": len(ws_broker._clients),
+        "ws_clients": ws_broker.client_count,
         "ts": time.time(),
     }
 
@@ -81,15 +81,20 @@ async def webhook_agent(agent_id: str, request: Request) -> StreamingResponse | 
     """
     body = await get_raw_body(request)
     webhook_id = request.headers.get("X-Webhook-ID")
-    is_fresh = verify_agentphone_signature(
+    claim = verify_agentphone_signature(
         body,
         request.headers.get("X-Webhook-Signature"),
         request.headers.get("X-Webhook-Timestamp"),
         webhook_id,
         agent_id,
     )
-    if not is_fresh:
+    if claim == "completed":
         return JSONResponse({"ok": True, "duplicate": True})
+    if claim == "in_flight":
+        # The first delivery is still processing. A 409 keeps the vendor
+        # retrying: if the in-flight attempt fails and is released, a 200 here
+        # would have permanently swallowed this delivery.
+        return JSONResponse({"ok": False, "in_flight": True}, status_code=409)
 
     assert webhook_id is not None  # verified above
     try:
@@ -263,29 +268,66 @@ async def _handle_buyer_turn(call_id: str, transcript: str, history: list[dict])
         conditionals_ready = all(
             f.name in ctx.collected for f in fields_by_tier("conditional")
         )
+        # Mid-call we wait for the household questions so conditional
+        # specialists aren't skipped prematurely; _finalize_buyer_call
+        # dispatches with whatever is confirmed once the call has ended.
         if is_dispatch_ready(ctx.collected) and conditionals_ready:
-            # Build the spec from collected + sensible defaults.
-            spec = dict(ctx.collected)
-            dispatch_phone = state.buyer_caller_phone.get(call_id)
-            if dispatch_phone:
-                spec.setdefault("user_phone", dispatch_phone)
-            ctx.parsed_spec = spec
-            ctx.dispatched = True
-            event.spec = spec
-            asyncio.create_task(fan_out(ctx.event_id, spec))
-            log.info("buyer dispatched (v2): event=%s core+optional=%d",
-                     ctx.event_id, len(spec))
+            _dispatch_fan_out(ctx)
 
     elif new_fields:
         # Late/corrected fields have already been merged into event.spec. Resume
         # only specialists whose complete prerequisites are now present.
         asyncio.create_task(resume_ready_specialists(ctx.event_id))
 
+    if ctx.call_ended:
+        # This turn was still in flight when agent.call_ended was processed;
+        # its fields have merged now, so re-run the end-of-call logic.
+        _finalize_buyer_call(ctx)
+
     # Return spoken text only. The machine-readable JSON block must never reach TTS.
     async def generate():
         yield json.dumps({"text": voice_reply}) + "\n"
 
     return StreamingResponse(generate(), media_type="application/x-ndjson")
+
+
+def _dispatch_fan_out(ctx: BuyerCallContext) -> None:
+    """Build the spec from collected fields and fire the specialist fan-out."""
+    spec = dict(ctx.collected)
+    dispatch_phone = state.buyer_caller_phone.get(ctx.call_id)
+    if dispatch_phone:
+        spec.setdefault("user_phone", dispatch_phone)
+    ctx.parsed_spec = spec
+    ctx.dispatched = True
+    event = state.events.get(ctx.event_id)
+    if event is not None:
+        event.spec = spec
+    asyncio.create_task(fan_out(ctx.event_id, spec))
+    log.info("buyer dispatched: event=%s fields=%d", ctx.event_id, len(spec))
+
+
+def _finalize_buyer_call(ctx: BuyerCallContext) -> None:
+    """End-of-call dispatch and follow-up. Safe to run repeatedly.
+
+    Called when agent.call_ended arrives AND again after any late in-flight
+    buyer turn merges its fields: AgentPhone posts call_ended the moment the
+    caller hangs up, while the final agent.message turn is often still awaiting
+    its completion — so the first run may see an incomplete spec. Unanswered
+    pets/children/visa questions skip their conditional specialists; an
+    unanswered car question keeps the car agents, which land as honest
+    needs-user-action handoffs.
+    """
+    if not ctx.dispatched:
+        from .buyer_schema import is_dispatch_ready
+        if is_dispatch_ready(ctx.collected):
+            _dispatch_fan_out(ctx)
+            log.info(
+                "buyer dispatched at call end with unanswered household "
+                "questions: event=%s", ctx.event_id,
+            )
+    if ctx.dispatched and not ctx.followup_sent and not ctx.followup_in_progress:
+        ctx.followup_in_progress = True
+        asyncio.create_task(_send_buyer_followup(ctx))
 
 
 async def _send_buyer_followup(ctx: BuyerCallContext) -> bool:
@@ -295,18 +337,22 @@ async def _send_buyer_followup(ctx: BuyerCallContext) -> bool:
     try:
         from .buyer_schema import pending_pii_fields, fields_blocking
         from .integrations.agentmail import send_buyer_followup_form
+        from .marketplace import REQUIRED_FIELDS, pick_specialists
         spec = ctx.parsed_spec or ctx.collected
         to_email = spec.get("user_email") or settings.demo_email_recipient
-        event = state.events.get(ctx.event_id)
-        selected_ids = set(event.specialist_calls) if event else set()
+        # Recompute the selection from the spec rather than reading
+        # event.specialist_calls: fan_out may still be mid-announce when this
+        # task runs, and a partial snapshot would under-report missing fields.
+        selected_ids = {p.agent_id for p in pick_specialists(spec)}
         missing = [
             field for field in pending_pii_fields(ctx.collected)
-            if not selected_ids or selected_ids.intersection(field.agent_ids)
+            if selected_ids.intersection(field.agent_ids)
         ]
-        # Per-specialist breakdown: which agents are blocked on what.
+        # Per-specialist breakdown: which selected agents are blocked on what.
         per_agent: list[dict[str, Any]] = []
-        for agent_id in ("pge_shutoff", "comcast_cancel", "geico_address",
-                         "usps_coa", "gym_cancel", "pharmacy", "pcp_transfer"):
+        for agent_id in sorted(REQUIRED_FIELDS):
+            if agent_id not in selected_ids:
+                continue
             blocked = fields_blocking(agent_id, ctx.collected)
             if blocked:
                 per_agent.append({"agent_id": agent_id, "missing_fields": blocked})
@@ -329,7 +375,15 @@ async def _send_buyer_followup(ctx: BuyerCallContext) -> bool:
 
 
 def _extract_and_merge_fields(text: str, ctx) -> dict:
-    """Validate and merge changed voice-safe fields, including corrections."""
+    """Validate and merge changed voice-safe fields, including corrections.
+
+    Guard against example regurgitation: small models sometimes copy the
+    prompt's DISPATCH JSON SHAPE example wholesale, "collecting" values the
+    caller never said. A block whose string values match three or more schema
+    examples is treated as a copied example and those values are dropped; a
+    genuine caller coincidentally matching one example (a bank named Chase, a
+    dog) still merges normally.
+    """
     from .buyer_schema import by_name
     changed: dict = {}
     # Match every {...} block in the reply (buyer may emit one or several).
@@ -340,6 +394,7 @@ def _extract_and_merge_fields(text: str, ctx) -> dict:
             continue
         if not isinstance(block, dict):
             continue
+        validated: list[tuple[str, Any, Any]] = []
         for k, v in block.items():
             field = by_name(k)
             if field is None or not field.voice_safe:
@@ -359,6 +414,21 @@ def _extract_and_merge_fields(text: str, ctx) -> dict:
                     continue
             except (AttributeError, TypeError, ValueError):
                 continue
+            validated.append((k, v, field))
+
+        example_matches = {
+            k for k, v, field in validated
+            if isinstance(v, str) and field.tier != "conditional"
+            and v.strip() == field.example
+        }
+        if len(example_matches) >= 3:
+            log.warning(
+                "dropping %d example-regurgitated fields from buyer emission: %s",
+                len(example_matches), sorted(example_matches),
+            )
+            validated = [item for item in validated if item[0] not in example_matches]
+
+        for k, v, _field in validated:
             previous = ctx.collected.get(k)
             if k in ctx.collected and previous == v:
                 continue
@@ -397,11 +467,6 @@ def _safe_field_display(fields: dict[str, Any]) -> dict[str, Any]:
 
 async def _handle_specialist_turn(agent_id: str, call_id: str, transcript: str, history: list[dict]) -> StreamingResponse:
     persona = by_id(agent_id)
-    # Idempotency: dedup first-turn dispatches per /plan-eng-review code-quality issue 11.
-    state.seen_first_turns.setdefault(agent_id, set())
-    if call_id not in state.seen_first_turns[agent_id]:
-        state.seen_first_turns[agent_id].add(call_id)
-
     # Find the event this specialist belongs to.
     event_id = None
     for eid, ev in state.events.items():
@@ -469,15 +534,18 @@ async def _handle_call_ended(agent_id: str, data: dict[str, Any]) -> JSONRespons
         # Mark the marketplace event homeowner-side done; specialists continue independently.
         ctx = state.buyer_contexts.get(call_id)
         if ctx:
+            ctx.call_ended = True
             await ws_broker.broadcast({
                 "type": "agent_state", "event_id": ctx.event_id, "agent_id": "buyer",
                 "state": "closed", "ts": time.time(),
             })
-            # v2: send the buyer follow-up email with the PII-gated fields the
-            # buyer correctly did NOT ask for over voice. Idempotent: never twice.
-            if not ctx.followup_sent and not ctx.followup_in_progress and ctx.dispatched:
-                ctx.followup_in_progress = True
-                asyncio.create_task(_send_buyer_followup(ctx))
+            # The in-call path holds dispatch until the household questions are
+            # answered; once the call ends, dispatch whatever CORE-complete
+            # spec exists and send the follow-up email. A buyer turn that was
+            # still awaiting its completion when the caller hung up re-runs
+            # this after its fields merge (see _handle_buyer_turn), so a
+            # core-complete call can never silently produce nothing.
+            _finalize_buyer_call(ctx)
         return JSONResponse({"ok": True})
 
     # Specialist call ended.
@@ -509,12 +577,26 @@ async def _handle_call_ended(agent_id: str, data: dict[str, Any]) -> JSONRespons
 
 @app.websocket("/ws/dashboard")
 async def ws_dashboard(ws: WebSocket) -> None:
+    """Authenticated dashboard stream.
+
+    Browser clients cannot set an Authorization header on WebSockets, so the
+    token may instead ride in the Sec-WebSocket-Protocol offer as
+    ``bearer.<token>`` alongside the ``relocate-dashboard`` protocol name.
+    Query-string tokens are deliberately not accepted — they leak into access
+    logs and browser history.
+    """
     expected = settings.dashboard_api_token
-    supplied = _bearer_token(ws.headers.get("authorization")) or ws.query_params.get("token", "")
+    offered: list[str] = ws.scope.get("subprotocols") or []
+    subprotocol_token = next(
+        (p[len("bearer."):] for p in offered if p.startswith("bearer.")), "",
+    )
+    supplied = _bearer_token(ws.headers.get("authorization")) or subprotocol_token
     if not expected or not supplied or not hmac.compare_digest(supplied, expected):
         await ws.close(code=1008, reason="dashboard authentication required")
         return
-    await ws_broker.subscribe(ws)
+    # Echo the protocol name (never the token) so browser handshakes succeed.
+    selected = "relocate-dashboard" if "relocate-dashboard" in offered else None
+    await ws_broker.subscribe(ws, subprotocol=selected)
     try:
         while True:
             # Server-push only; we just keep the connection alive.
@@ -541,26 +623,6 @@ def _require_dev_trigger_access(request: Request) -> None:
     supplied = _bearer_token(request.headers.get("authorization"))
     if not supplied or not hmac.compare_digest(supplied, expected):
         raise HTTPException(401, "invalid bearer token")
-
-
-def _try_extract_spec(text: str) -> dict[str, Any] | None:
-    """Buyer agent emits a JSON block when dispatching. Try to parse it."""
-    import re
-    match = re.search(r"\{[^{}]+\}", text, re.DOTALL)
-    if not match:
-        return None
-    try:
-        spec = json.loads(match.group(0))
-        required = {"origin_address", "destination_address", "move_date"}
-        if required.issubset(spec.keys()):
-            # Defaults for conditional-dispatch fields the buyer may not have asked.
-            spec.setdefault("has_pets", False)
-            spec.setdefault("has_children", False)
-            spec.setdefault("has_car", True)
-            return spec
-    except json.JSONDecodeError:
-        return None
-    return None
 
 
 @app.post("/api/test/buyer-trigger")

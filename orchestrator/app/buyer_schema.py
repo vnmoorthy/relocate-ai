@@ -1,6 +1,6 @@
 """Buyer field schema — the single source of truth for what the concierge collects.
 
-Every field the 11 specialists need from `spec` is declared here, classified by:
+Every field the 16 specialists need from `spec` is declared here, classified by:
   - tier: CORE (gates dispatch) | CONDITIONAL (gates which agents fire) |
           OPTIONAL (collect on call if natural) | PII (always follow-up email)
   - voice_safe: True if it's OK to say out loud over the phone
@@ -308,6 +308,87 @@ BUYER_FIELDS: list[BuyerField] = [
         ask_phrasing="(emailed) USPS charges $1.10 to verify identity — use a prepaid Visa for safety",
         plain_label="Card for USPS $1.10 verification (prepaid recommended)",
         example="(secure entry only)",
+    ),
+    BuyerField(
+        name="usps_verify_exp",
+        tier="pii", voice_safe=False,
+        agent_ids=("usps_coa",),
+        ask_phrasing="(secure entry only) card expiry for the USPS verification charge",
+        plain_label="Card expiry for USPS verification (secure entry only)",
+        example="(secure entry only)",
+    ),
+    BuyerField(
+        name="usps_verify_cvv",
+        tier="pii", voice_safe=False,
+        agent_ids=("usps_coa",),
+        ask_phrasing="(secure entry only) card CVV for the USPS verification charge",
+        plain_label="Card CVV for USPS verification (secure entry only)",
+        example="(secure entry only)",
+    ),
+    BuyerField(
+        name="destination_zip",
+        tier="pii", voice_safe=False,
+        agent_ids=("usps_coa",),
+        ask_phrasing="(derived) destination ZIP — taken from the destination address when present",
+        plain_label="Destination ZIP code",
+        example="78701",
+        validate=lambda v: _digits(v, 5),
+    ),
+    # ─── Signed-authorization gates. These are consent artifacts, not data
+    # entry: they can only become true through a secure signature workflow
+    # that is not built yet. Declaring them here lets fields_blocking() and
+    # the follow-up email name exactly why an agent is paused.
+    BuyerField(
+        name="comcast_authorization_signed",
+        tier="pii", voice_safe=False,
+        agent_ids=("comcast_cancel",),
+        ask_phrasing="(secure workflow — cannot be granted by phone or email)",
+        plain_label="Signed Comcast cancellation authorization (secure workflow required)",
+        example="false",
+        validate=_is_bool,
+    ),
+    BuyerField(
+        name="hipaa_authorization_signed",
+        tier="pii", voice_safe=False,
+        agent_ids=("pcp_transfer",),
+        ask_phrasing="(secure workflow — cannot be granted by phone or email)",
+        plain_label="Signed HIPAA records-release authorization (secure workflow required)",
+        example="false",
+        validate=_is_bool,
+    ),
+    BuyerField(
+        name="hipaa_signature_name",
+        tier="pii", voice_safe=False,
+        agent_ids=("pcp_transfer",),
+        ask_phrasing="(secure workflow) printed name on the HIPAA release signature",
+        plain_label="Printed name on the HIPAA release (secure workflow required)",
+        example="(secure entry only)",
+    ),
+    BuyerField(
+        name="hipaa_signature_date",
+        tier="pii", voice_safe=False,
+        agent_ids=("pcp_transfer",),
+        ask_phrasing="(secure workflow) date of the HIPAA release signature",
+        plain_label="HIPAA release signature date (secure workflow required)",
+        example="(secure entry only)",
+    ),
+    BuyerField(
+        name="gym_authorization_signed",
+        tier="pii", voice_safe=False,
+        agent_ids=("gym_cancel",),
+        ask_phrasing="(secure workflow — cannot be granted by phone or email)",
+        plain_label="Signed gym-cancellation authorization (secure workflow required)",
+        example="false",
+        validate=_is_bool,
+    ),
+    BuyerField(
+        name="dmv_authorization_signed",
+        tier="pii", voice_safe=False,
+        agent_ids=("id_card_update",),
+        ask_phrasing="(secure workflow — cannot be granted by phone or email)",
+        plain_label="Wet-signed DMV form authorization (secure workflow required)",
+        example="false",
+        validate=_is_bool,
     ),
     # ─── v2.1 PII for the 5 newly-added agents ─────────────────────
     BuyerField(
