@@ -1,159 +1,161 @@
+<div align="center">
+
 # Relocate
 
-Relocate is a hackathon prototype for coordinating relocation tasks from one
-inbound voice conversation. The repository contains a voice webhook
-orchestrator, a 17-persona roster (one concierge and 16 specialists), a
-three-tier completion router, and a dashboard that can show either live events
-or a clearly labeled client-side replay.
+**One phone call. A swarm of 17 AI agents coordinates your entire move.**
 
-This is not a production relocation service. The normal automated test suite
-uses mocks and proves orchestration behavior, not successful transactions with
-utilities, government agencies, insurers, health providers, or mail carriers.
-See [STATUS.md](STATUS.md) for the detailed built/partial/missing inventory.
+[![CI](https://github.com/vnmoorthy/relocate-ai/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/vnmoorthy/relocate-ai/actions/workflows/ci.yml)
+[![Pages deploy](https://img.shields.io/github/actions/workflow/status/vnmoorthy/relocate-ai/deploy-pages.yml?branch=main&label=pages%20deploy)](https://github.com/vnmoorthy/relocate-ai/actions/workflows/deploy-pages.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB.svg)](orchestrator/pyproject.toml)
+[![Next.js 16](https://img.shields.io/badge/next.js-16-black.svg)](web/package.json)
 
-![Relocate swarm dashboard](docs/swarm.png)
+[**Live demo**](https://vnmoorthy.github.io/relocate-ai/) · [Architecture](ARCHITECTURE.md) · [Status](STATUS.md) · [Security](SECURITY.md) · [Demo runbook](DEMO_SCRIPT.md)
 
-## What is implemented
+<img src="docs/swarm.png" alt="Relocate swarm dashboard — 17 agents dispatching in real time" width="100%" />
 
-- A FastAPI orchestrator for AgentPhone webhooks, incremental move-spec
-  extraction, conditional specialist selection, concurrent fan-out, and
-  dashboard WebSocket events.
-- A code/config roster of 17 personas: one inbound `buyer` and 16 specialist
-  definitions across browser, email, and postal-mail modes.
-- Adapter code for AgentMail, Browser Use, Lob, Supermemory, Moss, Stripe, and
-  Sponge. The current dispatch policy permits five lower-risk AgentMail
-  submissions when their prerequisites are present. Browser Use v1, Lob
-  purchase, PCP, and pharmacy execution remain fail-safe blocked even if keys
-  are configured.
-- A local PAVO-compatible service with an auditable heuristic router and
-  adapters for a local OpenAI-compatible endpoint, Gemini, and Anthropic.
-- A Next.js static dashboard with authenticated live-WebSocket support and a
-  visible demo-replay fallback when a live backend is unavailable.
-- Safe mocked end-to-end coverage, roster consistency checks, CI, Dockerfiles,
-  and a local Compose scaffold.
+</div>
 
-## Important boundaries
+---
 
-- The GitHub Pages/static build is a product demonstration. It does not prove
-  that a phone call or any specialist transaction occurred.
-- “17 agents” means 17 persona definitions in code. A move dispatches 11–16
-  specialists depending on pets, children, car ownership, and visa status.
-- A provider submission ID proves that a provider accepted a request; it does
-  not necessarily prove that the underlying relocation task completed.
-- Disabled, unsafe, or insufficiently specified paths report
-  `needs-user-action` or failure; they are not converted into a successful
-  playbook artifact.
-- Runtime state and replay protection are process-local. Restarts lose active
-  events, and multiple orchestrator replicas are not currently safe.
-- The repository's PAVO router is a deterministic heuristic. Learned router
-  weights and training code are not included.
-- Several flows can send messages, mail letters, modify customer accounts, or
-  create charges. Do not run live-provider acceptance against identities or
-  accounts you do not own or have explicit authorization to use.
+You call one number. A voice concierge collects your move in about ninety
+seconds — origin, destination, date, household. The orchestrator then fans out
+**16 specialist agents in parallel** across three execution modes — browser,
+email, and postal mail — requesting mover quotes, drafting utility shutoffs and
+USPS forwarding, preparing USCIS AR-11 and DMV forms for your signature — and
+streams every event to a live dashboard.
 
-## Agent modes
+Whatever an agent cannot **verifiably** finish, it hands back to you with a
+playbook. Never a fabricated success.
 
-| Mode | Count | Runtime behavior |
-|---|---:|---|
-| Inbound voice | 1 | AgentPhone calls the `buyer` webhook; the orchestrator routes completions and extracts a move spec. |
-| Browser | 8 | Legacy v1 task builders are retained, but current specialist dispatch blocks submission pending a protected-secrets v2 migration. |
-| Email | 6 | Five lower-risk AgentMail paths may submit after prerequisites; the PCP path is policy-blocked pending secure consent. |
-| Postal mail | 2 | Letter builders are retained, but Lob purchase is blocked pending customer review and signature. |
+## Why this repo is different
 
-The exact roster and conditional rules are in [AGENT_COUNT.md](AGENT_COUNT.md).
+Most agent demos report success when an API call returns. Relocate's core
+discipline is the opposite — every agent lands in an honest terminal state:
 
-## Local quick start
+| State | Meaning |
+|---|---|
+| `submitted` | A provider accepted a request — *not* proof the task completed |
+| `needs-user-action` | A signature, credential, payment, or policy gate needs you |
+| `failed` | The provider errored — shown, never relabeled |
 
-Prerequisites:
+That discipline is enforced in code, not copy:
 
-- Python 3.12 and [`uv`](https://docs.astral.sh/uv/)
-- Node.js 22 and [`pnpm`](https://pnpm.io/)
-- A local OpenAI-compatible completion endpoint; the example uses
-  [Ollama](https://ollama.com/) with `gemma2:2b`
-- An AgentPhone key only if you intend to exercise inbound voice
+- **Fail-safe execution policy.** Browser automation, certified mail purchase,
+  and medical/pharmacy flows are policy-blocked at dispatch until secure
+  consent and credential workflows exist — even with API keys configured.
+- **Outbound allowlist, empty by default.** Every outgoing email recipient must
+  be explicitly listed in `AGENTMAIL_ALLOWED_RECIPIENTS`; an empty list blocks
+  every send.
+- **Anti-fabrication extraction guard.** The voice concierge merges only fields
+  the caller actually said; an emission copying the prompt's example values is
+  detected and dropped.
+- **Signed webhooks.** Timestamp-bound HMAC verification with replay
+  protection; in-flight duplicate deliveries are never falsely acknowledged.
+- **A router you can read.** PAVO routes each turn across a local model
+  (Ollama/Apple Silicon), Gemini, and Anthropic tiers with deterministic,
+  auditable heuristics and configured fallback. If every provider fails, the
+  request errors — it never invents a response.
 
-Install and configure:
+## How it works
+
+```mermaid
+flowchart LR
+    caller(["📞 Caller"]) --> phone["AgentPhone<br/>voice webhook"]
+    phone -->|"signed HMAC"| orch["Orchestrator<br/>FastAPI"]
+    orch <--> pavo["PAVO router<br/>local · Gemini · Anthropic"]
+    orch --> browser["8 browser agents<br/><i>policy-blocked</i>"]
+    orch --> email["6 email agents<br/><i>allowlist-gated</i>"]
+    orch --> mail["2 postal agents<br/><i>policy-blocked</i>"]
+    orch -->|"authenticated WS"| dash["Live dashboard<br/>Next.js"]
+```
+
+One concierge plus 16 specialists are defined in code; a real move dispatches
+11–16 of them depending on pets, children, car, and visa status. The full
+roster and conditional rules live in [AGENT_COUNT.md](AGENT_COUNT.md).
+
+## Quick start
+
+Prerequisites: Python 3.12 + [`uv`](https://docs.astral.sh/uv/), Node 22 +
+[`pnpm`](https://pnpm.io/), and [Ollama](https://ollama.com/) with `gemma2:2b`
+for the local model tier.
 
 ```bash
 git clone https://github.com/vnmoorthy/relocate-ai.git
 cd relocate-ai
 
 cp orchestrator/.env.example orchestrator/.env
-openssl rand -hex 32  # use a different value for each required token
+# Replace every REPLACE_* placeholder (openssl rand -hex 32 per token).
+# Leave provider keys blank — everything runs with honest blocked states.
 
-cd orchestrator
-uv sync --locked --all-groups
-cd ../web
-pnpm install --frozen-lockfile
-cd ..
-```
+cd orchestrator && uv sync --locked --all-groups && cd ..
+cd web && pnpm install --frozen-lockfile && cd ..
 
-Edit `orchestrator/.env` and replace every required placeholder. Leave
-AgentPhone and specialist-provider keys blank unless you are running an
-authorized integration path. Keep the file untracked. Start Ollama, then launch
-the local stack:
-
-```bash
 ollama pull gemma2:2b
-ollama serve
-
-# In a second terminal:
 ./run.sh
 ```
 
-The launcher starts the PAVO service on `127.0.0.1:8765`, the orchestrator on
-`127.0.0.1:8000`, and the dashboard on `127.0.0.1:3000`. The dashboard remains
-in replay mode because the current live socket needs a long-lived query token;
-that token is deliberately not placed in the static/client build. The launcher
-does not create a public tunnel unless `--ngrok` is supplied. Stop only the
-processes managed by the launcher with `./run.sh stop`.
+The launcher starts the PAVO router on `:8765`, the orchestrator on `:8000`,
+and the dashboard on `:3000` — and prints an authenticated **Live view** URL
+(the WebSocket token rides in a URL hash → sessionStorage → subprotocol offer;
+it never appears in a query string or the client bundle). Without a live
+backend the dashboard plays a deterministic simulation, stamped `SIMULATION`
+the way SpaceX stamps its renders; the tag flips to `LIVE` when a real session
+connects. Stop with `./run.sh stop`.
 
-For a dashboard-only workflow, run `pnpm --dir web dev`. If no authenticated
-backend is reachable, the UI enters demo-replay mode and labels that state.
-
-## Verification
-
-The default checks do not contact external providers:
+Verify everything without touching a single external provider:
 
 ```bash
 ./verify-all-agents.sh
-
-cd web
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm build
 ```
 
-The provider-acceptance test is intentionally excluded from normal CI. It has
-multiple opt-in gates because it can create external side effects. Read
-`orchestrator/tests/test_e2e_provider_acceptance.py` before enabling it.
+That runs ruff, mypy, and the full mocked test suite — roster consistency
+across Python/TypeScript/docs, conditional dispatch, honest terminal states,
+webhook security, and the outbound allowlist. The dashboard has its own
+`pnpm lint / typecheck / test / build`.
+
+## What's real today
+
+This is a working **orchestration prototype**, not a production relocation
+service. Honest inventory:
+
+- ✅ Inbound voice webhook flow, incremental field extraction, conditional
+  fan-out, live WebSocket dashboard, deterministic router with provider
+  fallback, HMAC webhook security, CI, containers — built and tested.
+- 🟡 Five lower-risk email paths (mover quotes, school, vet, gym, bank
+  playbook) can submit once prerequisites *and* the recipient allowlist are
+  satisfied.
+- ⛔ Browser automation, certified-mail purchase, and regulated medical flows
+  are deliberately blocked pending secure credential/consent workflows.
+- ❌ Durable state, background jobs, customer accounts, and secure PII intake
+  are not built. A restart loses active events.
+
+The complete subsystem-by-subsystem inventory and the phased plan to
+production live in [STATUS.md](STATUS.md) — kept current, audited against the
+code.
 
 ## Repository map
 
 ```text
 .
-├── orchestrator/       FastAPI service, personas, integrations, scripts, tests
-├── pavo_server/        heuristic router and model-provider adapters
-├── web/                Next.js dashboard and static demo replay
-├── deploy/             container definitions and nginx static hosting config
-├── compose.yaml        local/staging three-service scaffold
+├── orchestrator/       FastAPI service · personas · integrations · tests
+├── pavo_server/        deterministic router + model-provider adapters
+├── web/                Next.js dashboard · live WS client · simulation mode
+├── deploy/             Dockerfiles + nginx static hosting
+├── compose.yaml        local three-service scaffold
 ├── ARCHITECTURE.md     components, data flow, trust boundaries
-├── STATUS.md           built, partial, missing, and ordered work plan
-├── DEPLOYMENT.md       local container use and production requirements
-└── SECURITY.md         current controls and known security gaps
+├── STATUS.md           built / partial / missing — the capability contract
+├── SECURITY.md         current controls and known gaps
+└── DEMO_SCRIPT.md      honest demo narration rules
 ```
 
-## Documentation
+## Contributing
 
-- [Current implementation status and build plan](STATUS.md)
-- [Architecture](ARCHITECTURE.md)
-- [Deployment](DEPLOYMENT.md)
-- [Security](SECURITY.md)
-- [Contributing](CONTRIBUTING.md)
-- [Demo runbook](DEMO_SCRIPT.md)
+PRs welcome — start with [CONTRIBUTING.md](CONTRIBUTING.md). The one
+non-negotiable: no fabricated success paths. Blocked is blocked, submitted is
+not completed, and the test suite enforces both.
 
 ## License
 
-Repository code is available under [MIT](LICENSE). External datasets, model
-weights, services, and trademarks retain their own terms; see [NOTICE.md](NOTICE.md).
+[MIT](LICENSE). External datasets, model weights, services, and trademarks
+retain their own terms — see [NOTICE.md](NOTICE.md).

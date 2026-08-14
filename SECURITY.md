@@ -59,9 +59,11 @@ production-secure.
 
 - There is no end-user identity system, tenant model, or move-scoped access
   policy.
-- Long-lived bearer/query tokens are only appropriate for private local
-  development. Query tokens can leak through browser history, logs, screenshots,
-  and referrers.
+- Long-lived bearer tokens are only appropriate for private local development.
+  The dashboard WebSocket no longer accepts query-string tokens (they leak
+  through browser history, logs, screenshots, and referrers); the local live
+  view hands the token over via a URL hash into a subprotocol offer instead,
+  which is still a long-lived shared secret, not production auth.
 - A public static dashboard cannot safely carry a live dashboard secret.
 - There is no identity-aware admin console, credential revocation UI, or
   privileged-action audit trail.

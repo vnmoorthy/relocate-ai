@@ -17,17 +17,21 @@ submission IDs as completed relocation transactions.
 ### 0:00–0:15 — Problem and boundary
 
 > “Relocate is a prototype for turning one moving conversation into a set of
-> parallel specialist workflows. This screen is a labeled replay, so it is safe
-> and deterministic; I’ll distinguish implemented code from live-provider
+> parallel specialist workflows. This screen is running a deterministic
+> simulation — you can see the SIMULATION tag on the panel, the same way SpaceX
+> stamps its renders; I’ll distinguish implemented code from live-provider
 > validation as we go.”
 
-Point to the demo/replay connection label before the animation starts.
+Point to the SIMULATION tag on the dashboard panel before the animation
+starts; in a live session it reads LIVE instead.
 
 ### 0:15–0:35 — Buyer and dispatch
 
 > “The inbound buyer is the one voice persona. The backend incrementally
 > collects origin, destination, date, and email, then applies household flags.
-> Once the core fields are present, it chooses the applicable specialists.”
+> Once the core fields and the household questions are answered, it chooses
+> the applicable specialists — and if the caller hangs up early, it dispatches
+> at call end with whatever was confirmed.”
 
 Call out that the configured roster is one buyer plus 16 specialists, while an
 individual move dispatches 11–16 specialists.
@@ -38,6 +42,11 @@ individual move dispatches 11–16 specialists.
 > calls. The orchestrator runs them concurrently and streams state, transcript,
 > routing, and artifact events to the dashboard. One failure is isolated from
 > the rest.”
+
+The simulation shows this honestly: one specialist fails mid-run while the
+others continue, three end as needs-user-action handoffs (USCIS signature,
+HIPAA consent, gym authorization), and the rest end as submissions. Point at
+the failed and paused cells when you say the line above.
 
 When an artifact appears, describe it precisely:
 
@@ -79,7 +88,9 @@ Complete this checklist before placing a call or enabling any provider path:
 - [ ] Webhook signing has been verified against the current vendor contract.
 - [ ] The exact specialist subset is known; unapproved integrations are blank or
   feature-disabled.
-- [ ] Any email recipient is allowlisted and controlled by the demo team.
+- [ ] Any email recipient is allowlisted and controlled by the demo team, and
+  `AGENTMAIL_ALLOWED_RECIPIENTS` lists exactly those addresses (it is empty by
+  default, which blocks every outbound email).
 - [ ] Browser targets cannot mutate a real account or charge a real card without
   a deliberate approval.
 - [ ] Expected cleanup, cancellation, mail suppression, and data deletion are
@@ -99,10 +110,13 @@ pnpm test
 pnpm build
 ```
 
-Start locally with `./run.sh`. A public tunnel is opt-in via `--ngrok`; do not
-enable it until the exposed webhook routes and authentication have been
-reviewed. The current phone number is deployment state and should be read from
-the authorized AgentPhone account, not hard-coded into presentation material.
+Start locally with `./run.sh`. It prints a `http://127.0.0.1:3000/#ws-token=…`
+URL for the authenticated live view; open that URL (not the bare dashboard) if
+the demo should show live orchestrator events instead of the simulation. A
+public tunnel is opt-in via `--ngrok`; do not enable it until the exposed
+webhook routes and authentication have been reviewed. The current phone number
+is deployment state and should be read from the authorized AgentPhone account,
+not hard-coded into presentation material.
 
 ## Live narration rules
 
@@ -135,7 +149,7 @@ If live connectivity or a provider fails:
 
 1. state the failure without hiding or relabeling it;
 2. show the surfaced error/retry state if useful;
-3. switch to the labeled replay;
+3. switch to the simulation (the panel tag flips from LIVE to SIMULATION);
 4. explain which contract or infrastructure layer remains incomplete;
 5. do not rerun an irreversible provider action unless idempotency and cleanup
    have been verified.
