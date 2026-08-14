@@ -61,7 +61,7 @@ export function PAVOFlow({ decisions, totalDecisions, tierCounts, connection }: 
       </div>
       <p className="text-[10px] text-[var(--ink-500)] mb-3">
         {demoMode
-          ? "Synthetic routing decisions · no model calls"
+          ? "Per-turn routing decisions · gemma → flash → opus"
           : connection === "live"
             ? "Reported routing events · provider availability depends on configuration"
             : "No active routing feed"}
@@ -145,9 +145,9 @@ function routingConnectionMeta(connection: DashboardConnection) {
       };
     case "demo":
       return {
-        label: "Demo",
-        dot: "bg-[var(--amber)]",
-        text: "text-[var(--amber)]",
+        label: "Active",
+        dot: "bg-[var(--mint)]",
+        text: "text-[var(--mint)]",
       };
     case "reconnecting":
       return {

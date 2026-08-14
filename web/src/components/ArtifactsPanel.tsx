@@ -22,11 +22,7 @@ interface Props {
 export function ArtifactsPanel({ sponsorEvents, connection }: Props) {
   const demoMode = connection === "demo";
   const artifacts = extractArtifacts(sponsorEvents, demoMode);
-  const heading = demoMode
-    ? "Demo artifact events"
-    : connection === "live"
-      ? "Reported artifact events"
-      : "Artifact events";
+  const heading = "Artifact events";
 
   return (
     <section className="panel-elev p-4" aria-labelledby="artifact-heading">
@@ -35,17 +31,32 @@ export function ArtifactsPanel({ sponsorEvents, connection }: Props) {
           {heading}
         </h3>
         <span className="text-[9px] text-[var(--ink-500)]" aria-live="polite">
-          {artifacts.length === 0
-            ? "none reported yet"
-            : demoMode
-              ? `${artifacts.length} synthetic`
-              : `${artifacts.length} reported`}
+          {artifacts.length === 0 ? "none reported yet" : `${artifacts.length} reported`}
         </span>
       </div>
       <ul className="space-y-2" aria-live="polite" aria-label="Reported artifact events">
         {artifacts.length === 0 ? (
-          <li className="text-[11px] text-[var(--ink-500)] italic">
-            Artifact events appear here when an integration reports a receipt, document, message, or fallback.
+          <li className="flex flex-col items-center justify-center gap-2 py-8 px-4 text-center">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 20 20"
+              fill="none"
+              aria-hidden="true"
+              className="text-[var(--ink-700)]"
+            >
+              <path
+                d="M2.5 11.5h3.75l1.25 2h5l1.25-2h3.75M2.5 11.5V16a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1v-4.5M2.5 11.5 4.6 4.2A1 1 0 0 1 5.56 3.5h8.88a1 1 0 0 1 .96.7l2.1 7.3"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span className="text-[11px] leading-relaxed text-[var(--ink-500)] max-w-[260px]">
+              No artifact events yet — receipts, documents, and fallbacks appear
+              here as integrations report them.
+            </span>
           </li>
         ) : (
           artifacts.map((artifact) => (
@@ -108,15 +119,17 @@ function isArtifactAction(action: string): boolean {
 }
 
 function ArtifactStatus({ status }: { status: SponsorStatus }) {
+  // The "demo" status renders as the normal reported pill — the page-level
+  // SIMULATION tag carries the disclosure.
   const label: Record<SponsorStatus, string> = {
-    demo: "DEMO",
+    demo: "REPORTED",
     reported: "REPORTED",
     fallback: "FALLBACK",
     error: "ERROR",
     idle: "IDLE",
   };
   const style: Record<SponsorStatus, string> = {
-    demo: "text-[var(--amber)] border-[rgba(251,191,36,0.35)]",
+    demo: "text-[var(--mint)] border-[rgba(0,212,154,0.35)]",
     reported: "text-[var(--mint)] border-[rgba(0,212,154,0.35)]",
     fallback: "text-[var(--tier-haiku)] border-[rgba(96,165,250,0.35)]",
     error: "text-[var(--red)] border-[rgba(248,113,113,0.35)]",

@@ -2,44 +2,44 @@
 
 /* ──────────────────────────────────────────────────────────────────────────
    Relocate — design tokens
-   Inspired by Linear / Framer / Vercel: restrained palette, generous
-   whitespace, refined typography. Dark mode by default (data-heavy product),
-   but the neon has been dialed back to a single muted teal accent.
+   Flagship-site aesthetic: near-black ground, white/gray marketing chrome,
+   condensed uppercase display type. The brand green survives only as
+   telemetry inside the dashboard panels.
    ────────────────────────────────────────────────────────────────────────── */
 :root {
   /* Surfaces */
-  --bg-base: #0A0A0B;        /* near-black, slightly warm */
-  --bg-elev-1: #121215;      /* card */
-  --bg-elev-2: #18181C;      /* hover / inset */
-  --bg-glow: #0E1311;        /* subtle radial gradient base */
+  --bg-base: #060607;        /* space black */
+  --bg-elev-1: #0E0F11;      /* card */
+  --bg-elev-2: #131417;      /* hover / inset */
+  --bg-code: #0B0C0E;        /* code / terminal card */
 
-  /* Borders */
-  --border-subtle: rgba(255, 255, 255, 0.05);
-  --border-default: rgba(255, 255, 255, 0.10);
+  /* Borders — hairlines at 6–8% white */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.09);
   --border-strong: rgba(255, 255, 255, 0.16);
 
   /* Text */
-  --text-primary: #FAFAFA;
+  --text-primary: #F5F5F5;
   --text-secondary: #A1A1A8;
   --text-tertiary: #6B6B73;
   --text-quaternary: #45454D;
 
-  /* Brand: a refined mint, less LED, more designer */
+  /* Telemetry accent — dashboard internals only */
   --brand: #00D49A;
   --brand-dim: rgba(0, 212, 154, 0.16);
   --brand-glow: rgba(0, 212, 154, 0.40);
 
   /* Tier semantics */
-  --tier-local: #00D49A;     /* refined mint */
-  --tier-cloud-mid: #FBBF24; /* refined amber */
-  --tier-cloud-hard: #F472B6;/* refined rose */
+  --tier-local: #00D49A;     /* mint */
+  --tier-cloud-mid: #FBBF24; /* amber */
+  --tier-cloud-hard: #F472B6;/* rose */
   --tier-mock: #6B6B73;      /* zinc */
   --tier-flash: var(--tier-cloud-mid);
   --tier-haiku: #60A5FA;
   --tier-opus: var(--tier-cloud-hard);
   --tier-fallback: #A1A1AA;
 
-  /* Backwards-compat aliases — existing components still reference these */
+  /* Backwards-compat aliases — dashboard components reference these */
   --bg-deep: var(--bg-base);
   --bg-panel: var(--bg-elev-1);
   --bg-elev: var(--bg-elev-2);
@@ -58,6 +58,10 @@
 
   --background: var(--bg-base);
   --foreground: var(--text-primary);
+
+  /* Display face */
+  --font-display: var(--font-display-condensed);
+  --nav-h: 56px;
 }
 
 @theme inline {
@@ -65,6 +69,10 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 html, body {
@@ -77,31 +85,9 @@ html, body {
   overflow-x: hidden;
 }
 
-/* Single subtle backdrop — radial gradient + soft noise. No more scanlines,
-   starfield-drift, or aurora hue rotation. Restraint > spectacle. */
 body {
-  background:
-    radial-gradient(1400px 800px at 50% -20%, rgba(0, 212, 154, 0.06), transparent 55%),
-    radial-gradient(1000px 700px at 10% 100%, rgba(129, 140, 248, 0.04), transparent 60%),
-    var(--bg-base);
   min-height: 100vh;
   position: relative;
-}
-
-/* Subtle grid mesh — barely visible, adds depth */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
-  background-size: 80px 80px;
-  background-position: center;
-  mask-image: radial-gradient(ellipse 80% 60% at center, black, transparent 100%);
-  -webkit-mask-image: radial-gradient(ellipse 80% 60% at center, black, transparent 100%);
-  pointer-events: none;
-  z-index: 0;
 }
 
 main {
@@ -112,6 +98,7 @@ main {
 /* ──────────────────────────────────────────────────────────────────────────
    Typography utilities
    ────────────────────────────────────────────────────────────────────────── */
+/* Dashboard-internal display (agent names, core numerals) stays on Geist. */
 .font-display {
   font-family: var(--font-geist-sans);
   font-weight: 700;
@@ -123,8 +110,245 @@ main {
   letter-spacing: -0.01em;
 }
 
+/* Marketing display face — condensed uppercase, SpaceX register. */
+.display {
+  font-family: var(--font-display), var(--font-geist-sans), ui-sans-serif;
+  text-transform: uppercase;
+  font-weight: 600;
+  line-height: 0.97;
+  letter-spacing: 0.005em;
+}
+.display-headline {
+  font-family: var(--font-display), var(--font-geist-sans), ui-sans-serif;
+  text-transform: uppercase;
+  font-weight: 600;
+  line-height: 0.95;
+  letter-spacing: -0.01em;
+  font-size: clamp(3rem, 9.5vw, 7rem);
+  color: var(--text-primary);
+}
+.display-sub {
+  font-family: var(--font-display), var(--font-geist-sans), ui-sans-serif;
+  text-transform: uppercase;
+  font-weight: 600;
+  line-height: 0.98;
+  letter-spacing: 0;
+  font-size: clamp(2.25rem, 6vw, 4.5rem);
+  color: var(--text-primary);
+}
+.kicker {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.stat-num {
+  font-family: var(--font-display), var(--font-geist-sans), ui-sans-serif;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: 0;
+  font-size: clamp(3.25rem, 7vw, 6rem);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ──────────────────────────────────────────────────────────────────────────
-   Panels & cards
+   Fixed nav — transparent over the hero, hairline + blur after scroll
+   ────────────────────────────────────────────────────────────────────────── */
+.site-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  height: var(--nav-h);
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border-bottom: 1px solid transparent;
+  transition: background 0.3s ease, border-color 0.3s ease, backdrop-filter 0.3s ease;
+}
+.site-nav--scrolled {
+  background: rgba(6, 6, 7, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom-color: var(--border-subtle);
+}
+.nav-wordmark {
+  font-family: var(--font-display), var(--font-geist-sans), ui-sans-serif;
+  text-transform: uppercase;
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: 0.34em;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.nav-link {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.nav-link:hover { color: var(--text-primary); }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Hero — cinematic CSS-only backdrop: star field + horizon glow
+   ────────────────────────────────────────────────────────────────────────── */
+.hero {
+  position: relative;
+  min-height: 100svh;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% 0%, #0B0C10 0%, var(--bg-base) 60%);
+  isolation: isolate;
+}
+.hero-stars,
+.hero-stars--far {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 200%;
+  pointer-events: none;
+  z-index: 0;
+  background-repeat: repeat;
+}
+.hero-stars {
+  background-image:
+    radial-gradient(1.2px 1.2px at 11% 17%, rgba(255,255,255,0.85), transparent 55%),
+    radial-gradient(1px 1px at 37% 64%, rgba(255,255,255,0.6), transparent 55%),
+    radial-gradient(1.4px 1.4px at 58% 31%, rgba(255,255,255,0.7), transparent 55%),
+    radial-gradient(1px 1px at 74% 79%, rgba(255,255,255,0.5), transparent 55%),
+    radial-gradient(1.2px 1.2px at 89% 12%, rgba(255,255,255,0.75), transparent 55%),
+    radial-gradient(1px 1px at 22% 88%, rgba(255,255,255,0.55), transparent 55%);
+  background-size: 560px 560px;
+  animation: starDrift 240s linear infinite;
+  opacity: 0.9;
+}
+.hero-stars--far {
+  background-image:
+    radial-gradient(0.8px 0.8px at 8% 42%, rgba(255,255,255,0.4), transparent 55%),
+    radial-gradient(0.8px 0.8px at 29% 9%, rgba(255,255,255,0.35), transparent 55%),
+    radial-gradient(0.8px 0.8px at 51% 73%, rgba(255,255,255,0.3), transparent 55%),
+    radial-gradient(0.8px 0.8px at 66% 22%, rgba(255,255,255,0.4), transparent 55%),
+    radial-gradient(0.8px 0.8px at 83% 58%, rgba(255,255,255,0.3), transparent 55%),
+    radial-gradient(0.8px 0.8px at 94% 86%, rgba(255,255,255,0.35), transparent 55%);
+  background-size: 340px 340px;
+  animation: starDrift 420s linear infinite;
+  opacity: 0.7;
+}
+@keyframes starDrift {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-560px); }
+}
+.hero-horizon {
+  position: absolute;
+  left: 50%;
+  bottom: -22vh;
+  transform: translateX(-50%);
+  width: 160vw;
+  height: 46vh;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(
+    ellipse 50% 100% at 50% 100%,
+    rgba(150, 175, 220, 0.16) 0%,
+    rgba(120, 140, 190, 0.06) 45%,
+    transparent 72%
+  );
+}
+.hero-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background: linear-gradient(180deg, rgba(6,6,7,0.55) 0%, transparent 28%, transparent 70%, rgba(6,6,7,0.6) 100%);
+}
+
+.scroll-cue {
+  position: absolute;
+  left: 50%;
+  bottom: 1.5rem;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+.scroll-cue svg { animation: cueDip 2.4s ease-in-out infinite; }
+@keyframes cueDip {
+  0%, 100% { transform: translateY(0); opacity: 0.6; }
+  50% { transform: translateY(5px); opacity: 1; }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Buttons — flat uppercase rectangles
+   ────────────────────────────────────────────────────────────────────────── */
+@layer components {
+  .btn-solid,
+  .btn-outline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 52px;
+    padding: 0 2.25rem;
+    font-family: var(--font-geist-sans);
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    text-decoration: none;
+    white-space: nowrap;
+    border: 1px solid var(--text-primary);
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  }
+  .btn-solid {
+    background: var(--text-primary);
+    color: #060607;
+  }
+  .btn-solid:hover {
+    background: transparent;
+    color: var(--text-primary);
+  }
+  .btn-outline {
+    background: transparent;
+    color: var(--text-primary);
+  }
+  .btn-outline:hover {
+    background: var(--text-primary);
+    color: #060607;
+  }
+}
+
+/* Text link with trailing arrow */
+.arrow-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color 0.15s ease, gap 0.15s ease;
+  width: fit-content;
+}
+.arrow-link:hover { color: var(--text-primary); gap: 0.75rem; }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Panels & cards (dashboard internals)
    ────────────────────────────────────────────────────────────────────────── */
 .panel {
   background: var(--bg-elev-1);
@@ -138,55 +362,119 @@ main {
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Buttons (Framer/Linear pill style)
-   Wrapped in @layer components so Tailwind v4 cascade preserves these rules.
+   Stage panel — sharp bordered frame around the dashboard, no browser chrome
    ────────────────────────────────────────────────────────────────────────── */
-@layer components {
-  .btn-primary {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.875rem 1.5rem;
-    border-radius: 999px;
-    background: var(--text-primary);
-    color: var(--bg-base);
-    font-family: var(--font-geist-sans);
-    font-weight: 600;
-    font-size: 14px;
-    letter-spacing: -0.005em;
-    transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-    text-decoration: none;
-    white-space: nowrap;
-  }
-  .btn-primary:hover {
-    background: var(--brand);
-    transform: translateY(-1px);
-    box-shadow: 0 8px 32px rgba(0, 212, 154, 0.35);
-  }
-  .btn-secondary {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.875rem 1.5rem;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--text-primary);
-    border: 1px solid var(--border-strong);
-    font-family: var(--font-geist-sans);
-    font-weight: 500;
-    font-size: 14px;
-    transition: all 0.15s ease;
-    text-decoration: none;
-    white-space: nowrap;
-  }
-  .btn-secondary:hover {
-    background: var(--bg-elev-1);
-    border-color: var(--text-secondary);
+.stage-panel {
+  border: 1px solid var(--border-strong);
+  background: var(--bg-base);
+}
+.stage-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-default);
+  background: rgba(255, 255, 255, 0.02);
+  min-height: 38px;
+}
+.telemetry {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  font-family: var(--font-geist-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.telemetry b {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* The single simulation/live marker. SIMULATION when replaying synthetic
+   data; LIVE with a green dot when the orchestrator feed is connected. */
+.sim-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.625rem;
+  border: 1px solid var(--border-strong);
+  font-family: var(--font-geist-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  background: rgba(6, 6, 7, 0.7);
+  flex-shrink: 0;
+}
+.sim-tag--live {
+  color: var(--brand);
+  border-color: rgba(0, 212, 154, 0.45);
+}
+.sim-tag--live .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--brand);
+  box-shadow: 0 0 8px 1px var(--brand-glow);
+}
+.stage-body {
+  padding: 0.75rem;
+  background: var(--bg-base);
+}
+@media (min-width: 640px) {
+  .stage-body { padding: 1rem; }
+}
+/* On small screens the framed dashboard becomes an internally-scrollable
+   product shot instead of 3+ viewports of stacked cards. */
+@media (max-width: 640px) {
+  .stage-body {
+    max-height: 70vh;
+    overflow-y: auto;
+    mask-image: linear-gradient(to bottom, black calc(100% - 40px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 40px), transparent 100%);
   }
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Tier badges (restrained, not glowing)
+   How-it-works timeline
+   ────────────────────────────────────────────────────────────────────────── */
+.tl-step {
+  position: relative;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-default);
+}
+.tl-step::before {
+  content: "";
+  position: absolute;
+  top: -3.5px;
+  left: 0;
+  width: 7px;
+  height: 7px;
+  background: var(--text-primary);
+}
+.tl-num {
+  font-family: var(--font-geist-mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--text-tertiary);
+}
+.tl-title {
+  font-family: var(--font-display), var(--font-geist-sans), ui-sans-serif;
+  text-transform: uppercase;
+  font-weight: 600;
+  font-size: 22px;
+  letter-spacing: 0.03em;
+  color: var(--text-primary);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Tier badges (dashboard telemetry)
    ────────────────────────────────────────────────────────────────────────── */
 .tier-pill-local {
   color: var(--tier-local);
@@ -263,13 +551,20 @@ main {
 .scrollbar-clean::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; }
 .scrollbar-clean::-webkit-scrollbar-track { background: transparent; }
 
+/* Right-edge fade for horizontally scrollable chip rows — overflowing chips
+   fade out at the edge instead of clipping mid-chip. */
+.scroll-fade-r {
+  mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
+}
+
 /* ──────────────────────────────────────────────────────────────────────────
    Swarm stage
    ────────────────────────────────────────────────────────────────────────── */
 .swarm-stage {
   position: relative;
   background: var(--bg-elev-1);
-  border-radius: 20px;
+  border-radius: 12px;
   border: 1px solid var(--border-subtle);
   overflow: hidden;
 }
@@ -395,6 +690,13 @@ main {
   50% { filter: drop-shadow(0 0 10px rgba(129, 140, 248, 0.20)); }
 }
 
+/* Transcript clip: fade the last visible line instead of hard-cutting glyphs
+   at the boundary of small (orbital) agent cards. */
+.transcript-clip {
+  -webkit-mask-image: linear-gradient(to bottom, #000 72%, transparent 98%);
+  mask-image: linear-gradient(to bottom, #000 72%, transparent 98%);
+}
+
 /* PAVO routing flow lane */
 .pavo-lane {
   position: relative;
@@ -414,12 +716,69 @@ main {
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
+   Tier ladder (router section) — minimal rows
+   ────────────────────────────────────────────────────────────────────────── */
+.ladder-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border-default);
+}
+.ladder-row:last-of-type { border-bottom: 0; }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Dark terminal card (run-it section)
+   ────────────────────────────────────────────────────────────────────────── */
+.code-card {
+  border: 1px solid var(--border-strong);
+  background: var(--bg-code);
+  overflow: hidden;
+}
+.code-card-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.875rem;
+  border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--font-geist-mono);
+  font-size: 10px;
+  color: var(--text-quaternary);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.code-card-body {
+  padding: 1.125rem 1.25rem;
+  font-family: var(--font-geist-mono);
+  font-size: 13px;
+  line-height: 2;
+  color: var(--text-secondary);
+  overflow-x: auto;
+}
+.code-line { display: flex; gap: 0.625rem; white-space: nowrap; }
+.code-prompt { color: var(--text-tertiary); user-select: none; flex-shrink: 0; }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Footer — centered wordmark + one row of links
+   ────────────────────────────────────────────────────────────────────────── */
+.footer-link {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.footer-link:hover { color: var(--text-primary); }
+
+/* ──────────────────────────────────────────────────────────────────────────
    A11y: focus rings + reduced-motion respect
    ────────────────────────────────────────────────────────────────────────── */
 a:focus-visible, button:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
-  border-radius: 6px;
+  outline: 2px solid var(--text-primary);
+  outline-offset: 3px;
 }
 
 .skip-link {
@@ -428,7 +787,6 @@ a:focus-visible, button:focus-visible {
   left: 0.75rem;
   z-index: 100;
   transform: translateY(-180%);
-  border-radius: 0.5rem;
   background: var(--text-primary);
   color: var(--bg-base);
   padding: 0.65rem 0.9rem;
@@ -440,61 +798,15 @@ a:focus-visible, button:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
   *, *::before, *::after {
     animation-duration: 0.001s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001s !important;
   }
   .live-pulse, .live-dot, .swarm-core-ring-outer, .swarm-core-ring-mid,
-  .swarm-core-ring-inner, .swarm-cell-buyer, .swarm-line-active, .cursor-blink::after {
+  .swarm-core-ring-inner, .swarm-cell-buyer, .swarm-line-active,
+  .cursor-blink::after, .hero-stars, .hero-stars--far, .scroll-cue svg {
     animation: none !important;
   }
-}
-
-/* ──────────────────────────────────────────────────────────────────────────
-   Marketing-page sections (hero, how-it-works, footer)
-   ────────────────────────────────────────────────────────────────────────── */
-@layer components {
-  .section-eyebrow {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.375rem 0.875rem;
-    border: 1px solid var(--border-default);
-    border-radius: 999px;
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--text-secondary);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    background: var(--bg-elev-1);
-    width: fit-content;
-  }
-  .section-eyebrow .dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    background: var(--brand);
-    box-shadow: 0 0 8px 1px var(--brand-glow);
-    flex-shrink: 0;
-  }
-}
-
-.hero-title {
-  font-family: var(--font-geist-sans);
-  font-weight: 800;
-  letter-spacing: -0.035em;
-  line-height: 0.95;
-  background: linear-gradient(180deg, #FFFFFF 0%, #C9C9CF 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-.hero-tagline {
-  color: var(--text-secondary);
-  font-size: 18px;
-  line-height: 1.5;
-  font-weight: 400;
-  max-width: 640px;
 }

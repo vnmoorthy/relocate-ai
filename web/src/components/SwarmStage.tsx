@@ -6,9 +6,6 @@ import { ALL_AGENTS, type PavoTier } from "@/lib/types";
 import { tierMeta } from "@/lib/tiers";
 import type { DashboardConnection } from "@/lib/dashboard-state";
 
-const PHONE_E164 = "+16184149537";
-const PHONE_DISPLAY = "+1 (618) 414-9537";
-
 interface AgentState {
   state: string;
   sinceTs: number;
@@ -38,7 +35,7 @@ interface Props {
 /**
  * Swarm-from-singularity stage.
  *
- * Pre-call: only the glowing singularity is visible — phone number + tap-to-call CTA.
+ * Pre-call: only the glowing singularity is visible — agent count + swarm status.
  *
  * On sufficiently wide screens, agent cells orbit the singularity. Compact
  * screens use a readable grid and keep non-dispatched conditional agents in
@@ -60,16 +57,6 @@ export function SwarmStage({
   const containerRef = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const demoMode = connection === "demo";
-  const liveConnected = connection === "live";
-  const stageModeLabel = connection === "demo"
-    ? "demo replay"
-    : connection === "live"
-      ? "live dashboard"
-      : connection === "reconnecting"
-        ? "dashboard reconnecting"
-        : connection === "offline"
-          ? "dashboard offline"
-          : "awaiting live service";
 
   useEffect(() => {
     const update = () => {
@@ -181,32 +168,25 @@ export function SwarmStage({
       <div
         ref={containerRef}
         className="relative w-full overflow-hidden swarm-stage"
-        aria-label={`${stageModeLabel} agent swarm`}
+        aria-label="Agent swarm"
       >
         <div className="absolute inset-0 swarm-bg" />
         <div className="relative z-10 p-3">
           <div className="text-center mb-4">
-            <div className={`text-[9px] tracking-[0.24em] uppercase ${demoMode ? "text-[var(--amber)]" : "text-[var(--mint)]"}`}>
-              Relocate · {stageModeLabel}
+            <div className="text-[9px] tracking-[0.24em] uppercase text-[var(--mint)]">
+              Relocate · agent swarm
             </div>
-            <a
-              href={`tel:${PHONE_E164}`}
-              className="font-mono-tight text-[22px] font-bold text-[var(--mint)] block mt-1"
-            >
-              {PHONE_DISPLAY}
-            </a>
-            <a
-              href={`tel:${PHONE_E164}`}
-              className="mt-2 inline-flex items-center gap-1.5 bg-[var(--mint)] text-black font-display font-semibold text-[12px] tracking-[0.05em] px-4 py-1.5 rounded-full"
-            >
-              <span aria-hidden="true">📞</span>
-              <span>CALL NOW</span>
-            </a>
+            <div className="font-mono-tight text-[22px] font-bold text-[var(--mint)] mt-1">
+              {ALL_AGENTS.length} agents
+            </div>
+            <p className="mt-1 text-[10px] tracking-[0.15em] uppercase text-[var(--ink-500)]">
+              1 concierge + {ALL_AGENTS.length - 1} specialists
+            </p>
           </div>
           {callStarted && (
             <>
               <p className="mb-3 text-center text-[10px] font-mono-tight text-[var(--ink-500)]" aria-live="polite">
-                {totalDecisions} decisions · {terminalCounts.submitted} {demoMode ? "simulated submissions" : "submitted"} · {terminalCounts.succeeded} succeeded · {terminalCounts.action} need action · {terminalCounts.failed} failed
+                {totalDecisions} decisions · {terminalCounts.submitted} submitted · {terminalCounts.succeeded} succeeded · {terminalCounts.action} need action · {terminalCounts.failed} failed
               </p>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
               {ALL_AGENTS.map((agent) => (
@@ -231,46 +211,44 @@ export function SwarmStage({
   }
 
   return (
-    <div ref={containerRef} className="relative w-full min-h-[760px] overflow-hidden swarm-stage" aria-label={`${stageModeLabel} agent swarm`}>
+    <div ref={containerRef} className="relative w-full min-h-[760px] overflow-hidden swarm-stage" aria-label="Agent swarm">
       <div className="absolute inset-0 swarm-bg" />
 
-      {/* Connection lines (only after call started) */}
-      {callStarted && (
-        <svg
-          className="absolute inset-0 w-full h-full pointer-events-none"
-          style={{ zIndex: 1 }}
-          aria-hidden="true"
-          focusable="false"
-        >
-          {ALL_AGENTS.map((agent, i) => {
-            const p = positions[i];
-            if (!p) return null;
-            const state = agentStates[agent.id]?.state;
-            const active = state === "in-progress" || state === "calling";
-            const isBuyer = agent.id === "buyer";
-            const stroke = isBuyer
-              ? active
-                ? "rgba(92,244,255,0.55)"
-                : "rgba(92,244,255,0.20)"
-              : active
-                ? "rgba(0,255,163,0.40)"
-                : "rgba(0,255,163,0.10)";
-            return (
-              <line
-                key={agent.id}
-                x1={cx}
-                y1={cy}
-                x2={p.cellCx}
-                y2={p.cellCy}
-                stroke={stroke}
-                strokeWidth={active ? 1.5 : 0.6}
-                strokeDasharray={isBuyer ? "0" : "3 5"}
-                className={active ? "swarm-line-active" : ""}
-              />
-            );
-          })}
-        </svg>
-      )}
+      {/* Connection lines — hub-and-spoke geometry is always visible; spokes brighten when active */}
+      <svg
+        className="absolute inset-0 w-full h-full pointer-events-none"
+        style={{ zIndex: 1 }}
+        aria-hidden="true"
+        focusable="false"
+      >
+        {ALL_AGENTS.map((agent, i) => {
+          const p = positions[i];
+          if (!p) return null;
+          const state = agentStates[agent.id]?.state;
+          const active = state === "in-progress" || state === "calling";
+          const isBuyer = agent.id === "buyer";
+          const stroke = isBuyer
+            ? active
+              ? "rgba(129,140,248,0.55)"
+              : "rgba(129,140,248,0.20)"
+            : active
+              ? "rgba(0,212,154,0.40)"
+              : "rgba(0,212,154,0.20)";
+          return (
+            <line
+              key={agent.id}
+              x1={cx}
+              y1={cy}
+              x2={p.cellCx}
+              y2={p.cellCy}
+              stroke={stroke}
+              strokeWidth={active ? 1.5 : 1}
+              strokeDasharray={isBuyer ? "0" : "3 5"}
+              className={active ? "swarm-line-active" : ""}
+            />
+          );
+        })}
+      </svg>
 
       {/* Return-flow particles (cell → core, tier-colored) */}
       <svg
@@ -317,52 +295,40 @@ export function SwarmStage({
         <div className="swarm-core-ring swarm-core-ring-inner" aria-hidden="true" />
         <div className="swarm-core-center">
           {!callStarted ? (
-            <div className="flex flex-col items-center gap-1.5 px-1 pointer-events-auto">
-              <span className="text-[8px] tracking-[0.24em] uppercase text-[var(--ink-500)]">
-                Relocate · {stageModeLabel}
+            <div className="flex flex-col items-center gap-1.5 px-1">
+              <span className="text-[10px] tracking-[0.12em] uppercase text-[var(--ink-500)]">
+                Relocate · swarm
               </span>
-              <a
-                href={`tel:${PHONE_E164}`}
-                aria-label={`Call Relocate at ${PHONE_DISPLAY}`}
-                className="font-mono-tight text-[20px] font-bold text-[var(--mint)] hover:text-white transition-colors leading-none whitespace-nowrap"
-              >
-                {PHONE_DISPLAY}
-              </a>
-              <a
-                href={`tel:${PHONE_E164}`}
-                aria-label={`Call Relocate now at ${PHONE_DISPLAY}`}
-                className="mt-2 inline-flex items-center gap-1.5 bg-[var(--mint)] text-black font-display font-semibold text-[12px] tracking-[0.05em] px-4 py-1.5 rounded-full hover:bg-white hover:shadow-[0_0_20px_4px_rgba(0,255,163,0.45)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-deep)] transition-all"
-              >
-                <span aria-hidden="true" className="text-[14px]">📞</span>
-                <span>CALL NOW</span>
-              </a>
-              <span className="text-[9px] tracking-[0.15em] uppercase text-[var(--ink-500)] mt-2 text-center leading-tight">
-                one phone call ·<br />{ALL_AGENTS.length - 1} agents handle your move
+              <span className="font-display text-[44px] leading-none mt-1 text-[var(--mint)] font-mono-tight">
+                {ALL_AGENTS.length}
+              </span>
+              <span className="text-[10px] tracking-[0.12em] uppercase text-[var(--ink-500)] mt-0.5">
+                agents standing by
+              </span>
+              <span className="text-[10px] tracking-[0.12em] uppercase text-[var(--ink-500)] mt-2 text-center leading-tight">
+                one concierge ·<br />{ALL_AGENTS.length - 1} specialists coordinate your move
               </span>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-0.5">
-              <span className="text-[8px] tracking-[0.24em] uppercase text-[var(--ink-500)]">
-                {demoMode ? "Demo router" : liveConnected ? "PAVO event feed" : "Dashboard"}
+              <span className="text-[10px] tracking-[0.12em] uppercase text-[var(--ink-500)]">
+                PAVO router
               </span>
               <span className="font-display text-[44px] leading-none mt-1 text-[var(--mint)] font-mono-tight">
                 {totalDecisions}
               </span>
-              <span className="text-[9px] tracking-[0.18em] uppercase text-[var(--ink-500)] mt-0.5">
+              <span className="text-[10px] tracking-[0.12em] uppercase text-[var(--ink-500)] mt-0.5">
                 decisions
               </span>
               <span className="mt-2 text-[10px] font-mono-tight">
                 <span className="text-[var(--mint)]">{localShare}%</span>
                 <span className="text-[var(--ink-500)] ml-1">local-route share</span>
               </span>
-              <span className="text-[9px] font-mono-tight text-[var(--ink-500)] mt-1">
-                {terminalCounts.submitted} {demoMode ? "simulated" : "submitted"} · {terminalCounts.succeeded} succeeded
+              <span className="text-[10px] font-mono-tight text-[var(--ink-300)] mt-1">
+                {terminalCounts.submitted} submitted · {terminalCounts.succeeded} succeeded
               </span>
-              <span className="text-[8px] font-mono-tight text-[var(--ink-500)] mt-1">
+              <span className="text-[10px] font-mono-tight text-[var(--ink-300)] mt-1">
                 {terminalCounts.action} action · {terminalCounts.failed} failed
-              </span>
-              <span className="text-[8px] font-mono-tight text-[var(--ink-500)] mt-1">
-                {demoMode ? "synthetic session" : "event identifier hidden"}
               </span>
             </div>
           )}

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Barlow_Condensed, Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,17 +12,33 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Condensed industrial display face — uppercase headlines and stat numerals
+// only. Body and dashboard UI stay on Geist.
+const barlowCondensed = Barlow_Condensed({
+  variable: "--font-display-condensed",
+  weight: ["300", "500", "600", "700"],
+  subsets: ["latin"],
+  display: "swap",
+});
+
+const description =
+  "One call briefs seventeen AI agents that coordinate your relocation — requesting mover quotes, drafting utility shutoffs and USPS forwarding, and preparing USCIS and DMV forms for your signature.";
+
 export const metadata: Metadata = {
-  title: "Relocate · AI Relocation OS · built on PAVO",
-  description:
-    "Call one number. A swarm of 17 AI agents handles your relocation — utilities, movers, flights, USPS, USCIS, DMV — and streams every outcome to a live dashboard.",
+  metadataBase: new URL("https://vnmoorthy.github.io/relocate-ai/"),
+  title: "Relocate — AI relocation concierge",
+  description,
   openGraph: {
-    title: "Relocate · In one call.",
-    description:
-      "One phone call. Seventeen agents. Your move, orchestrated.",
+    title: "One call. Seventeen agents.",
+    description,
     url: "https://vnmoorthy.github.io/relocate-ai/",
     siteName: "Relocate",
     type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "One call. Seventeen agents.",
+    description,
   },
 };
 
@@ -30,7 +46,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${barlowCondensed.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>

@@ -107,11 +107,10 @@ export function AgentCell({ agentId, name, category, state, sinceTs, transcript,
     return () => clearInterval(interval);
   }, [sinceTs, state]);
 
-  const baseState = STATE[state ?? "idle"] ?? STATE.idle;
-  const s = demoPresentation(state, baseState, demoMode);
+  const s = STATE[state ?? "idle"] ?? STATE.idle;
   const lastTurns = transcript.slice(-4);
   const lastAgentTurn = [...transcript].reverse().find((t) => t.role === "agent");
-  const isLive = state === "in-progress" && !demoMode;
+  const isLive = state === "in-progress";
 
   return (
     <article
@@ -126,14 +125,14 @@ export function AgentCell({ agentId, name, category, state, sinceTs, transcript,
           <h3 id={`agent-${agentId}-title`} className="font-display text-[13px] text-[var(--ink-100)] leading-tight">
             {name}
           </h3>
-          <span className="text-[9px] tracking-[0.18em] text-[var(--ink-500)] uppercase">
+          <span className="text-[10px] tracking-[0.12em] text-[var(--ink-500)] uppercase">
             {category}
           </span>
         </div>
-        <div className="flex flex-col items-end gap-0.5">
-          <div className={`flex items-center gap-1.5 ring-1 ${s.ring} rounded-full px-2 py-0.5`}>
+        <div className="flex flex-col items-end gap-0.5 shrink-0">
+          <div className={`flex items-center gap-1.5 ring-1 ${s.ring} rounded-full px-2 py-0.5 whitespace-nowrap`}>
             <span className={`h-1.5 w-1.5 rounded-full ${s.dot} ${s.pulse ? "live-dot" : ""}`} aria-hidden="true" />
-            <span className={`text-[9px] font-semibold tracking-[0.14em] ${s.text}`} aria-label={`${name} status: ${s.label.toLowerCase()}`}>
+            <span className={`text-[10px] font-semibold tracking-[0.12em] whitespace-nowrap ${s.text}`} aria-label={`${name} status: ${s.label.toLowerCase()}`}>
               {s.label}
             </span>
           </div>
@@ -148,7 +147,7 @@ export function AgentCell({ agentId, name, category, state, sinceTs, transcript,
 
       {/* Transcript */}
       <div
-        className="flex-1 overflow-hidden px-3 py-2 flex flex-col gap-1.5 text-[11px] leading-snug"
+        className="flex-1 min-h-0 overflow-hidden transcript-clip px-3 py-2 flex flex-col gap-1.5 text-[11px] leading-snug"
         role="log"
         aria-live={isLive ? "polite" : "off"}
         aria-label={`${name} transcript, sensitive values redacted`}
@@ -177,7 +176,7 @@ export function AgentCell({ agentId, name, category, state, sinceTs, transcript,
                 >
                   {isAgent ? "AGT" : t.role === "counterparty" ? "REP" : "USR"}
                 </span>
-                <span className="text-[var(--ink-300)] break-words flex-1">
+                <span className="text-[var(--ink-300)] break-words flex-1 min-w-0 line-clamp-2">
                   {publicFeedText(
                     t.text,
                     demoMode,
@@ -194,35 +193,31 @@ export function AgentCell({ agentId, name, category, state, sinceTs, transcript,
       </div>
 
       {/* Footer: bid summary if closed, or tier badge if live */}
-      <div className="px-3 pb-2 pt-1 flex items-center justify-between border-t border-[var(--border-soft)] min-h-[22px]">
-        {demoMode && state === "submitted" ? (
-          <span className="text-[9px] font-mono-tight text-[var(--amber)] truncate">
-            synthetic submission event
-          </span>
-        ) : state === "submitted" && lastAgentTurn ? (
-          <span className="text-[9px] font-mono-tight text-[var(--tier-haiku)] truncate" title="Provider accepted the request; the underlying service change is not confirmed complete.">
+      <div className="px-3 pb-2 pt-1 flex items-center justify-between gap-2 border-t border-[var(--border-soft)] min-h-[22px] shrink-0 bg-[var(--bg-elev-1)]">
+        {state === "submitted" && lastAgentTurn ? (
+          <span className="text-[10px] font-mono-tight text-[var(--tier-haiku)] truncate" title="Provider accepted the request; the underlying service change is not confirmed complete.">
             ↗ submitted · {extractBid(lastAgentTurn.text)}
           </span>
         ) : state === "needs-user-action" && lastAgentTurn ? (
-          <span className="text-[9px] font-mono-tight text-[var(--amber)] truncate">
+          <span className="text-[10px] font-mono-tight text-[var(--amber)] truncate">
             ! user action · {extractBid(lastAgentTurn.text)}
           </span>
         ) : state === "succeeded" && lastAgentTurn ? (
-          <span className="text-[9px] font-mono-tight text-[var(--mint)] truncate">
+          <span className="text-[10px] font-mono-tight text-[var(--mint)] truncate">
             ✓ succeeded · {extractBid(lastAgentTurn.text)}
           </span>
         ) : state === "closed" ? (
-          <span className="text-[9px] font-mono-tight text-[var(--ink-500)] truncate">
+          <span className="text-[10px] font-mono-tight text-[var(--ink-300)] truncate">
             ended · outcome not reported
           </span>
         ) : (
-          <span className="text-[9px] tracking-widest text-[var(--ink-500)] uppercase">
+          <span className="text-[10px] tracking-widest text-[var(--ink-500)] uppercase">
             #{agentId}
           </span>
         )}
         {lastAgentTurn?.tier && (
           <span
-            className={`text-[8px] font-semibold tracking-[0.1em] px-1.5 py-0.5 rounded tier-pill-${tierMeta(lastAgentTurn.tier).pillClass}`}
+            className={`text-[10px] font-semibold tracking-[0.1em] px-1.5 py-0.5 rounded tier-pill-${tierMeta(lastAgentTurn.tier).pillClass}`}
           >
             {tierMeta(lastAgentTurn.tier).shortLabel}
           </span>
@@ -230,32 +225,6 @@ export function AgentCell({ agentId, name, category, state, sinceTs, transcript,
       </div>
     </article>
   );
-}
-
-function demoPresentation(
-  state: string | undefined,
-  base: { label: string; dot: string; ring: string; text: string; pulse?: boolean },
-  demoMode: boolean,
-) {
-  if (!demoMode) return base;
-  const label =
-    state === "submitted" || state === "succeeded"
-      ? "SIMULATED"
-      : state === "needs-user-action"
-        ? "DEMO PAUSE"
-        : state === "closed"
-          ? "REPLAY END"
-          : state === "in-progress" || state === "calling" || state === "dispatched"
-            ? "REPLAY"
-            : base.label;
-  return {
-    ...base,
-    label,
-    dot: "bg-[var(--amber)]",
-    ring: "ring-[rgba(251,191,36,0.35)]",
-    text: "text-[var(--amber)]",
-    pulse: false,
-  };
 }
 
 function extractBid(text: string): string {

@@ -68,8 +68,8 @@ export function FieldsCollectedStrip({ collectedFields }: Props) {
   const coreDone = CORE_FIELDS.every((f) => f in collectedFields);
 
   return (
-    <section className="panel px-3 py-2 flex items-center gap-2 overflow-x-auto scrollbar-clean" aria-labelledby="fields-heading">
-      <h3 id="fields-heading" className="text-[9px] tracking-[0.18em] text-[var(--ink-500)] uppercase shrink-0 pr-2 border-r border-[var(--border-soft)]">
+    <section className="panel px-3 py-2 flex items-center gap-2 overflow-x-auto scrollbar-clean scroll-fade-r" aria-labelledby="fields-heading">
+      <h3 id="fields-heading" className="text-[10px] tracking-[0.12em] text-[var(--ink-300)] uppercase shrink-0 pr-2 border-r border-[var(--border-soft)]">
         Buyer · {collected.length}/{allFields.length} fields
         {coreDone && <span className="text-[var(--mint)] ml-1.5">· dispatch ready</span>}
       </h3>
@@ -84,7 +84,7 @@ export function FieldsCollectedStrip({ collectedFields }: Props) {
             role="listitem"
             className={`flex items-center gap-1.5 px-2 py-0.5 rounded border shrink-0 ${
               have
-                ? "bg-[rgba(0,255,163,0.06)] border-[rgba(0,255,163,0.30)]"
+                ? "bg-[rgba(0,212,154,0.06)] border-[rgba(0,212,154,0.30)]"
                 : "bg-[var(--bg-elev)] border-[var(--border-soft)]"
             }`}
             title={have ? `${f} collected; value hidden on public dashboard` : `${f} not collected`}

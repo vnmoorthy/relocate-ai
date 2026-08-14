@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { ArtifactsPanel } from "@/components/ArtifactsPanel";
 import { CostTicker } from "@/components/CostTicker";
 import { FieldsCollectedStrip } from "@/components/FieldsCollectedStrip";
@@ -13,267 +14,310 @@ import { ALL_AGENTS } from "@/lib/types";
 const WS_URL =
   process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws/dashboard";
 
-const PHONE_E164 = "+16184149537";
-const PHONE_DISPLAY = "+1 (618) 414-9537";
+const REPO_URL = "https://github.com/vnmoorthy/relocate-ai";
+
+const SPECIALIST_COUNT = ALL_AGENTS.length - 1;
 
 export default function Page() {
   const s = useDashboardWS(WS_URL);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   const submittedCount =
     typeof s.finalSummary?.submitted_count === "number" ? s.finalSummary.submitted_count : 0;
   const failedCount =
     typeof s.finalSummary?.failed_count === "number" ? s.finalSummary.failed_count : 0;
 
+  const terminalCounts = Object.values(s.agentStates).reduce(
+    (counts, agent) => {
+      if (agent.state === "submitted") counts.submitted += 1;
+      if (agent.state === "needs-user-action") counts.action += 1;
+      if (agent.state === "failed" || agent.state === "error") counts.failed += 1;
+      return counts;
+    },
+    { submitted: 0, action: 0, failed: 0 },
+  );
+
   return (
     <>
       <a className="skip-link" href="#main-content">Skip to main content</a>
-      <header>
-      <nav aria-label="Primary" className="w-full px-4 sm:px-8 py-4 sm:py-5 flex items-center justify-between gap-3 max-w-[1440px] mx-auto">
-        <div className="flex items-center gap-2.5">
-          <div className="h-7 w-7 rounded-md bg-[var(--brand)] flex items-center justify-center">
-            <span className="text-black font-bold text-sm">R</span>
+
+      <header className={`site-nav ${scrolled ? "site-nav--scrolled" : ""}`}>
+        <nav
+          aria-label="Primary"
+          className="w-full max-w-[1500px] mx-auto px-5 sm:px-10 flex items-center justify-between gap-4"
+        >
+          <a href="#main-content" className="nav-wordmark">Relocate</a>
+          <div className="flex items-center gap-5 sm:gap-8">
+            <a href="#dashboard" className="nav-link">Swarm</a>
+            <a href="#system" className="nav-link hidden sm:inline">System</a>
+            <a href="#router" className="nav-link hidden sm:inline">Router</a>
+            <a href={REPO_URL} target="_blank" rel="noreferrer" className="nav-link">GitHub</a>
           </div>
-          <span className="font-display text-[15px] text-[var(--text-primary)] tracking-tight">
-            Relocate
-          </span>
-        </div>
-        <div className="flex items-center gap-3 sm:gap-6 lg:gap-8 text-[13px] text-[var(--text-secondary)]">
-          <a href="#dashboard" className="hover:text-[var(--text-primary)] transition-colors">Live</a>
-          <a href="#how" className="hidden sm:inline hover:text-[var(--text-primary)] transition-colors">How it works</a>
-          <a href="https://github.com/vnmoorthy/relocate-ai" target="_blank" rel="noreferrer" className="hidden md:inline hover:text-[var(--text-primary)] transition-colors">GitHub</a>
-          <a
-            href={`tel:${PHONE_E164}`}
-            className="btn-primary"
-            style={{ padding: "0.5rem 1rem", fontSize: 13 }}
-          >
-            Call now
-          </a>
-        </div>
-      </nav>
+        </nav>
       </header>
 
       <main id="main-content">
 
-      <section aria-labelledby="hero-title" className="w-full max-w-[1440px] mx-auto px-4 sm:px-8 pt-12 sm:pt-16 pb-16 sm:pb-20">
-        <div className="max-w-[920px] mx-auto text-center flex flex-col items-center gap-7">
-          <ConnectionStatus
-            connection={s.connection}
-            completed={s.completed}
-            waitingCount={s.waitingForUserAgents.length}
-            finalized={s.finalized}
-            finalOutcome={s.finalOutcome}
-          />
+      {/* ── Hero ─────────────────────────────────────────────────────────── */}
+      <section aria-labelledby="hero-title" className="hero flex flex-col">
+        <div className="hero-stars--far" aria-hidden="true" />
+        <div className="hero-stars" aria-hidden="true" />
+        <div className="hero-horizon" aria-hidden="true" />
+        <div className="hero-vignette" aria-hidden="true" />
 
-          <h1 id="hero-title" className="hero-title text-[clamp(44px,14vw,128px)]">
-            Relocate.<br />In one call.
+        <div className="relative z-[2] flex-1 w-full max-w-[1500px] mx-auto px-5 sm:px-10 flex flex-col justify-end pb-28 sm:pb-32 pt-[calc(var(--nav-h)+2rem)]">
+          <p className="kicker mb-5">AI relocation concierge</p>
+          <h1 id="hero-title" className="display-headline max-w-[1100px]">
+            One call.<br />Seventeen agents.
           </h1>
-
-          <p className="hero-tagline">
-            Dial a single phone number. A real-time swarm of 17 AI agents
-            (1 concierge + 16 specialists) handles your relocation — utility
-            shutoffs, mover bids, flight search, USPS forwarding, address
-            updates, USCIS AR-11, DMV change of address — and streams every
-            outcome to this dashboard before you hang up.
+          <p className="mt-6 max-w-[560px] text-[15px] sm:text-[16px] leading-[1.65] text-[var(--text-secondary)]">
+            One phone call briefs a swarm that coordinates your entire move —
+            requesting mover quotes, drafting utility shutoffs and USPS
+            forwarding, preparing USCIS and DMV forms for your signature.
           </p>
-
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 mt-2 w-full sm:w-auto">
-            <a href={`tel:${PHONE_E164}`} className="btn-primary">
-              <span className="font-mono-tight tracking-tight">{PHONE_DISPLAY}</span>
-            </a>
-            <a href="#dashboard" className="btn-secondary">Watch the swarm</a>
+          <div className="mt-9 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+            <a href="#dashboard" className="btn-solid">Watch the swarm</a>
+            <a href="#run" className="btn-outline">Run it locally</a>
           </div>
+        </div>
 
-          {s.demoMode && (
-            <p className="max-w-[640px] rounded-lg border border-[rgba(251,191,36,0.35)] bg-[rgba(251,191,36,0.06)] px-4 py-3 text-[13px] leading-relaxed text-[var(--amber)]" role="status" aria-live="polite">
-              Demo replay running — the swarm below is a labeled simulation so the site works without a live backend. Call the number for a real session.
+        <a href="#dashboard" className="scroll-cue" aria-label="Scroll to the swarm">
+          <svg width="14" height="8" viewBox="0 0 14 8" fill="none" aria-hidden="true">
+            <path d="M1 1l6 6 6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </a>
+      </section>
+
+      {/* ── 01 · The swarm ───────────────────────────────────────────────── */}
+      <section
+        id="dashboard"
+        aria-labelledby="dashboard-heading"
+        className="w-full min-h-[90svh] flex flex-col justify-end border-t border-[var(--border-subtle)] scroll-mt-14"
+      >
+        <div className="w-full max-w-[1500px] mx-auto px-5 sm:px-10 pt-[14svh] pb-12">
+          <p className="kicker mb-4">01 · The swarm</p>
+          <h2 id="dashboard-heading" className="display-sub max-w-[900px]">
+            Seventeen agents.<br />One dispatcher.
+          </h2>
+          <p className="mt-5 max-w-[560px] text-[15px] leading-[1.65] text-[var(--text-secondary)]">
+            Watch a full move fan out — utilities, movers, schools, federal
+            forms — each specialist reporting a real terminal state.
+          </p>
+          <a href="#run" className="arrow-link mt-6">Run it yourself →</a>
+        </div>
+
+        <div className="w-full max-w-[1500px] mx-auto px-3 sm:px-10 pb-16 sm:pb-24">
+          {s.waitingForUserAgents.length > 0 && (
+            <p
+              className="mb-3 border border-[rgba(251,191,36,0.35)] bg-[rgba(251,191,36,0.06)] px-4 py-3 text-[13px] text-[var(--amber)]"
+              role="status"
+              aria-live="polite"
+            >
+              Paused on {s.waitingForUserAgents.length} request{s.waitingForUserAgents.length === 1 ? "" : "s"}: {s.waitingForUserAgents.map(agentDisplayName).join(", ")}.
+            </p>
+          )}
+          {s.finalized && (
+            <p
+              className="mb-3 border border-[var(--border-strong)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-[13px] text-[var(--text-secondary)]"
+              role="status"
+              aria-live="polite"
+            >
+              {SPECIALIST_COUNT} specialists dispatched · {submittedCount} submitted
+              {failedCount > 0 ? ` · ${failedCount} failed` : ""}.
             </p>
           )}
 
-          <div className="mt-10 flex flex-wrap items-center justify-center gap-x-10 gap-y-3 text-[12px] text-[var(--text-tertiary)] uppercase tracking-[0.18em]">
-            <span>Built on PAVO · TMLR 2026</span>
-            <span className="opacity-50">·</span>
-            <span>Local on Apple Silicon</span>
-            <span className="opacity-50">·</span>
-            <span>Powered by AgentPhone</span>
+          <div className="stage-panel">
+            <div className="stage-bar">
+              <div className="telemetry" aria-live="polite">
+                <span><b>{linkStatus(s.connection)}</b></span>
+                {s.eventId && (
+                  <span className="hidden sm:inline">
+                    {s.routingDecisionCount} dec · {terminalCounts.submitted} sub · {terminalCounts.action} act · {terminalCounts.failed} fail
+                  </span>
+                )}
+              </div>
+              <ModeTag connection={s.connection} />
+            </div>
+            <div className="stage-body">
+              <div className="grid grid-cols-12 gap-4">
+                <div className="col-span-12 min-h-0 flex">
+                  <SwarmStage
+                    agentStates={s.agentStates}
+                    transcripts={s.transcripts}
+                    routingDecisions={s.routingDecisions}
+                    totalDecisions={s.routingDecisionCount}
+                    tierCounts={s.tierCounts}
+                    eventId={s.eventId}
+                    connection={s.connection}
+                  />
+                </div>
+                <div className="col-span-12 grid grid-cols-1 md:grid-cols-2 gap-4 min-h-0">
+                  <PAVOFlow
+                    decisions={s.routingDecisions}
+                    totalDecisions={s.routingDecisionCount}
+                    tierCounts={s.tierCounts}
+                    connection={s.connection}
+                  />
+                  <ArtifactsPanel sponsorEvents={s.sponsorEvents} connection={s.connection} />
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-col gap-3">
+                <FieldsCollectedStrip collectedFields={s.collectedFields} />
+                <SponsorRow sponsorEvents={s.sponsorEvents} demoMode={s.demoMode} />
+                <CostTicker
+                  pavoCents={s.pavoCents}
+                  baselineCents={s.baselineCents}
+                  decisions={s.routingDecisionCount}
+                  demoMode={s.demoMode}
+                />
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      <section id="dashboard" aria-labelledby="dashboard-heading" className="w-full max-w-[1440px] mx-auto px-4 sm:px-8 pb-16 sm:pb-20 scroll-mt-4">
-        <div className="flex items-end justify-between mb-6">
-          <div className="flex flex-col gap-2">
-            <span className="section-eyebrow w-fit">
-              <span className="dot" />
-              {dashboardHeading(s.connection).eyebrow}
-            </span>
-            <h2 id="dashboard-heading" className="font-display text-[clamp(28px,6vw,34px)] text-[var(--text-primary)] tracking-tight">
-              {dashboardHeading(s.connection).title}
-            </h2>
-          </div>
-          <div className="text-[13px] text-[var(--text-tertiary)] font-mono-tight hidden md:block" aria-live="polite">
-            <span>{connectionLabel(s.connection)}</span>
-            {s.eventId && <span className="ml-3">{s.demoMode ? "demo session" : "live event"}</span>}
-          </div>
-        </div>
-
-        {s.waitingForUserAgents.length > 0 && (
-          <p className="mb-4 rounded-lg border border-[rgba(251,191,36,0.35)] bg-[rgba(251,191,36,0.06)] px-4 py-3 text-[13px] text-[var(--amber)]" role="status" aria-live="polite">
-            {s.demoMode ? "Demo paused" : "Waiting for user action"} on {s.waitingForUserAgents.length} request{s.waitingForUserAgents.length === 1 ? "" : "s"}: {s.waitingForUserAgents.map(agentDisplayName).join(", ")}.
-          </p>
-        )}
-        {s.finalized && (
-          <p className="mb-4 rounded-lg border border-[rgba(0,212,154,0.35)] bg-[rgba(0,212,154,0.06)] px-4 py-3 text-[13px] text-[var(--brand)]" role="status" aria-live="polite">
-            {s.demoMode ? "Demo complete" : "Dispatch finalized"}: {submittedCount} specialist{submittedCount === 1 ? "" : "s"} submitted
-            {failedCount > 0 ? `, ${failedCount} failed` : ""}.
-            {s.demoMode
-              ? " Call the number above for a live run."
-              : " Submitted means a provider accepted the request."}
-          </p>
-        )}
-
-        <div className="grid grid-cols-12 gap-4">
-          <div className="col-span-12 min-h-0 flex">
-            <SwarmStage
-              agentStates={s.agentStates}
-              transcripts={s.transcripts}
-              routingDecisions={s.routingDecisions}
-              totalDecisions={s.routingDecisionCount}
-              tierCounts={s.tierCounts}
-              eventId={s.eventId}
-              connection={s.connection}
-            />
-          </div>
-          <div className="col-span-12 grid grid-cols-1 md:grid-cols-2 gap-4 min-h-0">
-            <PAVOFlow
-              decisions={s.routingDecisions}
-              totalDecisions={s.routingDecisionCount}
-              tierCounts={s.tierCounts}
-              connection={s.connection}
-            />
-            <ArtifactsPanel sponsorEvents={s.sponsorEvents} connection={s.connection} />
-          </div>
-        </div>
-
-        <div className="mt-4 flex flex-col gap-3">
-          <FieldsCollectedStrip collectedFields={s.collectedFields} />
-          <SponsorRow sponsorEvents={s.sponsorEvents} demoMode={s.demoMode} />
-          <CostTicker
-            pavoCents={s.pavoCents}
-            baselineCents={s.baselineCents}
-            decisions={s.routingDecisionCount}
-            demoMode={s.demoMode}
-          />
-        </div>
-      </section>
-
-      <section id="how" aria-labelledby="how-heading" className="w-full max-w-[1440px] mx-auto px-4 sm:px-8 py-16 sm:py-20 border-t border-[var(--border-subtle)] scroll-mt-4">
-        <div className="flex flex-col gap-3 mb-12 max-w-[720px]">
-          <span className="section-eyebrow w-fit">
-            <span className="dot" />
-            How it works
-          </span>
-          <h2 id="how-heading" className="font-display text-[clamp(34px,8vw,44px)] text-[var(--text-primary)] tracking-tight leading-[1.05]">
-            Four steps. Ninety&nbsp;seconds.
+      {/* ── 02 · How it works ────────────────────────────────────────────── */}
+      <section
+        id="system"
+        aria-labelledby="system-heading"
+        className="w-full min-h-[90svh] flex flex-col justify-end border-t border-[var(--border-subtle)] scroll-mt-14"
+      >
+        <div className="w-full max-w-[1500px] mx-auto px-5 sm:px-10 pt-[14svh] pb-16 sm:pb-24">
+          <p className="kicker mb-4">02 · How it works</p>
+          <h2 id="system-heading" className="display-sub max-w-[900px]">
+            Dial. Brief.<br />Dispatch.
           </h2>
-          <p className="text-[var(--text-secondary)] text-[17px] leading-relaxed">
-            One inbound call kicks off a fleet of specialists — each optimized
-            for a relocation task, each reporting a concrete outcome you can
-            inspect on the dashboard.
+          <p className="mt-5 max-w-[560px] text-[15px] leading-[1.65] text-[var(--text-secondary)]">
+            One inbound call becomes a structured dispatch and a parallel fleet
+            of specialists. Ninety seconds, end to end.
           </p>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Step
-            n="01"
-            title="You call"
-            body="Dial +1 (618) 414-9537. The ElevenLabs concierge picks up and asks where you're going."
-          />
-          <Step
-            n="02"
-            title="Spec extracted"
-            body="In a few turns, the concierge captures origin, destination, move date, household, pets, kids, car, and visa — then emits a structured dispatch."
-          />
-          <Step
-            n="03"
-            title="Swarm fans out"
-            body="Up to 16 specialists run in parallel via Browser Use, AgentMail, and Lob. Conditional agents fire only when needed; signature-gated workflows pause for your action."
-          />
-          <Step
-            n="04"
-            title="Artifacts land"
-            body="Each agent reports submitted, needs-user-action, or failed — with receipts, tracking IDs, or a handoff playbook streamed live to this dashboard."
-          />
+          <div className="mt-14 sm:mt-20 grid grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-10">
+            <Stat value="17" label="Agents" />
+            <Stat value="3" label="Execution modes" />
+            <Stat value="11–16" label="Dispatched per move" />
+            <Stat value="0" label="Fabricated successes" />
+          </div>
+
+          <div className="mt-16 sm:mt-24 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-10">
+            <TimelineStep n="01" title="Call" body="One number. The concierge answers and asks where you're headed." />
+            <TimelineStep n="02" title="Spec" body="A few turns capture origin, destination, date, household — and emit a structured dispatch." />
+            <TimelineStep n="03" title="Fan-out" body="Up to 16 specialists launch in parallel across browser, email, and postal rails." />
+            <TimelineStep n="04" title="Report" body="Each lands a real terminal state — submitted, needs your signature, or failed." />
+          </div>
         </div>
       </section>
 
-      <section aria-labelledby="pavo-heading" className="w-full max-w-[1440px] mx-auto px-4 sm:px-8 py-16 sm:py-20 border-t border-[var(--border-subtle)]">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-          <div className="flex flex-col gap-4">
-            <span className="section-eyebrow w-fit">
-              <span className="dot" />
-              The moat
-            </span>
-            <h2 id="pavo-heading" className="font-display text-[clamp(34px,8vw,44px)] text-[var(--text-primary)] tracking-tight leading-[1.05]">
-              PAVO routes every turn.
-            </h2>
-            <p className="text-[var(--text-secondary)] text-[17px] leading-relaxed">
-              Pipeline-Aware Voice Orchestration — peer-reviewed at TMLR 2026.
-              Cheap turns stay on Apple Silicon. Hard turns escalate to Gemini
-              Flash or Claude Opus. The open repo ships an inspectable heuristic
-              router; the PAVO-Bench dataset is public.
-            </p>
-            <div className="grid grid-cols-2 gap-3 mt-4">
-              <Stat label="Cheaper than cloud" value="25%" />
-              <Stat label="Lower median latency" value="34%" />
-              <Stat label="Less energy" value="71%" />
-              <Stat label="Fewer coherence failures" value="7.9×" />
-            </div>
-            <div className="flex flex-wrap gap-3 mt-4">
+      {/* ── 03 · The router ──────────────────────────────────────────────── */}
+      <section
+        id="router"
+        aria-labelledby="router-heading"
+        className="w-full min-h-[90svh] flex flex-col justify-end border-t border-[var(--border-subtle)] scroll-mt-14"
+      >
+        <div className="w-full max-w-[1500px] mx-auto px-5 sm:px-10 pt-[14svh] pb-16 sm:pb-24">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-end">
+            <div>
+              <p className="kicker mb-4">03 · The router</p>
+              <h2 id="router-heading" className="display-sub">
+                PAVO routes<br />every turn.
+              </h2>
+              <p className="mt-5 max-w-[560px] text-[15px] leading-[1.65] text-[var(--text-secondary)]">
+                A deterministic, inspectable heuristic router in the open repo.
+                Cheap turns stay on a local model on Apple Silicon; pricing,
+                policy, and signature turns escalate to cloud tiers. If every
+                provider fails, the request errors — it never invents a
+                response.
+              </p>
               <a
-                href="https://huggingface.co/datasets/vnmoorthy/pavo-bench"
+                href={`${REPO_URL}/blob/main/ARCHITECTURE.md`}
                 target="_blank"
                 rel="noreferrer"
-                className="btn-secondary"
+                className="arrow-link mt-6"
               >
-                PAVO-Bench dataset
-              </a>
-              <a
-                href="https://github.com/vnmoorthy/relocate-ai"
-                target="_blank"
-                rel="noreferrer"
-                className="btn-secondary"
-              >
-                Star on GitHub
+                Read the architecture →
               </a>
             </div>
-          </div>
-          <div className="panel-elev p-6 lg:p-8">
-            <div className="flex flex-col gap-4">
-              <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
-                Tier dispatch ladder
-              </span>
-              <TierRow
+            <div>
+              <p className="kicker mb-2">Tier dispatch ladder</p>
+              <LadderRow
                 color="var(--tier-local)"
                 title="Gemma 2-2B"
                 sub="local · Apple Silicon"
-                status="$0.0001/turn"
+                status="reference route"
               />
-              <TierRow
+              <LadderRow
                 color="var(--tier-cloud-mid)"
                 title="Gemini Flash 2.5"
                 sub="cloud · mid-tier"
-                status="$0.0023/turn"
+                status="optional provider"
               />
-              <TierRow
+              <LadderRow
                 color="var(--tier-cloud-hard)"
                 title="Claude Opus 4.7"
                 sub="cloud · escalation"
-                status="$0.0420/turn"
+                status="optional escalation"
               />
-              <p className="text-[12px] text-[var(--text-tertiary)] leading-relaxed mt-2">
-                Simple turns stay local. Pricing, policy, and signature steps
-                escalate. Benchmark figures above are from PAVO-Bench — linked
-                dataset, not this product&apos;s live invoice.
+              <p className="mt-4 text-[12px] leading-relaxed text-[var(--text-tertiary)]">
+                Dashboard cost figures are estimates from configured prices —
+                never an invoice.
               </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── 04 · Run it ──────────────────────────────────────────────────── */}
+      <section
+        id="run"
+        aria-labelledby="run-heading"
+        className="w-full min-h-[90svh] flex flex-col justify-end border-t border-[var(--border-subtle)] scroll-mt-14"
+      >
+        <div className="w-full max-w-[1500px] mx-auto px-5 sm:px-10 pt-[14svh] pb-20 sm:pb-28">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-end">
+            <div>
+              <p className="kicker mb-4">04 · Run it</p>
+              <h2 id="run-heading" className="display-sub">
+                Clone. Run.<br />Watch.
+              </h2>
+              <p className="mt-5 max-w-[560px] text-[15px] leading-[1.65] text-[var(--text-secondary)]">
+                One script starts the router, the orchestrator, and this
+                dashboard on localhost. Provider keys stay optional — and every
+                outbound send is blocked until you configure a recipient
+                allowlist.
+              </p>
+              <div className="mt-8">
+                <a href={REPO_URL} target="_blank" rel="noreferrer" className="btn-outline">
+                  View on GitHub
+                </a>
+              </div>
+            </div>
+            <div className="code-card" role="figure" aria-label="Commands to run Relocate locally">
+              <div className="code-card-bar">
+                <span>terminal</span>
+              </div>
+              <div className="code-card-body scrollbar-clean">
+                <div className="code-line">
+                  <span className="code-prompt" aria-hidden="true">$</span>
+                  <span className="text-[var(--text-primary)]">git clone {REPO_URL}.git</span>
+                </div>
+                <div className="code-line">
+                  <span className="code-prompt" aria-hidden="true">$</span>
+                  <span className="text-[var(--text-primary)]">cd relocate-ai</span>
+                </div>
+                <div className="code-line">
+                  <span className="code-prompt" aria-hidden="true">$</span>
+                  <span className="text-[var(--text-primary)]">./run.sh</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -281,141 +325,91 @@ export default function Page() {
 
       </main>
 
+      {/* ── Footer ───────────────────────────────────────────────────────── */}
       <footer className="w-full border-t border-[var(--border-subtle)] mt-auto">
-        <div className="max-w-[1440px] mx-auto px-4 sm:px-8 py-12 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-          <div className="flex items-center gap-3">
-            <div className="h-7 w-7 rounded-md bg-[var(--brand)] flex items-center justify-center">
-              <span className="text-black font-bold text-sm">R</span>
-            </div>
-            <div className="flex flex-col">
-              <span className="font-display text-[14px] text-[var(--text-primary)]">Relocate</span>
-              <span className="text-[12px] text-[var(--text-tertiary)]">AI Relocation OS · Built on PAVO</span>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-x-8 gap-y-2 text-[13px] text-[var(--text-secondary)]">
-            <a href={`tel:${PHONE_E164}`} className="hover:text-[var(--text-primary)] transition-colors">
-              {PHONE_DISPLAY}
-            </a>
-            <a href="https://github.com/vnmoorthy/relocate-ai" target="_blank" rel="noreferrer" className="hover:text-[var(--text-primary)] transition-colors">GitHub</a>
-            <a href="https://huggingface.co/datasets/vnmoorthy/pavo-bench" target="_blank" rel="noreferrer" className="hover:text-[var(--text-primary)] transition-colors">PAVO-Bench</a>
-            <span className="text-[var(--text-quaternary)]">© 2026 · MIT</span>
-          </div>
+        <div className="max-w-[1500px] mx-auto px-5 sm:px-10 py-16 flex flex-col items-center gap-8">
+          <span className="nav-wordmark" aria-hidden="true">Relocate</span>
+          <nav aria-label="Footer" className="flex flex-wrap items-center justify-center gap-x-8 gap-y-4">
+            <a href={REPO_URL} target="_blank" rel="noreferrer" className="footer-link">GitHub</a>
+            <a href={`${REPO_URL}/blob/main/ARCHITECTURE.md`} target="_blank" rel="noreferrer" className="footer-link">Architecture</a>
+            <a href={`${REPO_URL}/blob/main/SECURITY.md`} target="_blank" rel="noreferrer" className="footer-link">Security</a>
+            <a href={`${REPO_URL}/blob/main/STATUS.md`} target="_blank" rel="noreferrer" className="footer-link">Status</a>
+            <a href={`${REPO_URL}/blob/main/LICENSE`} target="_blank" rel="noreferrer" className="footer-link">MIT License</a>
+          </nav>
+          <span className="text-[11px] tracking-[0.18em] uppercase text-[var(--text-quaternary)]">
+            © 2026 Relocate
+          </span>
         </div>
       </footer>
     </>
   );
 }
 
-function connectionLabel(connection: DashboardConnection): string {
+function linkStatus(connection: DashboardConnection): string {
   const labels: Record<DashboardConnection, string> = {
-    connecting: "Connecting…",
-    live: "Live orchestrator",
-    reconnecting: "Reconnecting…",
-    demo: "Demo replay",
-    offline: "Offline",
+    connecting: "link · connecting",
+    live: "link · online",
+    reconnecting: "link · reconnecting",
+    demo: "stream · active",
+    offline: "link · offline",
   };
   return labels[connection];
 }
 
-function dashboardHeading(connection: DashboardConnection): { eyebrow: string; title: string } {
-  const headings: Record<DashboardConnection, { eyebrow: string; title: string }> = {
-    connecting: {
-      eyebrow: "Connecting",
-      title: "Spinning up the live feed",
-    },
-    live: {
-      eyebrow: "Live swarm",
-      title: "Watch a real call unfold",
-    },
-    reconnecting: {
-      eyebrow: "Reconnecting",
-      title: "Event feed pausing briefly",
-    },
-    demo: {
-      eyebrow: "Demo swarm",
-      title: "Watch all 17 agents dispatch",
-    },
-    offline: {
-      eyebrow: "Offline",
-      title: "No event feed available",
-    },
-  };
-  return headings[connection];
+/**
+ * The single run-mode marker on the page. SIMULATION when the dashboard is
+ * replaying synthetic data; LIVE when the orchestrator feed is connected.
+ */
+function ModeTag({ connection }: { connection: DashboardConnection }) {
+  if (connection === "live") {
+    return (
+      <span className="sim-tag sim-tag--live" role="status">
+        <span className="dot" aria-hidden="true" />
+        Live
+      </span>
+    );
+  }
+  if (connection === "demo") {
+    return (
+      <span className="sim-tag" role="status">
+        Simulation
+      </span>
+    );
+  }
+  return null;
 }
 
 function agentDisplayName(agentId: string): string {
   return ALL_AGENTS.find((agent) => agent.id === agentId)?.name ?? "Specialist";
 }
 
-function ConnectionStatus({
-  connection,
-  completed,
-  waitingCount,
-  finalized,
-  finalOutcome,
-}: {
-  connection: DashboardConnection;
-  completed: boolean;
-  waitingCount: number;
-  finalized: boolean;
-  finalOutcome: "submitted" | "partial_failure" | null;
-}) {
-  const isLive = connection === "live";
-  const isDemo = connection === "demo";
-  const statusText = waitingCount > 0
-    ? `${isDemo ? "Demo paused" : "Waiting for you"} · ${waitingCount}`
-    : finalized
-      ? `${isDemo ? "Demo complete" : "Dispatch done"} · ${finalOutcome === "partial_failure" ? "partial" : "submitted"}`
-      : completed
-        ? isDemo
-          ? "Demo complete"
-          : "Event complete"
-        : isLive
-          ? "Live · agents online"
-          : isDemo
-            ? "Demo · swarm ready"
-            : connectionLabel(connection);
+function Stat({ value, label }: { value: string; label: string }) {
   return (
-    <span
-      className={`section-eyebrow ${isDemo ? "border-[rgba(251,191,36,0.45)] text-[var(--amber)]" : ""}`}
-      role="status"
-      aria-live="polite"
-    >
-      <span className="dot" aria-hidden="true" />
-      {statusText}
-      {isLive && <span className="sr-only">. Agent events are being received now.</span>}
-    </span>
-  );
-}
-
-function Step({ n, title, body }: { n: string; title: string; body: string }) {
-  return (
-    <div className="panel p-6 flex flex-col gap-3 hover:border-[var(--border-default)] transition-colors">
-      <span className="font-mono-tight text-[var(--text-tertiary)] text-[12px]">{n}</span>
-      <h3 className="font-display text-[18px] text-[var(--text-primary)] tracking-tight">
-        {title}
-      </h3>
-      <p className="text-[14px] text-[var(--text-secondary)] leading-relaxed">
-        {body}
-      </p>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="panel p-4 flex flex-col gap-1">
-      <span className="font-display text-[clamp(22px,4vw,28px)] text-[var(--text-primary)] tracking-tight">
-        {value}
-      </span>
-      <span className="text-[11px] text-[var(--text-tertiary)] uppercase tracking-[0.12em]">
+    <div className="flex flex-col gap-2 min-w-0">
+      <span className="stat-num">{value}</span>
+      <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--text-tertiary)]">
         {label}
       </span>
     </div>
   );
 }
 
-function TierRow({
+function TimelineStep({ n, title, body }: { n: string; title: string; body: string }) {
+  return (
+    <div className="tl-step flex flex-col gap-2">
+      <span className="tl-num" aria-hidden="true">{n}</span>
+      <h3 className="tl-title">
+        <span className="sr-only">Step {n}: </span>
+        {title}
+      </h3>
+      <p className="text-[13.5px] text-[var(--text-secondary)] leading-[1.6] max-w-[300px]">
+        {body}
+      </p>
+    </div>
+  );
+}
+
+function LadderRow({
   color,
   title,
   sub,
@@ -427,18 +421,19 @@ function TierRow({
   status: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-2 border-b border-[var(--border-subtle)] last:border-b-0">
-      <div className="flex items-center gap-3">
+    <div className="ladder-row">
+      <div className="flex items-center gap-3 min-w-0">
         <span
-          className="h-2.5 w-2.5 rounded-full shrink-0"
-          style={{ background: color, boxShadow: `0 0 12px 1px ${color}` }}
+          className="h-2 w-2 shrink-0"
+          style={{ background: color }}
+          aria-hidden="true"
         />
-        <div className="flex flex-col">
-          <span className="text-[14px] font-medium text-[var(--text-primary)]">{title}</span>
-          <span className="text-[12px] text-[var(--text-tertiary)]">{sub}</span>
+        <div className="flex flex-col min-w-0">
+          <span className="text-[14px] font-medium text-[var(--text-primary)] truncate">{title}</span>
+          <span className="text-[12px] text-[var(--text-tertiary)] truncate">{sub}</span>
         </div>
       </div>
-      <span className="font-mono-tight text-[13px] text-[var(--text-secondary)] tabular-nums">
+      <span className="font-mono-tight text-[11px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] shrink-0">
         {status}
       </span>
     </div>
