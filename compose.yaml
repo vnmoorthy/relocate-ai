@@ -76,9 +76,9 @@ services:
         source: ${AGENT_REGISTRY_PATH:-./orchestrator/agents.json}
         target: /srv/orchestrator/agents.json
         read_only: true
-      - orchestrator-data:/data
         bind:
           create_host_path: false
+      - orchestrator-data:/data
     read_only: true
     tmpfs:
       - /tmp
