@@ -232,8 +232,8 @@ export default function Page() {
         className="relative overflow-hidden w-full min-h-[90svh] flex flex-col justify-end border-t border-[var(--border-subtle)] scroll-mt-14"
       >
         <BackgroundVideo
-          src="/videos/bg-city-night.mp4"
-          poster="/videos/bg-city-night-poster.jpg"
+          src="/videos/bg-routes.mp4"
+          poster="/videos/bg-routes-poster.jpg"
         />
         <div className="section-scrim" aria-hidden="true" />
         <div className="relative z-[2] w-full max-w-[1500px] mx-auto px-5 sm:px-10 pt-[14svh] pb-16 sm:pb-24">
@@ -292,9 +292,14 @@ export default function Page() {
       <section
         id="run"
         aria-labelledby="run-heading"
-        className="w-full min-h-[90svh] flex flex-col justify-end border-t border-[var(--border-subtle)] scroll-mt-14"
+        className="relative overflow-hidden w-full min-h-[90svh] flex flex-col justify-end border-t border-[var(--border-subtle)] scroll-mt-14"
       >
-        <div className="w-full max-w-[1500px] mx-auto px-5 sm:px-10 pt-[14svh] pb-20 sm:pb-28">
+        <BackgroundVideo
+          src="/videos/bg-journey.mp4"
+          poster="/videos/bg-journey-poster.jpg"
+        />
+        <div className="section-scrim" aria-hidden="true" />
+        <div className="relative z-[2] w-full max-w-[1500px] mx-auto px-5 sm:px-10 pt-[14svh] pb-20 sm:pb-28">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-end">
             <div>
               <p className="kicker mb-4">04 · Run it</p>

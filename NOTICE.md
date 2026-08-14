@@ -27,8 +27,9 @@ which permits commercial use with modification and without attribution. Source
 clips (re-encoded, trimmed, and color-adjusted here):
 
 - `hero-city-dusk.*` — Mixkit clip 41374, “Aerial landscape of a huge city at dusk”
-- `bg-city-night.*` — Mixkit clip 42342, “Aerial shot of a city at night”
 - `bg-packing.*` — Mixkit clip 31218, “Man in his living room finishes packing a box”
+- `bg-routes.*` — Mixkit clip 4067, “Traffic in an underground tunnel”
+- `bg-journey.*` — Mixkit clip 42038, “Driving through a night city”
 
 The Mixkit license applies to that footage; this repository's MIT license does
 not re-license it.
