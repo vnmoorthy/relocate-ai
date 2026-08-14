@@ -1,5 +1,11 @@
-"""In-memory state for the prototype. Durable storage is not built yet: restarts
-lose active events, and multiple orchestrator replicas are not safe.
+"""Runtime state with durable single-node persistence.
+
+The working set lives in memory for speed; every meaningful mutation is
+mirrored to SQLite (see persistence.py) so a restart recovers events, buyer
+contexts, and webhook idempotency records. Specialists that were mid-flight at
+the moment of a crash are surfaced honestly as needs-user-action on recovery —
+never silently resumed, never relabeled as complete. Multiple orchestrator
+replicas remain unsupported (single-node store; roadmap in STATUS.md).
 
 Two main entities:
 - BuyerCallContext: per-inbound-call state for the buyer concierge.
@@ -7,10 +13,26 @@ Two main entities:
 """
 from __future__ import annotations
 
+import logging
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from typing import Any
+
+from .persistence import persistence
+
+
+log = logging.getLogger(__name__)
+
+# States that may not survive a restart as-is: work that was queued or running
+# when the process died cannot be trusted to have completed.
+_IN_FLIGHT_SPECIALIST_STATES = frozenset({"dispatched", "calling", "in-progress"})
+
+
+def _filtered_kwargs(cls: type, data: dict[str, Any]) -> dict[str, Any]:
+    """Ignore unknown keys so older databases load into newer dataclasses."""
+    names = {f.name for f in fields(cls)}
+    return {k: v for k, v in data.items() if k in names}
 
 
 @dataclass
@@ -72,7 +94,7 @@ class MarketplaceEvent:
 
 
 class AppState:
-    """Process-local state. Webhook replay protection lives in security.py."""
+    """In-memory working set mirrored to SQLite on mutation."""
     def __init__(self) -> None:
         self.buyer_contexts: dict[str, BuyerCallContext] = {}
         self.events: dict[str, MarketplaceEvent] = {}
@@ -81,6 +103,57 @@ class AppState:
 
     def new_event_id(self) -> str:
         return f"mkt_{uuid.uuid4().hex[:10]}"
+
+    # ── durability ───────────────────────────────────────────────────────
+    def save_event(self, event: MarketplaceEvent) -> None:
+        persistence.save_event(event.id, asdict(event))
+
+    def save_context(self, ctx: BuyerCallContext) -> None:
+        persistence.save_buyer_context(ctx.call_id, asdict(ctx))
+
+    def load_from_persistence(self) -> tuple[int, int, int]:
+        """Rebuild the working set from SQLite after a restart.
+
+        Specialists that were in flight when the process died are marked
+        needs-user-action with an explicit restart blocker: their provider
+        outcome is unknown, and an unknown outcome is never reported as done.
+        Returns (events, contexts, recovered_in_flight) counts.
+        """
+        recovered_in_flight = 0
+        for event_id, data in persistence.load_events().items():
+            calls_data = data.pop("specialist_calls", {}) or {}
+            event = MarketplaceEvent(**_filtered_kwargs(MarketplaceEvent, data))
+            event.specialist_calls = {}
+            event_recovered = 0
+            for agent_id, call in calls_data.items():
+                ctx = SpecialistCallContext(
+                    **_filtered_kwargs(SpecialistCallContext, call),
+                )
+                if ctx.state in _IN_FLIGHT_SPECIALIST_STATES:
+                    ctx.state = "needs-user-action"
+                    ctx.terminal_outcome = "needs_user_action"
+                    ctx.blocker_kind = "orchestrator_restart"
+                    ctx.blockers = [
+                        "the orchestrator restarted while this specialist was "
+                        "in flight; its provider outcome is unverified",
+                    ]
+                    ctx.closed_at = time.time()
+                    event_recovered += 1
+                event.specialist_calls[agent_id] = ctx
+            self.events[event_id] = event
+            if event_recovered:
+                recovered_in_flight += event_recovered
+                self.save_event(event)
+        for call_id, data in persistence.load_buyer_contexts().items():
+            buyer_ctx = BuyerCallContext(**_filtered_kwargs(BuyerCallContext, data))
+            self.buyer_contexts[call_id] = buyer_ctx
+        if self.events or self.buyer_contexts:
+            log.info(
+                "state recovered from persistence: events=%d contexts=%d "
+                "in_flight_marked_needs_user_action=%d",
+                len(self.events), len(self.buyer_contexts), recovered_in_flight,
+            )
+        return len(self.events), len(self.buyer_contexts), recovered_in_flight
 
 
 state = AppState()

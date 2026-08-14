@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     # AgentPhone concurrency.
     agentphone_parallel_cap: int = 6
 
+    # Durable single-node state (SQLite). Empty disables persistence — the
+    # default test suite runs purely in memory.
+    database_path: str = "data/relocate.db"
+
     # App.
     app_env: str = "development"
     host: str = "0.0.0.0"

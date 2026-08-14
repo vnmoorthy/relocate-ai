@@ -61,6 +61,9 @@ services:
       SPONGE_API_KEY: ${SPONGE_API_KEY:-}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_TEST_MODE: ${STRIPE_TEST_MODE:-true}
+      # Durable single-node state on the named volume below; the container
+      # filesystem itself stays read-only.
+      DATABASE_PATH: /data/relocate.db
     depends_on:
       pavo:
         condition: service_healthy
@@ -73,6 +76,7 @@ services:
         source: ${AGENT_REGISTRY_PATH:-./orchestrator/agents.json}
         target: /srv/orchestrator/agents.json
         read_only: true
+      - orchestrator-data:/data
         bind:
           create_host_path: false
     read_only: true
@@ -98,3 +102,6 @@ services:
     ports:
       - 127.0.0.1:3000:80
     restart: unless-stopped
+
+volumes:
+  orchestrator-data:

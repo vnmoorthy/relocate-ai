@@ -187,6 +187,7 @@ async def _emit_agent_state(event_id: str, agent_id: str, new_state: str) -> Non
     ctx.state = new_state
     if new_state in TERMINAL_PROVIDER_STATES:
         ctx.closed_at = time.time()
+    state.save_event(event)
     await ws_broker.broadcast({
         "type": "agent_state",
         "event_id": event_id,
@@ -486,6 +487,7 @@ async def finalize_event(event_id: str) -> None:
 
         event.final_outcome = outcome
         event.finalized_at = time.time()
+        state.save_event(event)
         await ws_broker.broadcast({
             "type": "event_finalized",
             "event_id": event_id,

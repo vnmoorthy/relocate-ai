@@ -51,3 +51,6 @@ build/
 .idea/
 NUCLEAR_FIX_PROMPT.md
 web/out/
+
+# Durable single-node state (SQLite)
+orchestrator/data/

@@ -21,17 +21,33 @@ from pathlib import Path
 
 from fastapi import HTTPException, Request
 
+from .persistence import persistence
+
 
 _SECRETS: dict[str, str] = {}  # agent_id -> webhook_secret
 _SECRETS_MTIME_NS: int | None = None
 
-# Process-local replay protection. Durable dedupe belongs in the future event
-# store; this bounded cache still protects a single running instance and uses
-# AgentPhone's stable X-Webhook-ID rather than a body hash.
+# Replay protection: a bounded in-memory cache keyed by AgentPhone's stable
+# X-Webhook-ID, mirrored to SQLite so completed-delivery dedupe survives a
+# restart (in-flight claims are intentionally NOT restored — an interrupted
+# delivery must stay retryable).
 _WEBHOOK_DELIVERIES: OrderedDict[tuple[str, str], tuple[str, float]] = OrderedDict()
 _SEEN_LOCK = threading.Lock()
 _REPLAY_TTL_SECONDS = 600
 _MAX_SEEN_WEBHOOKS = 10_000
+
+
+def load_webhook_deliveries_from_persistence() -> int:
+    """Restore completed-delivery records newer than the replay TTL."""
+    cutoff = time.time() - _REPLAY_TTL_SECONDS
+    persistence.prune_webhook_deliveries(cutoff)
+    restored = 0
+    with _SEEN_LOCK:
+        for agent_id, webhook_id, status, seen_at in persistence.load_webhook_deliveries(cutoff):
+            if status == "completed":
+                _WEBHOOK_DELIVERIES[(agent_id, webhook_id)] = (status, seen_at)
+                restored += 1
+    return restored
 
 
 def _load_secrets() -> None:
@@ -84,10 +100,12 @@ def _begin_webhook(agent_id: str, webhook_id: str, now: float) -> str:
 def complete_agentphone_webhook(agent_id: str, webhook_id: str) -> None:
     """Mark a successfully processed delivery as completed for retry dedupe."""
     key = (agent_id, webhook_id)
+    now = time.time()
     with _SEEN_LOCK:
         if key in _WEBHOOK_DELIVERIES:
-            _WEBHOOK_DELIVERIES[key] = ("completed", time.time())
+            _WEBHOOK_DELIVERIES[key] = ("completed", now)
             _WEBHOOK_DELIVERIES.move_to_end(key)
+    persistence.save_webhook_delivery(agent_id, webhook_id, "completed", now)
 
 
 def release_agentphone_webhook(agent_id: str, webhook_id: str) -> None:
@@ -97,6 +115,7 @@ def release_agentphone_webhook(agent_id: str, webhook_id: str) -> None:
         status = _WEBHOOK_DELIVERIES.get(key)
         if status and status[0] == "processing":
             del _WEBHOOK_DELIVERIES[key]
+    persistence.delete_webhook_delivery(agent_id, webhook_id)
 
 
 def verify_agentphone_signature(

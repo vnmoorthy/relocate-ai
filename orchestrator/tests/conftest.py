@@ -13,6 +13,9 @@ import os
 os.environ.setdefault("AGENTPHONE_API_KEY", "ap_test_no_network")
 os.environ.setdefault("PAVO_API_KEY", "pavo_test_no_network")
 os.environ.setdefault("PUBLIC_BASE_URL", "http://testserver")
+# The default suite runs purely in memory; persistence tests opt in with an
+# explicit temporary database.
+os.environ["DATABASE_PATH"] = ""
 
 # Explicitly blank every integration credential. A unit test that needs an
 # integration must monkeypatch its boundary rather than reaching the network.

@@ -14,7 +14,8 @@ import json
 import logging
 import re
 import time
-from typing import Any
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,10 +25,12 @@ from pythonjsonlogger import jsonlogger
 from .config import settings
 from .marketplace import fan_out, finalize_event, resume_ready_specialists
 from .pavo_client import pavo_chat
+from .persistence import persistence
 from .personas import by_id, buyer_persona
 from .security import (
     complete_agentphone_webhook,
     get_raw_body,
+    load_webhook_deliveries_from_persistence,
     release_agentphone_webhook,
     verify_agentphone_signature,
 )
@@ -51,7 +54,19 @@ _setup_logging()
 log = logging.getLogger(__name__)
 
 
-app = FastAPI(title="Relocate Orchestrator", version="0.1.0")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    persistence.open(settings.database_path)
+    if persistence.enabled:
+        state.load_from_persistence()
+        restored = load_webhook_deliveries_from_persistence()
+        if restored:
+            log.info("webhook dedupe records restored: %d", restored)
+    yield
+    persistence.close()
+
+
+app = FastAPI(title="Relocate Orchestrator", version="0.9.0", lifespan=_lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -176,6 +191,8 @@ async def _handle_buyer_turn(call_id: str, transcript: str, history: list[dict])
         state.events[event_id] = MarketplaceEvent(id=event_id, homeowner_call_id=call_id, spec={})
         ctx = BuyerCallContext(call_id=call_id, event_id=event_id)
         state.buyer_contexts[call_id] = ctx
+        state.save_event(state.events[event_id])
+        state.save_context(ctx)
         await ws_broker.broadcast({
             "type": "agent_state", "event_id": event_id, "agent_id": "buyer",
             "state": "in-progress", "ts": ctx.started_at,
@@ -254,6 +271,10 @@ async def _handle_buyer_turn(call_id: str, transcript: str, history: list[dict])
         "pavo_tier": reply.tier, "ts": time.time(),
     })
     if new_fields:
+        state.save_context(ctx)
+        event_for_fields = state.events.get(ctx.event_id)
+        if event_for_fields is not None:
+            state.save_event(event_for_fields)
         await ws_broker.broadcast({
             "type": "fields_collected",
             "event_id": ctx.event_id,
@@ -302,6 +323,8 @@ def _dispatch_fan_out(ctx: BuyerCallContext) -> None:
     event = state.events.get(ctx.event_id)
     if event is not None:
         event.spec = spec
+        state.save_event(event)
+    state.save_context(ctx)
     asyncio.create_task(fan_out(ctx.event_id, spec))
     log.info("buyer dispatched: event=%s fields=%d", ctx.event_id, len(spec))
 
@@ -372,6 +395,7 @@ async def _send_buyer_followup(ctx: BuyerCallContext) -> bool:
         return False
     finally:
         ctx.followup_in_progress = False
+        state.save_context(ctx)
 
 
 def _extract_and_merge_fields(text: str, ctx) -> dict:
@@ -535,6 +559,7 @@ async def _handle_call_ended(agent_id: str, data: dict[str, Any]) -> JSONRespons
         ctx = state.buyer_contexts.get(call_id)
         if ctx:
             ctx.call_ended = True
+            state.save_context(ctx)
             await ws_broker.broadcast({
                 "type": "agent_state", "event_id": ctx.event_id, "agent_id": "buyer",
                 "state": "closed", "ts": time.time(),
@@ -566,6 +591,7 @@ async def _handle_call_ended(agent_id: str, data: dict[str, Any]) -> JSONRespons
             specialist_ctx.blocker_kind = "call_ended_without_artifact"
             specialist_ctx.blockers = ["provider call ended without a verifiable artifact"]
         specialist_ctx.closed_at = time.time()
+        state.save_event(event)
         await ws_broker.broadcast({
             "type": "agent_state", "event_id": event_id, "agent_id": agent_id,
             "state": specialist_ctx.state, "ts": time.time(),
