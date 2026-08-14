@@ -719,6 +719,20 @@ main {
   to { stroke-dashoffset: -24; }
 }
 
+/* ── HUD corner brackets — thin framing at the panel-interior corners ─── */
+.hud-corner {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+  z-index: 6;
+  border: 0 solid rgba(255, 255, 255, 0.12);
+}
+.hud-corner--tl { top: 8px; left: 8px; border-top-width: 1px; border-left-width: 1px; }
+.hud-corner--tr { top: 8px; right: 8px; border-top-width: 1px; border-right-width: 1px; }
+.hud-corner--bl { bottom: 8px; left: 8px; border-bottom-width: 1px; border-left-width: 1px; }
+.hud-corner--br { bottom: 8px; right: 8px; border-bottom-width: 1px; border-right-width: 1px; }
+
 /* ── Console nodes ────────────────────────────────────────────────────── */
 .node-console {
   position: relative;
@@ -752,6 +766,46 @@ main {
 .node-console--action {
   border-color: rgba(251, 191, 36, 0.48);
   box-shadow: 0 0 14px 0 rgba(251, 191, 36, 0.14);
+}
+
+/* Agent glyph — 16px stroke icon; ink at rest, muted semantic accent when
+   the node runs hot. Color only ever mirrors the node's existing state. */
+.node-glyph {
+  color: var(--ink-500);
+}
+.node-console--live .node-glyph,
+.node-console--failed .node-glyph {
+  color: var(--red);
+  opacity: 0.72;
+}
+.node-console--action .node-glyph {
+  color: var(--amber);
+  opacity: 0.72;
+}
+
+/* Concierge voice equalizer — 4 bars, scaleY only, staggered via negative
+   delays so all bars are mid-cycle on mount. The base per-bar transforms
+   double as the static reduced-motion "waveform snapshot". */
+.voice-eq {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 10px;
+}
+.voice-eq span {
+  width: 2px;
+  height: 9px;
+  border-radius: 1px;
+  background: currentColor;
+  animation: voiceEq 1.1s ease-in-out infinite;
+}
+.voice-eq span:nth-child(1) { transform: scaleY(0.45); animation-delay: -0.9s; }
+.voice-eq span:nth-child(2) { transform: scaleY(0.9); animation-delay: -0.62s; }
+.voice-eq span:nth-child(3) { transform: scaleY(0.6); animation-delay: -0.34s; }
+.voice-eq span:nth-child(4) { transform: scaleY(1); animation-delay: -0.06s; }
+@keyframes voiceEq {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
 }
 
 /* 300ms state-transition flash — remounts on every state change so terminal
@@ -980,7 +1034,7 @@ a:focus-visible, button:focus-visible {
     transition-duration: 0.001s !important;
   }
   .live-dot, .swarm-core-ring-mid, .swarm-core-ring-inner, .swarm-sweep,
-  .swarm-spoke, .node-console--live, .node-flash,
+  .swarm-spoke, .node-console--live, .node-flash, .voice-eq span,
   .cursor-blink::after, .hero-stars, .hero-stars--far, .scroll-cue svg {
     animation: none !important;
   }

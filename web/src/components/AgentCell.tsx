@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AgentGlyph } from "@/components/AgentGlyph";
 import { publicFeedText, redactDisplayText } from "@/lib/privacy";
 import { tierMeta } from "@/lib/tiers";
 
@@ -58,6 +59,8 @@ export function AgentCell({ agentId, name, category, state, sinceTs, transcript,
   const isLive = state === "in-progress";
   const isFailed = state === "failed" || state === "error";
   const needsAction = state === "needs-user-action";
+  // Concierge-only voice indicator — a tiny equalizer while the call is hot.
+  const voiceActive = agentId === "buyer" && (state === "in-progress" || state === "calling");
 
   return (
     <article
@@ -69,21 +72,32 @@ export function AgentCell({ agentId, name, category, state, sinceTs, transcript,
       {/* 300ms state-transition flash — remounts whenever the state changes */}
       <span key={state ?? "idle"} className="node-flash" aria-hidden="true" />
 
-      {/* Row 1 — callsign + status */}
-      <div className="flex items-center justify-between gap-2 min-w-0">
-        <h3
-          id={`agent-${agentId}-title`}
-          className="font-display text-[13px] leading-none text-[var(--ink-100)] truncate"
-        >
-          {name}
-        </h3>
+      {/* Row 1 — glyph + callsign + status */}
+      <div className="flex items-center justify-between gap-1.5 min-w-0">
+        <span className="flex items-center gap-1 min-w-0">
+          <AgentGlyph agentId={agentId} className="node-glyph shrink-0" />
+          <h3
+            id={`agent-${agentId}-title`}
+            className="font-display text-[13px] leading-none text-[var(--ink-100)] truncate min-w-0"
+          >
+            {name}
+          </h3>
+        </span>
         <span className="flex items-center gap-1.5 shrink-0">
+          {voiceActive && (
+            <span className={`voice-eq shrink-0 ${s.text}`} aria-hidden="true">
+              <span />
+              <span />
+              <span />
+              <span />
+            </span>
+          )}
           <span
             className={`h-[5px] w-[5px] rounded-full ${s.dot} ${s.pulse ? "live-dot" : ""}`}
             aria-hidden="true"
           />
           <span
-            className={`tm-label ${s.text}`}
+            className={`tm-label tracking-[0.06em] ${s.text}`}
             aria-label={`${name} status: ${s.label.toLowerCase()}`}
           >
             {s.label}

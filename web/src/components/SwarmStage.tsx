@@ -163,6 +163,17 @@ export function SwarmStage({
   const COMPACT_SWARM_THRESHOLD = 1280;
   const useMobileGrid = stageSize.w === 0 || stageSize.w < COMPACT_SWARM_THRESHOLD;
 
+  // HUD corner brackets — thin framing at the four corners of the panel
+  // interior, shared by both the orbital stage and the compact grid.
+  const hudCorners = (
+    <>
+      <span className="hud-corner hud-corner--tl" aria-hidden="true" />
+      <span className="hud-corner hud-corner--tr" aria-hidden="true" />
+      <span className="hud-corner hud-corner--bl" aria-hidden="true" />
+      <span className="hud-corner hud-corner--br" aria-hidden="true" />
+    </>
+  );
+
   if (useMobileGrid) {
     return (
       <div
@@ -171,6 +182,7 @@ export function SwarmStage({
         aria-label="Agent swarm"
       >
         <div className="absolute inset-0 swarm-bg" />
+        {hudCorners}
         <div className="relative z-10 p-3">
           <div className="text-center mb-4 pt-1">
             <div className="tm-label text-[var(--ink-300)]">Relocate · agent swarm</div>
@@ -216,6 +228,7 @@ export function SwarmStage({
   return (
     <div ref={containerRef} className="relative w-full min-h-[760px] overflow-hidden swarm-stage" aria-label="Agent swarm">
       <div className="absolute inset-0 swarm-bg" />
+      {hudCorners}
 
       {/* Polar radar grid — barely-there structure behind everything */}
       <svg
@@ -253,6 +266,41 @@ export function SwarmStage({
               stroke={`rgba(255,255,255,${major ? 0.09 : 0.06})`}
               strokeWidth={1}
             />
+          );
+        })}
+        {/* Cardinal HUD markings — compass-degree labels + extended ticks at
+            000/090/180/270 (compass convention: 000 up, clockwise). */}
+        {[
+          { label: "000", deg: -90 },
+          { label: "090", deg: 0 },
+          { label: "180", deg: 90 },
+          { label: "270", deg: 180 },
+        ].map(({ label, deg }) => {
+          const a = (deg * Math.PI) / 180;
+          const cos = Math.cos(a);
+          const sin = Math.sin(a);
+          return (
+            <g key={`cardinal-${label}`}>
+              <line
+                x1={cx + cos * (tickR - 16)}
+                y1={cy + sin * (tickR - 16)}
+                x2={cx + cos * (tickR + 3)}
+                y2={cy + sin * (tickR + 3)}
+                stroke="rgba(255,255,255,0.14)"
+                strokeWidth={1}
+              />
+              <text
+                x={cx + cos * (tickR + 14)}
+                y={cy + sin * (tickR + 14)}
+                textAnchor="middle"
+                dominantBaseline="central"
+                className="tm-label"
+                style={{ fontSize: 9 }}
+                fill="var(--ink-700)"
+              >
+                {label}
+              </text>
+            </g>
           );
         })}
       </svg>
