@@ -18,6 +18,9 @@ const nextConfig: NextConfig = {
   trailingSlash: true,
   basePath: isGhPages ? "/relocate-ai" : "",
   assetPrefix: isGhPages ? "/relocate-ai/" : "",
+  // Next rewrites its own asset URLs for basePath, but NOT plain <video>/<img>
+  // src strings. Components referencing files in /public must prepend this.
+  env: { NEXT_PUBLIC_BASE_PATH: isGhPages ? "/relocate-ai" : "" },
   // Next 16 blocks cross-origin dev resources; run.sh serves everything on
   // 127.0.0.1, which Next treats as a different origin than localhost. Without
   // this, dev-mode hydration and HMR silently fail on the printed URLs.

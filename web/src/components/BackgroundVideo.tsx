@@ -22,11 +22,17 @@ interface Props {
  * - Playback pauses whenever the section leaves the viewport.
  * - Decorative only: muted, looped, inert, aria-hidden.
  */
+// GitHub Pages serves the site under a base path; plain media src strings do
+// not get Next's automatic basePath rewriting, so prepend it ourselves.
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
 export function BackgroundVideo({ src, poster, className = "" }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [wantsVideo, setWantsVideo] = useState(false);
   const [playing, setPlaying] = useState(false);
+  const videoSrc = `${BASE_PATH}${src}`;
+  const posterSrc = `${BASE_PATH}${poster}`;
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -58,13 +64,13 @@ export function BackgroundVideo({ src, poster, className = "" }: Props) {
   return (
     <div ref={wrapRef} className={`bg-video-wrap ${className}`} aria-hidden="true">
       {/* eslint-disable-next-line @next/next/no-img-element -- decorative backdrop; next/image is disabled for static export */}
-      <img src={poster} alt="" className="bg-video-media" draggable={false} />
+      <img src={posterSrc} alt="" className="bg-video-media" draggable={false} />
       {wantsVideo && (
         <video
           ref={videoRef}
           className={`bg-video-media bg-video-motion ${playing ? "bg-video-motion--on" : ""}`}
-          src={src}
-          poster={poster}
+          src={videoSrc}
+          poster={posterSrc}
           autoPlay
           muted
           loop
