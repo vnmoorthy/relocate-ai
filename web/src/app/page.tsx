@@ -1,17 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ArtifactsPanel } from "@/components/ArtifactsPanel";
 import { BackgroundVideo } from "@/components/BackgroundVideo";
 import { CostTicker } from "@/components/CostTicker";
 import { FieldsCollectedStrip } from "@/components/FieldsCollectedStrip";
 import { PAVOFlow } from "@/components/PAVOFlow";
 import { SponsorRow } from "@/components/SponsorRow";
+import { StartMove } from "@/components/StartMove";
 import { SwarmStage } from "@/components/SwarmStage";
-import { useDashboardWS } from "@/lib/ws-client";
+import { discoverLiveApi, publicWsUrl } from "@/lib/live-config";
+import { isPlaceholderWsUrl, useDashboardWS } from "@/lib/ws-client";
+import { resolveWsToken } from "@/lib/ws-token";
 import type { DashboardConnection } from "@/lib/dashboard-state";
 import { ALL_AGENTS } from "@/lib/types";
 
+// Build-time socket: the authenticated /ws/dashboard for local runs (run.sh
+// hands the token over in the URL hash). Public builds set it to "" so the
+// page opens in the labeled simulation until discovery finds a live backend.
 const WS_URL =
   process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws/dashboard";
 
@@ -24,9 +30,46 @@ const PHONE_DISPLAY = "+1 (618) 414-9537";
 
 const SPECIALIST_COUNT = ALL_AGENTS.length - 1;
 
+interface LiveLink {
+  /** Discovered live API origin (see lib/live-config.ts); null = simulation. */
+  api: string | null;
+  /** The local token handoff (#ws-token=…) keeps the authenticated socket. */
+  localFlow: boolean;
+}
+
+const NO_LIVE_LINK: LiveLink = { api: null, localFlow: false };
+
 export default function Page() {
-  const s = useDashboardWS(WS_URL);
+  const [live, setLive] = useState<LiveLink>(NO_LIVE_LINK);
   const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    // resolveWsToken() stashes a hash token in sessionStorage and strips it
+    // from the URL; ws-client re-reads the stash on every connect attempt.
+    const localFlow = resolveWsToken() !== "" && !isPlaceholderWsUrl(WS_URL);
+    discoverLiveApi().then((api) => {
+      if (!cancelled) setLive({ api, localFlow });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Socket priority: (a) local token flow against the bundled WS_URL,
+  // (b) discovered public feed (token-less — ws-client only offers the
+  // bearer subprotocol when a token exists), (c) the bundled default, which
+  // on public builds is "" → simulation. Until discovery settles, (c) holds.
+  const liveApi = live.api;
+  const wsUrl = live.localFlow ? WS_URL : liveApi ? publicWsUrl(liveApi) : WS_URL;
+  const s = useDashboardWS(wsUrl);
+
+  const onMoveStarted = useCallback(() => {
+    const target =
+      document.getElementById("dashboard-stage") ?? document.getElementById("dashboard");
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    target?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+  }, []);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -92,7 +135,9 @@ export default function Page() {
           </p>
           <div className="mt-9 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
             <a href={`tel:${PHONE_E164}`} className="btn-solid">Call {PHONE_DISPLAY}</a>
-            <a href="#dashboard" className="btn-outline">Watch the swarm</a>
+            <a href="#dashboard" className="btn-outline">
+              {liveApi ? "Start your move" : "Watch the swarm"}
+            </a>
           </div>
           <p className="mt-4 text-[12px] tracking-[0.08em] uppercase text-[var(--text-tertiary)]">
             Live concierge demo line · US · talk to the swarm yourself
@@ -113,18 +158,30 @@ export default function Page() {
         className="w-full min-h-[90svh] flex flex-col justify-end border-t border-[var(--border-subtle)] scroll-mt-14"
       >
         <div className="w-full max-w-[1500px] mx-auto px-5 sm:px-10 pt-[14svh] pb-12">
-          <p className="kicker mb-4">01 · The swarm</p>
-          <h2 id="dashboard-heading" className="display-sub max-w-[900px]">
-            Seventeen agents.<br />One dispatcher.
-          </h2>
-          <p className="mt-5 max-w-[560px] text-[15px] leading-[1.65] text-[var(--text-secondary)]">
-            Watch a full move fan out — utilities, movers, schools, federal
-            forms — each specialist reporting a real terminal state.
-          </p>
-          <a href={REPO_URL} target="_blank" rel="noreferrer" className="arrow-link mt-6">It’s open source →</a>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16 items-end">
+            <div className="lg:col-span-7 min-w-0">
+              <p className="kicker mb-4">01 · The swarm</p>
+              <h2 id="dashboard-heading" className="display-sub max-w-[900px]">
+                Seventeen agents.<br />One dispatcher.
+              </h2>
+              <p className="mt-5 max-w-[560px] text-[15px] leading-[1.65] text-[var(--text-secondary)]">
+                Watch a full move fan out — utilities, movers, schools, federal
+                forms — each specialist reporting a real terminal state.
+              </p>
+              <a href={REPO_URL} target="_blank" rel="noreferrer" className="arrow-link mt-6">It’s open source →</a>
+            </div>
+            {/* Web intake — a REAL dispatch. Only mounts once discovery has
+                confirmed a live backend; the simulation never shows a form. */}
+            {liveApi && (
+              <div id="start-move" className="lg:col-span-5 min-w-0 scroll-mt-20">
+                <p className="kicker mb-4">Start a move · live</p>
+                <StartMove api={liveApi} onStarted={onMoveStarted} />
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="w-full max-w-[1500px] mx-auto px-3 sm:px-10 pb-16 sm:pb-24">
+        <div id="dashboard-stage" className="w-full max-w-[1500px] mx-auto px-3 sm:px-10 pb-16 sm:pb-24 scroll-mt-16">
           {s.waitingForUserAgents.length > 0 && (
             <p
               className="mb-3 border border-[rgba(251,191,36,0.35)] bg-[rgba(251,191,36,0.06)] px-4 py-3 text-[13px] text-[var(--amber)]"

@@ -338,6 +338,17 @@ main {
     background: var(--text-primary);
     color: #060607;
   }
+  /* <button> variants: pointer affordance; a disabled solid button stays
+     solid (no hover inversion) and reads as busy. */
+  button.btn-solid,
+  button.btn-outline { cursor: pointer; }
+  .btn-solid:disabled,
+  .btn-solid:disabled:hover {
+    background: var(--text-primary);
+    color: #060607;
+    opacity: 0.55;
+    cursor: progress;
+  }
 }
 
 /* Text link with trailing arrow */
@@ -1001,6 +1012,182 @@ main {
   transition: color 0.15s ease;
 }
 .footer-link:hover { color: var(--text-primary); }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Web intake (StartMove) — SpaceX register: hairline underlined inputs on the
+   card surface, 11px uppercase mono labels, one white solid submit. Rendered
+   only when a live backend has been discovered.
+   ────────────────────────────────────────────────────────────────────────── */
+.start-move {
+  position: relative; /* anchors the offscreen honeypot */
+  color-scheme: dark; /* native date picker + autofill chrome in dark */
+  background: var(--bg-elev-1);
+  border: 1px solid var(--border-strong);
+  padding: 1.5rem 1.5rem 1.375rem;
+}
+@media (min-width: 640px) {
+  .start-move { padding: 1.75rem 1.75rem 1.5rem; }
+}
+.start-move-lead {
+  margin-bottom: 1.5rem;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  max-width: 460px;
+}
+.sm-label {
+  display: block;
+  font-family: var(--font-geist-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.sm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.sm-input {
+  width: 100%;
+  min-height: 40px;
+  padding: 0.5rem 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border-strong);
+  border-radius: 0;
+  font-family: var(--font-geist-sans);
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--text-primary);
+  transition: border-color 0.15s ease;
+}
+.sm-input::placeholder { color: var(--text-quaternary); }
+.sm-input:hover { border-bottom-color: rgba(255, 255, 255, 0.28); }
+.sm-input:focus { border-bottom-color: var(--text-primary); }
+.sm-input:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 4px;
+}
+.sm-input[aria-invalid="true"] { border-bottom-color: var(--red); }
+.sm-input:disabled { opacity: 0.55; }
+/* Native date control: mono-ish digits, light calendar glyph, same height */
+.sm-input[type="date"] {
+  font-variant-numeric: tabular-nums;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.sm-input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0.55;
+  cursor: pointer;
+}
+.sm-input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+/* Autofill: keep the dark card, not the browser's yellow */
+.sm-input:-webkit-autofill,
+.sm-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text-primary);
+  -webkit-box-shadow: 0 0 0 1000px var(--bg-elev-1) inset;
+  transition: background-color 9999s ease-out;
+}
+.sm-error {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--red);
+}
+
+.start-move-toggles {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.start-move-toggles:disabled { opacity: 0.55; }
+.sm-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 34px;
+  padding: 0 0.8rem 0 0.65rem;
+  border: 1px solid var(--border-default);
+  font-family: var(--font-geist-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.sm-check:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.sm-check:has(input:checked) {
+  border-color: var(--text-primary);
+  color: var(--text-primary);
+}
+.sm-check:has(input:focus-visible) {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 3px;
+}
+.sm-check input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  flex-shrink: 0;
+  cursor: inherit;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.sm-check input:checked {
+  background: var(--text-primary);
+  border-color: var(--text-primary);
+}
+.sm-check input:focus-visible { outline: none; } /* ring drawn on the chip */
+
+.sm-status {
+  min-height: 1.25rem;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.sm-status--ok { color: var(--text-primary); }
+.sm-status--error { color: var(--red); }
+.sm-ref {
+  display: block;
+  margin-top: 0.15rem;
+  font-family: var(--font-geist-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  word-break: break-all;
+}
+.sm-note {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.6;
+  color: var(--text-tertiary);
+}
+
+/* Honeypot: present in the DOM and fillable by scripts, invisible and
+   unreachable for people. Deliberately NOT display:none / visibility:hidden. */
+.hp-field {
+  position: absolute;
+  left: -10000px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
 
 /* ──────────────────────────────────────────────────────────────────────────
    A11y: focus rings + reduced-motion respect

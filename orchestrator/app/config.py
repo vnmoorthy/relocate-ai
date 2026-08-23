@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     # default test suite runs purely in memory.
     database_path: str = "data/relocate.db"
 
+    # Public web intake (POST /api/public/start-move). Off by default; the
+    # public website enables it only for supervised demo deployments.
+    enable_public_intake: bool = False
+
     # App.
     app_env: str = "development"
     host: str = "0.0.0.0"

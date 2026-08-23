@@ -16,6 +16,8 @@ os.environ.setdefault("PUBLIC_BASE_URL", "http://testserver")
 # The default suite runs purely in memory; persistence tests opt in with an
 # explicit temporary database.
 os.environ["DATABASE_PATH"] = ""
+# Public intake is a deployment decision; the suite asserts the closed default.
+os.environ["ENABLE_PUBLIC_INTAKE"] = "false"
 
 # Explicitly blank every integration credential. A unit test that needs an
 # integration must monkeypatch its boundary rather than reaching the network.

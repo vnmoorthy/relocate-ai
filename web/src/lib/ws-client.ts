@@ -117,8 +117,15 @@ export function useDashboardWS(wsUrl: string): DashboardState {
       }
 
       if (!replayActive) {
+        // First attempt of a connect cycle (the URL can change mid-session,
+        // e.g. discovery upgrading a public build from "" to the live public
+        // feed): start from a clean slate so replayed demo frames never sit
+        // under a LIVE tag while the new socket is still quiet. The reducer's
+        // event_id reset only kicks in once a real event arrives.
         setState((current) =>
-          withConnection(current, hasConnected ? "reconnecting" : "connecting"),
+          hasConnected
+            ? withConnection(current, "reconnecting")
+            : createDashboardState("connecting"),
         );
       }
 

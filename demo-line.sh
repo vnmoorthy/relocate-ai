@@ -16,7 +16,8 @@ set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORCH_ROOT="$REPO_ROOT/orchestrator"
-RUNTIME_DIR="${TMPDIR:-/tmp}/relocate-${UID}"
+# Persistent location: temp purges kill whatever lives under TMPDIR.
+RUNTIME_DIR="${RELOCATE_RUNTIME_DIR:-$HOME/.relocate/runtime}"
 mkdir -p "$RUNTIME_DIR"
 LOG="$RUNTIME_DIR/demo-line.log"
 TUNNEL_LOG="$RUNTIME_DIR/cloudflared.log"
@@ -87,6 +88,10 @@ PYEOF
     if (cd "$ORCH_ROOT" && uv run python scripts/update_webhooks.py >>"$LOG" 2>&1); then
       printf "%s" "$TUNNEL_URL" >"$URL_STATE"
       note "webhook now -> $TUNNEL_URL/webhook/agent/buyer"
+      # The public website discovers the backend via web/public/live.json.
+      # Written locally only — publishing it is a deliberate commit/push.
+      printf '{"api":"%s"}\n' "$TUNNEL_URL" >"$REPO_ROOT/web/public/live.json"
+      note "ACTION NEEDED: tunnel URL changed — commit and push web/public/live.json so the public site reconnects"
     else
       note "ERROR: webhook update failed (will retry next cycle)"
     fi

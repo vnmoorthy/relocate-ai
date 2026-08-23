@@ -15,7 +15,8 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORCH_ROOT="$REPO_ROOT/orchestrator"
 WEB_ROOT="$REPO_ROOT/web"
-RUNTIME_DIR="${TMPDIR:-/tmp}/relocate-${UID}"
+# Persistent location: temp purges kill whatever lives under TMPDIR.
+RUNTIME_DIR="${RELOCATE_RUNTIME_DIR:-$HOME/.relocate/runtime}"
 mkdir -p "$RUNTIME_DIR"
 
 PAVO_LOG="$RUNTIME_DIR/pavo.log"

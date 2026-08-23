@@ -27,6 +27,7 @@ from .marketplace import fan_out, finalize_event, resume_ready_specialists
 from .pavo_client import pavo_chat
 from .persistence import persistence
 from .personas import by_id, buyer_persona
+from .public_feed import redact_public_event
 from .security import (
     complete_agentphone_webhook,
     get_raw_body,
@@ -35,7 +36,7 @@ from .security import (
     verify_agentphone_signature,
 )
 from .state import state, BuyerCallContext, MarketplaceEvent
-from .ws import ws_broker
+from .ws import public_broker, ws_broker
 
 
 # Structured JSON logging per /plan-eng-review code-quality issue 10.
@@ -67,6 +68,8 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Relocate Orchestrator", version="0.9.0", lifespan=_lifespan)
+# Every dashboard broadcast is mirrored, redacted, to the unauthenticated public feed.
+ws_broker.mirror = (public_broker, redact_public_event)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -638,6 +641,104 @@ def _bearer_token(value: str | None) -> str:
         return ""
     scheme, _, token = value.partition(" ")
     return token.strip() if scheme.lower() == "bearer" else ""
+
+
+@app.websocket("/ws/public")
+async def ws_public(ws: WebSocket) -> None:
+    """Unauthenticated, redacted live feed for the public website.
+
+    Carries state/routing/cost events with every free-text and identifier
+    field blanked server-side (see public_feed.py). Read-only; capped.
+    """
+    if public_broker.at_capacity:
+        await ws.close(code=1013, reason="public feed at capacity")
+        return
+    await public_broker.subscribe(ws)
+    try:
+        while True:
+            await ws.receive_text()  # clients never send; this just detects close
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await public_broker.unsubscribe(ws)
+
+
+# ── Public web intake ──────────────────────────────────────────────────
+# A browser visitor starts a real move without calling. Gated by
+# ENABLE_PUBLIC_INTAKE, honeypot-checked, and rate-limited per client IP and
+# globally. Outbound side effects remain governed by the usual allowlists.
+_INTAKE_PER_IP_MIN = 5
+_INTAKE_PER_IP_HOUR = 20
+_INTAKE_GLOBAL_HOUR = 120
+_intake_hits: dict[str, list[float]] = {}
+_intake_global: list[float] = []
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()[:64]
+    return (request.client.host if request.client else "unknown")[:64]
+
+
+def _intake_rate_limited(ip: str, now: float) -> bool:
+    minute, hour = now - 60, now - 3600
+    global _intake_global
+    _intake_global = [t for t in _intake_global if t > hour]
+    if len(_intake_global) >= _INTAKE_GLOBAL_HOUR:
+        return True
+    hits = [t for t in _intake_hits.get(ip, []) if t > hour]
+    if len(hits) >= _INTAKE_PER_IP_HOUR or sum(1 for t in hits if t > minute) >= _INTAKE_PER_IP_MIN:
+        _intake_hits[ip] = hits
+        return True
+    hits.append(now)
+    _intake_hits[ip] = hits
+    _intake_global.append(now)
+    return False
+
+
+@app.post("/api/public/start-move")
+async def api_public_start_move(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
+    if not settings.enable_public_intake:
+        raise HTTPException(503, "public intake is not enabled on this deployment")
+    if str(payload.get("website", "")).strip():
+        raise HTTPException(400, "rejected")  # honeypot
+    ip = _client_ip(request)
+    if _intake_rate_limited(ip, time.time()):
+        raise HTTPException(429, "too many requests — try again in a minute")
+
+    from .buyer_schema import by_name
+    spec: dict[str, Any] = {}
+    for name in ("origin_address", "destination_address", "move_date", "user_email"):
+        field = by_name(name)
+        value = str(payload.get(name, "")).strip()[:200]
+        if field is None or not value or not field.validate(value):
+            raise HTTPException(400, f"{name} is missing or invalid")
+        spec[name] = value
+    for flag in ("has_pets", "has_children", "has_car", "has_visa"):
+        spec[flag] = bool(payload.get(flag, False))
+
+    event_id = state.new_event_id()
+    call_id = f"web_{event_id[4:]}"
+    state.events[event_id] = MarketplaceEvent(id=event_id, homeowner_call_id=call_id, spec=spec)
+    ctx = BuyerCallContext(
+        call_id=call_id, event_id=event_id, collected=dict(spec), parsed_spec=spec,
+        dispatched=True, call_ended=True, followup_sent=True,  # web intake has no voice follow-up
+    )
+    state.buyer_contexts[call_id] = ctx
+    state.save_event(state.events[event_id])
+    state.save_context(ctx)
+    await ws_broker.broadcast({
+        "type": "agent_state", "event_id": event_id, "agent_id": "buyer",
+        "state": "closed", "ts": time.time(),
+    })
+    await ws_broker.broadcast({
+        "type": "fields_collected", "event_id": event_id, "turn": 1,
+        "fields": list(spec.keys()), "values": _safe_field_display(spec), "ts": time.time(),
+    })
+    asyncio.create_task(fan_out(event_id, spec))
+    log.info("public intake dispatched: event=%s ip=%s", event_id, ip)
+    return {"event_id": event_id, "dispatched": True}
 
 
 def _require_dev_trigger_access(request: Request) -> None:
