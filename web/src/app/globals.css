@@ -1190,6 +1190,179 @@ main {
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
+   /move page — the shareable per-move tracking screen. Monochrome chrome
+   like the rest of the site; color appears only as state (red live/failed,
+   amber action, blue submitted, green done — the AgentCell palette).
+   ────────────────────────────────────────────────────────────────────────── */
+/* Route headline: origin → destination, wraps cleanly at 375px. */
+.mv-route {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 1.25rem;
+  row-gap: 0.25rem;
+  overflow-wrap: anywhere;
+}
+.mv-route-arrow {
+  color: var(--text-tertiary);
+  font-weight: 300;
+}
+
+/* Fact chips: move date + household flags. */
+.mv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 26px;
+  padding: 0 0.65rem;
+  border: 1px solid var(--border-default);
+  font-family: var(--font-geist-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.mv-chip--flag::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  background: var(--text-secondary);
+}
+
+/* Progress strip panel — same register as the stage-panel frame. */
+.mv-panel {
+  border: 1px solid var(--border-strong);
+  background: var(--bg-base);
+}
+.mv-panel-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 38px;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-default);
+  background: rgba(255, 255, 255, 0.02);
+}
+.mv-panel-body {
+  padding: 1rem 0.875rem 0.875rem;
+}
+@media (min-width: 640px) {
+  .mv-panel-body { padding: 1.125rem 1rem 1rem; }
+}
+.mv-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.75rem;
+}
+.mv-count-num {
+  font-family: var(--font-geist-mono);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+/* Thin segmented bar; segment widths are proportional flex-grow. */
+.mv-bar {
+  display: flex;
+  gap: 2px;
+  height: 3px;
+  margin-top: 1rem;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+.mv-bar span {
+  flex-basis: 0;
+  min-width: 0;
+}
+.mv-honest {
+  margin-top: 0.65rem;
+  font-size: 11px;
+  line-height: 1.6;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+
+/* Task list — hairline rows: glyph + name + status word, one honest line. */
+.mv-list {
+  margin-top: 1rem;
+  border-top: 1px solid var(--border-default);
+  list-style: none;
+  padding: 0;
+}
+.mv-row {
+  padding: 0.85rem 0 0.8rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.mv-row-line {
+  margin-top: 0.4rem;
+  padding-left: calc(13px + 0.625rem); /* aligns under the name, past the glyph */
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.mv-glyph {
+  color: var(--ink-500);
+  flex-shrink: 0;
+}
+.mv-row--action .mv-glyph { color: var(--amber); opacity: 0.72; }
+.mv-row--failed .mv-glyph,
+.mv-row--live .mv-glyph { color: var(--red); opacity: 0.72; }
+
+/* "What you still own" — amber checklist of needs-user-action handoffs. */
+.mv-own-list {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  list-style: none;
+  padding: 0;
+}
+.mv-own-row {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(251, 191, 36, 0.32);
+  background: rgba(251, 191, 36, 0.05);
+}
+.mv-own-box {
+  width: 12px;
+  height: 12px;
+  margin-top: 2px;
+  border: 1px solid var(--amber);
+  flex-shrink: 0;
+}
+.mv-own-row p {
+  margin-top: 0.3rem;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* Quiet empty rows + loading skeleton. */
+.mv-empty {
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px dashed var(--border-default);
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-tertiary);
+}
+.mv-skel {
+  background: rgba(255, 255, 255, 0.06);
+  animation: mvSkel 1.4s ease-in-out infinite;
+}
+@keyframes mvSkel {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
    A11y: focus rings + reduced-motion respect
    ────────────────────────────────────────────────────────────────────────── */
 a:focus-visible, button:focus-visible {

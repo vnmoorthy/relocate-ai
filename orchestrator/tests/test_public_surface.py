@@ -112,3 +112,36 @@ def test_public_intake_rate_limits_per_ip(monkeypatch: pytest.MonkeyPatch) -> No
     }
     codes = [client.post("/api/public/start-move", json=body).status_code for _ in range(6)]
     assert codes[:5] == [200] * 5 and codes[5] == 429
+
+
+def test_public_move_snapshot_is_redacted(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.state import MarketplaceEvent, SpecialistCallContext
+
+    client = TestClient(main.app)
+    event = MarketplaceEvent(
+        id="mkt_snapshot1", homeowner_call_id="web_x",
+        spec={
+            "origin_address": "1 A St, SF, CA 94110", "destination_address": "2 B St, Austin, TX 78704",
+            "move_date": "2030-09-30", "user_email": "secret@person.com", "user_phone": "+14155550100",
+            "has_pets": True,
+        },
+    )
+    event.specialist_calls["mover_quote"] = SpecialistCallContext(
+        call_id="pending", agent_id="mover_quote", event_id=event.id,
+        state="needs-user-action", terminal_outcome="needs_user_action",
+        blocker_kind="recipient_not_allowlisted",
+        blockers=["outbound email blocked: customer.service@uhaul.com"],
+        bid={"outcome": "needs_user_action"},
+    )
+    state.events[event.id] = event
+
+    assert client.get("/api/public/move/mkt_snapshot1").status_code == 503
+    monkeypatch.setattr(main.settings, "enable_public_intake", True)
+    assert client.get("/api/public/move/mkt_nope").status_code == 404
+    body = client.get("/api/public/move/mkt_snapshot1").json()
+    assert body["route"]["origin_address"].startswith("1 A St")
+    assert body["specialists"][0]["blocker_kind"] == "recipient_not_allowlisted"
+    dumped = str(body)
+    assert "secret@person.com" not in dumped
+    assert "+1415" not in dumped
+    assert "uhaul" not in dumped  # raw blocker strings never leave the server

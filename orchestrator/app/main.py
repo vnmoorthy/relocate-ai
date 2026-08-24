@@ -741,6 +741,57 @@ async def api_public_start_move(request: Request, payload: dict[str, Any]) -> di
     return {"event_id": event_id, "dispatched": True}
 
 
+_SNAPSHOT_PER_IP_MIN = 30
+_snapshot_hits: dict[str, list[float]] = {}
+
+
+@app.get("/api/public/move/{event_id}")
+async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str, Any]:
+    """Redacted snapshot of one move for its shareable /move page.
+
+    Exposes the route and per-task honest states only — never emails, phone
+    numbers, transcripts, provider artifacts, or raw blocker strings. Event
+    ids are unguessable; the page is a tracking link, like a parcel page.
+    """
+    if not settings.enable_public_intake:
+        raise HTTPException(503, "public move pages are not enabled on this deployment")
+    ip = _client_ip(request)
+    now = time.time()
+    hits = [t for t in _snapshot_hits.get(ip, []) if t > now - 60]
+    if len(hits) >= _SNAPSHOT_PER_IP_MIN:
+        raise HTTPException(429, "too many requests")
+    hits.append(now)
+    _snapshot_hits[ip] = hits
+
+    event = state.events.get(event_id)
+    if event is None:
+        raise HTTPException(404, "unknown move")
+    specialists = [
+        {
+            "agent_id": agent_id,
+            "state": ctx.state,
+            "terminal_outcome": ctx.terminal_outcome,
+            "blocker_kind": ctx.blocker_kind,
+            "closed_at": ctx.closed_at,
+        }
+        for agent_id, ctx in event.specialist_calls.items()
+    ]
+    return {
+        "event_id": event.id,
+        "route": {
+            "origin_address": str(event.spec.get("origin_address", "")),
+            "destination_address": str(event.spec.get("destination_address", "")),
+            "move_date": str(event.spec.get("move_date", "")),
+        },
+        "flags": {k: bool(event.spec.get(k)) for k in ("has_pets", "has_children", "has_car", "has_visa")},
+        "specialists": specialists,
+        "dispatched": bool(specialists),
+        "finalized": event.finalized_at is not None,
+        "final_outcome": event.final_outcome,
+        "ts": now,
+    }
+
+
 def _require_dev_trigger_access(request: Request) -> None:
     if settings.app_env.lower() == "production" or not settings.enable_dev_trigger:
         raise HTTPException(404, "not found")

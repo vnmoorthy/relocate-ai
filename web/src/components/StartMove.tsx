@@ -18,6 +18,10 @@ interface Props {
   onStarted?: (eventId: string) => void;
 }
 
+// The shareable tracking page is a static route; the move id rides in the
+// URL hash so the link survives static hosting under the basePath.
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
 type Status =
   | { kind: "idle" }
   | { kind: "pending" }
@@ -232,6 +236,14 @@ export function StartMove({ api, onStarted }: Props) {
             <>
               Dispatched · watch the swarm go live
               <span className="sm-ref">ref {status.eventId}</span>
+              <span className="block mt-2">
+                <a
+                  className="arrow-link"
+                  href={`${BASE_PATH}/move/#${encodeURIComponent(status.eventId)}`}
+                >
+                  Open your move page →
+                </a>
+              </span>
             </>
           )}
           {status.kind === "error" && status.message}
