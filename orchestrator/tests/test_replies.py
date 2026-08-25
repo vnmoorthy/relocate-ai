@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterator
+from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -62,8 +63,9 @@ def test_correlated_reply_attaches_and_broadcasts(monkeypatch: pytest.MonkeyPatc
     reply = event.replies[0]
     assert reply["from_domain"] == "uhaul.com"
     assert "2,850" in reply["preview"]
-    broadcast = ws_broker.broadcast
+    broadcast = cast(AsyncMock, ws_broker.broadcast)
     assert broadcast.await_count == 1
+    assert broadcast.await_args is not None
     payload = broadcast.await_args.args[0]
     assert payload["type"] == "reply_received"
     assert payload["event_id"] == event.id

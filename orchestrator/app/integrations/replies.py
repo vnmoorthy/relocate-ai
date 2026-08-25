@@ -19,6 +19,7 @@ import asyncio
 import logging
 import re
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 from ..config import settings
@@ -79,8 +80,6 @@ def summarize_reply(msg: dict[str, Any]) -> dict[str, Any]:
 
 def _list_inbox_sync(after_epoch: float) -> list[dict[str, Any]]:
     """Blocking SDK call — run via asyncio.to_thread."""
-    from datetime import datetime, timezone
-
     from agentmail import AgentMail
 
     from .agentmail import _resolve_inbox
@@ -96,12 +95,13 @@ def _list_inbox_sync(after_epoch: float) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for item in getattr(page, "messages", None) or []:
         ts = getattr(item, "timestamp", None)
+        ts_epoch = ts.timestamp() if isinstance(ts, datetime) else time.time()
         out.append({
             "message_id": getattr(item, "message_id", None) or getattr(item, "id", ""),
             "from": getattr(item, "from_", None) or getattr(item, "from_address", ""),
             "subject": getattr(item, "subject", "") or "",
             "preview": getattr(item, "preview", "") or "",
-            "timestamp": ts.timestamp() if hasattr(ts, "timestamp") else time.time(),
+            "timestamp": ts_epoch,
             "labels": list(getattr(item, "labels", None) or []),
         })
     return out
