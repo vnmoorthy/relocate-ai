@@ -59,7 +59,7 @@ ensure_tunnel() {
     note "cloudflared down — starting tunnel"
     : >"$TUNNEL_LOG"
     nohup cloudflared tunnel --url http://127.0.0.1:8000 >>"$TUNNEL_LOG" 2>&1 &
-    sleep 8
+    sleep 15
     TUNNEL_FAILS=0
   fi
   TUNNEL_URL="$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$TUNNEL_LOG" | tail -1)"
@@ -67,7 +67,7 @@ ensure_tunnel() {
     note "WARN: no tunnel URL yet"
     return 1
   fi
-  if curl -fsS --max-time 10 "$TUNNEL_URL/healthz" >/dev/null 2>&1; then
+  if curl -fsS --max-time 20 "$TUNNEL_URL/healthz" >/dev/null 2>&1; then
     TUNNEL_FAILS=0
     return 0
   fi
@@ -80,8 +80,8 @@ ensure_tunnel() {
     return 1
   fi
   TUNNEL_FAILS=$((TUNNEL_FAILS + 1))
-  if [ "$TUNNEL_FAILS" -lt 3 ]; then
-    note "WARN: tunnel check failed ($TUNNEL_FAILS/3) with a healthy origin — not rotating yet"
+  if [ "$TUNNEL_FAILS" -lt 5 ]; then
+    note "WARN: tunnel check failed ($TUNNEL_FAILS/5) with a healthy origin — not rotating yet"
     return 1
   fi
   note "tunnel broken across $TUNNEL_FAILS checks with a healthy origin — restarting cloudflared"
