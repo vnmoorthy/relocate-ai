@@ -52,25 +52,43 @@ ensure_stack() {
   fi
 }
 
+TUNNEL_FAILS=0
+
 ensure_tunnel() {
   if ! pgrep -f "cloudflared tunnel --url" >/dev/null 2>&1; then
     note "cloudflared down — starting tunnel"
     : >"$TUNNEL_LOG"
     nohup cloudflared tunnel --url http://127.0.0.1:8000 >>"$TUNNEL_LOG" 2>&1 &
     sleep 8
+    TUNNEL_FAILS=0
   fi
   TUNNEL_URL="$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$TUNNEL_LOG" | tail -1)"
   if [ -z "$TUNNEL_URL" ]; then
     note "WARN: no tunnel URL yet"
     return 1
   fi
-  if ! curl -fsS --max-time 10 "$TUNNEL_URL/healthz" >/dev/null 2>&1; then
-    note "WARN: tunnel URL $TUNNEL_URL not serving healthz — restarting cloudflared"
-    pkill -f "cloudflared tunnel --url" 2>/dev/null
-    sleep 2
+  if curl -fsS --max-time 10 "$TUNNEL_URL/healthz" >/dev/null 2>&1; then
+    TUNNEL_FAILS=0
+    return 0
+  fi
+  # A quick tunnel gets a NEW random hostname every restart, and the public
+  # site only learns it when live.json is committed and Pages rebuilds. So
+  # rotate only when the tunnel itself is at fault — never because the
+  # origin happens to be restarting, and not on a single transient blip.
+  if ! curl -fsS --max-time 3 http://127.0.0.1:8000/healthz >/dev/null 2>&1; then
+    note "tunnel unhealthy because the origin is down — keeping $TUNNEL_URL"
     return 1
   fi
-  return 0
+  TUNNEL_FAILS=$((TUNNEL_FAILS + 1))
+  if [ "$TUNNEL_FAILS" -lt 3 ]; then
+    note "WARN: tunnel check failed ($TUNNEL_FAILS/3) with a healthy origin — not rotating yet"
+    return 1
+  fi
+  note "tunnel broken across $TUNNEL_FAILS checks with a healthy origin — restarting cloudflared"
+  pkill -f "cloudflared tunnel --url" 2>/dev/null
+  TUNNEL_FAILS=0
+  sleep 2
+  return 1
 }
 
 point_webhook() {
