@@ -221,6 +221,45 @@ DL13A_LETTER_HTML = """
 """
 
 
+def render_dl13a_letter_html(spec: dict) -> str:
+    """Rendered DL-13A letter HTML for user review — no mail is purchased."""
+    import datetime as _dt
+    today = _dt.date.today().strftime("%B %d, %Y")
+    return DL13A_LETTER_HTML.format(
+        from_name=DEFAULT_FROM_ADDRESS["name"],
+        from_line1=DEFAULT_FROM_ADDRESS["address_line1"],
+        from_city=DEFAULT_FROM_ADDRESS["address_city"],
+        from_state=DEFAULT_FROM_ADDRESS["address_state"],
+        from_zip=DEFAULT_FROM_ADDRESS["address_zip"],
+        today=today,
+        ca_dl_number=spec.get("ca_dl_number", "(DL number)"),
+        user_name=spec.get("user_name", "(license holder)"),
+        user_dob=spec.get("user_dob", "(DOB)"),
+        origin_address=spec.get("origin_address", "(origin address)"),
+        destination_address=spec.get("destination_address", "(destination address)"),
+        move_date=spec.get("move_date", "(effective date)"),
+    )
+
+
+def render_comcast_letter_html(spec: dict) -> str:
+    """Rendered Comcast cancellation letter HTML for user review."""
+    import datetime as _dt
+    today = _dt.date.today().strftime("%B %d, %Y")
+    return COMCAST_LETTER_HTML.format(
+        from_name=DEFAULT_FROM_ADDRESS["name"],
+        from_line1=DEFAULT_FROM_ADDRESS["address_line1"],
+        from_city=DEFAULT_FROM_ADDRESS["address_city"],
+        from_state=DEFAULT_FROM_ADDRESS["address_state"],
+        from_zip=DEFAULT_FROM_ADDRESS["address_zip"],
+        today=today,
+        origin_address=spec.get("origin_address", "(origin address)"),
+        move_date=spec.get("move_date", "(move date)"),
+        user_name=spec.get("user_name", "(account holder)"),
+        comcast_account_number=spec.get("comcast_account_number", "(account number)"),
+        user_email=spec.get("user_email", "(reply email)"),
+    )
+
+
 async def send_dl13a_letter(*, event_id: str, spec: dict) -> dict[str, Any]:
     """Agent #16 — id_card_update. Certified-mail DL-13A to CA DMV."""
     import datetime as _dt

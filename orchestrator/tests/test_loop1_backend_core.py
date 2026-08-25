@@ -421,7 +421,7 @@ def test_sensitive_workflows_never_reach_provider_adapters(
         assert context.bid and context.bid["outcome"] == "needs_user_action"
 
 
-def test_buyer_followup_does_not_invite_unimplemented_reply_or_intake(
+def test_buyer_followup_invites_replies_but_never_sensitive_data(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from app.integrations import agentmail
@@ -443,12 +443,16 @@ def test_buyer_followup_does_not_invite_unimplemented_reply_or_intake(
 
     assert result == {"message_id": "msg-safe"}
     body = captured["body"].lower()
-    assert "replies are not processed" in body
-    assert "reply to this email" not in body
-    assert "reply any time" not in body
+    # Replies ARE processed now (replies.py) — the email may invite them, but
+    # it must still forbid sensitive values and never advertise a secure-intake
+    # link that does not exist.
+    assert "reply to this email" in body
+    assert "never send passwords" in body
+    assert "secure intake is available" in body
     assert "relocate.example/secure" not in body
+    assert "/move/#event-safe-followup" in captured["body"]
     assert "reply_to" not in captured
-    assert "paused" in captured["subject"].lower()
+    assert "tracker" in captured["subject"].lower()
 
 
 def test_hipaa_pdf_requires_explicit_signature_and_escapes_markup(
@@ -456,7 +460,7 @@ def test_hipaa_pdf_requires_explicit_signature_and_escapes_markup(
 ) -> None:
     from app.integrations import hipaa_pdf
 
-    base = {
+    base: dict[str, Any] = {
         "patient_name": "<script>alert(1)</script>",
         "patient_dob": "1990-01-01",
         "patient_address": "1 Main & 2nd",

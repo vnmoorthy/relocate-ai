@@ -45,7 +45,9 @@ def redact_public_event(event: dict[str, Any]) -> dict[str, Any] | None:
             "agent_id": event.get("agent_id"),
             "turn": event.get("turn"),
             "role": event.get("role"),
-            "tier": event.get("tier"),
+            # Dashboard events carry the tier as pavo_tier; keep that key so
+            # the public swarm can color turns by tier too.
+            "pavo_tier": event.get("pavo_tier"),
             "text": _TEXT_HIDDEN,
             "ts": event.get("ts"),
         }

@@ -30,6 +30,7 @@ from .integrations.hipaa_pdf import build_hipaa_release_pdf
 from .integrations.moss import retrieve_runbooks_for_specialists
 from .integrations.supermemory import persist_move, recall_user_profile
 from .personas import all_specialists, Persona
+from .playbooks import build_playbook
 from .state import state, SpecialistCallContext
 from .ws import ws_broker
 
@@ -216,6 +217,9 @@ async def _mark_needs_user_action(
         "reason": blocker_kind,
         "missing_fields": blockers if blocker_kind == "missing_fields" else [],
     }
+    # Blocked never means empty-handed: prepare the exact script/letter/
+    # checklist the user needs, personalized from the spec they gave us.
+    ctx.playbook = build_playbook(agent_id, event.spec)
     await _emit_agent_state(event_id, agent_id, "needs-user-action")
 
 
@@ -437,6 +441,24 @@ async def finalize_event(event_id: str) -> None:
                 "count": len(needs_user),
                 "ts": time.time(),
             })
+            await _send_playbook_digest(event)
+            await _send_prepared_documents(event)
+            # Partial outcomes are still worth remembering for the next call —
+            # settlement is the durable milestone real moves actually reach.
+            user_phone = event.spec.get("user_phone")
+            if user_phone:
+                try:
+                    await persist_move(
+                        event_id=event_id,
+                        phone_e164=user_phone,
+                        spec=event.spec,
+                        results={
+                            ctx.agent_id: ctx.terminal_outcome or ctx.state
+                            for ctx in contexts
+                        },
+                    )
+                except Exception:  # noqa: BLE001 - memory is best-effort
+                    log.exception("settlement memory persist failed: %s", event_id)
         return
 
     # The flag is set before the first await so concurrent webhook/task completions
@@ -504,6 +526,134 @@ async def finalize_event(event_id: str) -> None:
         event.finalization_started = False
         log.exception("event finalization failed: %s", event_id)
         raise
+
+
+async def _send_playbook_digest(event) -> None:  # noqa: ANN001 - MarketplaceEvent (import cycle)
+    """One email with every prepared playbook the moment work lands on the user.
+
+    Best-effort: allowlist blocks and provider failures are logged, never
+    fabricated, and never wedge finalization. Runs at most once per event
+    (guarded by awaiting_user_notified at the call site).
+    """
+    user_email = event.spec.get("user_email")
+    if not user_email:
+        return
+    playbooks = [
+        (ctx.agent_id, ctx.playbook)
+        for ctx in event.specialist_calls.values()
+        if ctx.state == "needs-user-action" and ctx.playbook
+    ]
+    if not playbooks:
+        return
+    sections = [
+        f"{i}. {pb['title']}\n{'-' * len(pb['title'])}\n{pb['body']}"
+        for i, (_aid, pb) in enumerate(playbooks, 1)
+    ]
+    body = (
+        f"{len(playbooks)} tasks need you — so we prepared each one.\n\n"
+        f"Every script below is filled in with your move details; anything in "
+        f"<angle brackets> is a value only you have. Nothing here was sent "
+        f"anywhere — these are yours to use.\n\n"
+        + "\n\n".join(sections)
+        + "\n\n- Relocate\n"
+    )
+    try:
+        await am.send_move_package(
+            event_id=event.id,
+            to_email=user_email,
+            subject=f"What we prepared for you — {len(playbooks)} ready-to-use scripts",
+            body_markdown=body,
+        )
+        log.info("playbook digest emailed: event=%s count=%d", event.id, len(playbooks))
+    except RecipientNotAllowed as e:
+        log.warning("playbook digest blocked by recipient allowlist: %s", e)
+    except Exception:  # noqa: BLE001 - digest is best-effort
+        log.exception("playbook digest failed: event=%s", event.id)
+
+
+async def _send_prepared_documents(event) -> None:  # noqa: ANN001
+    """Email ready-to-review documents for the signature-gated specialists.
+
+    The Comcast/DL-13A letters and the HIPAA release exist as templates in the
+    codebase; the policy gate stays (nothing is mailed or submitted), but the
+    user receives the actual rendered document to review and sign instead of a
+    bare blocker. Best-effort, at most once per event (call-site guarded).
+    """
+    user_email = event.spec.get("user_email")
+    if not user_email:
+        return
+    blocked = {
+        agent_id: ctx
+        for agent_id, ctx in event.specialist_calls.items()
+        if ctx.state == "needs-user-action"
+        and ctx.blocker_kind == "secure_user_workflow_required"
+    }
+    attachments: list[dict] = []
+    lines: list[str] = []
+    if "comcast_cancel" in blocked:
+        attachments.append({
+            "filename": "comcast-cancellation-letter.html",
+            "content_type": "text/html",
+            "content_bytes": lob.render_comcast_letter_html(event.spec).encode(),
+        })
+        lines.append(
+            "- Comcast cancellation letter: review, sign, and mail it "
+            "(certified mail recommended) or read it verbatim on a call."
+        )
+    if "id_card_update" in blocked:
+        attachments.append({
+            "filename": "dmv-dl13a-change-of-address.html",
+            "content_type": "text/html",
+            "content_bytes": lob.render_dl13a_letter_html(event.spec).encode(),
+        })
+        lines.append(
+            "- CA DMV DL-13A change-of-address letter: review and mail, or "
+            "file the same change free at dmv.ca.gov/coa."
+        )
+    if "pcp_transfer" in blocked:
+        try:
+            pdf = await asyncio.to_thread(
+                build_hipaa_release_pdf,
+                patient_name=event.spec.get("user_name", "(patient)"),
+                patient_dob=event.spec.get("user_dob", "(date of birth)"),
+                patient_address=event.spec.get("origin_address", "(address)"),
+                patient_phone=event.spec.get("user_phone", "(phone)"),
+                patient_email=str(user_email),
+                current_provider_name="(your current clinic)",
+                current_provider_address="(clinic address)",
+                unsigned_draft=True,
+            )
+            attachments.append({
+                "filename": "hipaa-release-DRAFT-unsigned.pdf",
+                "content_type": "application/pdf",
+                "content_bytes": pdf,
+            })
+            lines.append(
+                "- HIPAA records-release form (DRAFT): complete the blank "
+                "signature block and hand it to your clinic — it is not valid "
+                "until you sign it."
+            )
+        except Exception:  # noqa: BLE001 - PDF rendering must not break the email
+            log.exception("unsigned HIPAA draft render failed: %s", event.id)
+    if not attachments:
+        return
+    body = (
+        "The documents below are fully drafted from your move details. "
+        "Relocate never signs or submits them — that step is yours by "
+        "design.\n\n" + "\n".join(lines) + "\n\n- Relocate\n"
+    )
+    try:
+        await am._send_via_agentmail(
+            event_id=event.id,
+            agent_id="concierge",
+            to=str(user_email),
+            subject=f"Documents ready for your review ({len(attachments)})",
+            body=body,
+            attachments=attachments,
+        )
+        log.info("prepared documents emailed: event=%s count=%d", event.id, len(attachments))
+    except Exception as exc:  # noqa: BLE001 - best-effort
+        log.warning("prepared-documents email failed (event=%s): %s", event.id, exc)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -584,6 +734,8 @@ async def _run_email(
         return await am.request_gym_cancellation(event_id=event_id, spec=spec, user_email=user_email)
     if p.agent_id == "bank_notify":
         return await am.send_bank_script(event_id=event_id, spec=spec, user_email=user_email)
+    if p.agent_id == "flight_book":
+        return await am.send_flight_options(event_id=event_id, spec=spec, user_email=user_email)
 
     raise RuntimeError(f"no email handler for agent {p.agent_id}")
 

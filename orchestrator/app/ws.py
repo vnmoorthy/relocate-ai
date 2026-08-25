@@ -63,10 +63,12 @@ class WSBroker:
 
         async def _send(ws: WebSocket) -> WebSocket | None:
             try:
-                await ws.send_text(payload)
+                # A hung viewer (TCP backpressure) must never stall the
+                # webhook path awaiting this broadcast — bound every send.
+                await asyncio.wait_for(ws.send_text(payload), timeout=2.0)
                 return None
             except Exception as e:
-                log.warning("ws send failed: %s", e)
+                log.warning("ws send failed or timed out: %s", e)
                 return ws
 
         results = await asyncio.gather(*[_send(ws) for ws in clients])

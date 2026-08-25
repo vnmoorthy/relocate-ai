@@ -71,6 +71,9 @@ class SpecialistCallContext:
     turn_count: int = 0
     transcript: list[dict[str, Any]] = field(default_factory=list)
     bid: dict[str, Any] | None = None
+    # Prepared next-step artifact for user-blocked work (playbooks.py).
+    # Title is public-page safe; body travels only by email/authed surfaces.
+    playbook: dict[str, str] | None = None
     started_at: float = field(default_factory=time.time)
     closed_at: float | None = None
 

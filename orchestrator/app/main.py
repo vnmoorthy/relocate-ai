@@ -634,6 +634,7 @@ async def ws_dashboard(ws: WebSocket) -> None:
     # Echo the protocol name (never the token) so browser handshakes succeed.
     selected = "relocate-dashboard" if "relocate-dashboard" in offered else None
     await ws_broker.subscribe(ws, subprotocol=selected)
+    await _send_bootstrap(ws)
     try:
         while True:
             # Server-push only; we just keep the connection alive.
@@ -642,6 +643,35 @@ async def ws_dashboard(ws: WebSocket) -> None:
         pass
     finally:
         await ws_broker.unsubscribe(ws)
+
+
+def _bootstrap_messages() -> list[dict[str, Any]]:
+    """Current-state replay for a fresh WS subscriber.
+
+    Without this, a viewer who connects after dispatch (or after a restart)
+    stares at a blank swarm until the next live event. Shapes are identical
+    to live agent_state / event_finalized broadcasts, so both the dashboard
+    and the redacted public page consume them unchanged.
+    """
+    if not state.events:
+        return []
+    event = max(state.events.values(), key=lambda e: e.started_at)
+    msgs: list[dict[str, Any]] = [
+        {
+            "type": "agent_state", "event_id": event.id, "agent_id": agent_id,
+            "state": ctx.state, "ts": ctx.closed_at or ctx.started_at,
+        }
+        for agent_id, ctx in event.specialist_calls.items()
+    ]
+    return msgs
+
+
+async def _send_bootstrap(ws: WebSocket) -> None:
+    try:
+        for msg in _bootstrap_messages():
+            await asyncio.wait_for(ws.send_text(json.dumps(msg)), timeout=2.0)
+    except Exception:  # noqa: BLE001 - a failed bootstrap is just a blank stage
+        pass
 
 
 def _bearer_token(value: str | None) -> str:
@@ -662,6 +692,7 @@ async def ws_public(ws: WebSocket) -> None:
         await ws.close(code=1013, reason="public feed at capacity")
         return
     await public_broker.subscribe(ws)
+    await _send_bootstrap(ws)
     try:
         while True:
             await ws.receive_text()  # clients never send; this just detects close
@@ -675,10 +706,12 @@ async def ws_public(ws: WebSocket) -> None:
 # A browser visitor starts a real move without calling. Gated by
 # ENABLE_PUBLIC_INTAKE, honeypot-checked, and rate-limited per client IP and
 # globally. Outbound side effects remain governed by the usual allowlists.
-_INTAKE_PER_IP_MIN = 5
-_INTAKE_PER_IP_HOUR = 20
-_INTAKE_GLOBAL_HOUR = 120
+_INTAKE_PER_IP_MIN = 12
+_INTAKE_PER_IP_HOUR = 40
+_INTAKE_GLOBAL_HOUR = 200
 _intake_hits: dict[str, list[float]] = {}
+_INTAKE_DEDUPE_S = 600
+_recent_intakes: dict[str, tuple[str, float]] = {}  # dedupe_key -> (event_id, ts)
 _intake_global: list[float] = []
 
 
@@ -731,7 +764,7 @@ async def api_public_start_move(request: Request, payload: dict[str, Any]) -> di
     # does when the caller volunteers the same facts. Anything invalid is
     # dropped rather than rejected — the move still dispatches.
     for name in (
-        "user_name", "household_size", "child_name", "child_grade",
+        "user_name", "user_phone", "household_size", "child_name", "child_grade",
         "pet_name", "pet_species", "vet_email", "bank_name",
     ):
         raw = payload.get(name)
@@ -745,7 +778,23 @@ async def api_public_start_move(request: Request, payload: dict[str, Any]) -> di
             continue
         spec[name] = value
 
+    # Same route+date+email from anyone within the window = the same move; a
+    # client retry after a network error returns the original tracker instead
+    # of dispatching (and emailing) everything twice.
+    dedupe_key = "|".join(
+        spec[k].lower() for k in ("origin_address", "destination_address", "move_date", "user_email")
+    )
+    now = time.time()
+    for cached_key, (cached_id, cached_at) in list(_recent_intakes.items()):
+        if cached_at < now - _INTAKE_DEDUPE_S:
+            _recent_intakes.pop(cached_key, None)
+    cached = _recent_intakes.get(dedupe_key)
+    if cached is not None:
+        log.info("public intake deduped: event=%s ip=%s", cached[0], ip)
+        return {"event_id": cached[0], "dispatched": True, "deduplicated": True}
+
     event_id = state.new_event_id()
+    _recent_intakes[dedupe_key] = (event_id, now)
     call_id = f"web_{event_id[4:]}"
     state.events[event_id] = MarketplaceEvent(id=event_id, homeowner_call_id=call_id, spec=spec)
     ctx = BuyerCallContext(
@@ -786,7 +835,7 @@ async def _email_tracker_link(event_id: str, spec: dict[str, Any]) -> None:
         log.warning("tracker link email not sent (event=%s): %s", event_id, exc)
 
 
-_SNAPSHOT_PER_IP_MIN = 30
+_SNAPSHOT_PER_IP_MIN = 120
 _snapshot_hits: dict[str, list[float]] = {}
 
 
@@ -818,6 +867,9 @@ async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str,
             "terminal_outcome": ctx.terminal_outcome,
             "blocker_kind": ctx.blocker_kind,
             "closed_at": ctx.closed_at,
+            # Static per-agent title only — playbook BODIES carry the user's
+            # own details and travel by email, never through this endpoint.
+            "playbook_title": (ctx.playbook or {}).get("title"),
         }
         for agent_id, ctx in event.specialist_calls.items()
     ]
@@ -825,6 +877,18 @@ async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str,
         {
             "from_domain": str(r.get("from_domain") or ""),
             "received_at": r.get("received_at"),
+            "agent_id": r.get("agent_id"),
+            # Quote figures are the user's own marketplace data (no sender
+            # PII); the raw reply body still never leaves the inbox.
+            "quote": (
+                {
+                    "total_display": str(q.get("total_display") or ""),
+                    "deposit_display": q.get("deposit_display"),
+                    "availability": bool(q.get("availability")),
+                }
+                if isinstance(q := r.get("quote"), dict)
+                else None
+            ),
         }
         for r in event.replies
     ]

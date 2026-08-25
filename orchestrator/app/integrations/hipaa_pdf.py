@@ -44,19 +44,28 @@ def build_hipaa_release_pdf(
     purpose: str = "Continuity of care for patient relocation",
     signature_name: str | None = None,
     signature_date: str | None = None,
+    unsigned_draft: bool = False,
 ) -> bytes:
     """Return a single-page authorization PDF as bytes.
 
     The caller must provide the signature and signature date captured by a real
-    consent ceremony. This function never invents either value.
+    consent ceremony. This function never invents either value. The one
+    explicit exception is ``unsigned_draft=True``, which renders a blank
+    signature block for the patient to complete — used to hand the patient a
+    ready-to-sign form, never to submit anything.
     """
-    if not isinstance(signature_name, str) or not signature_name.strip():
-        raise ValueError("signature_name must be explicitly provided")
-    if not isinstance(signature_date, str) or not signature_date.strip():
-        raise ValueError("signature_date must be explicitly provided")
-
-    signature = signature_name.strip()
-    signed_on = signature_date.strip()
+    if unsigned_draft:
+        if signature_name is not None or signature_date is not None:
+            raise ValueError("unsigned_draft forbids signature values")
+        signature = "____________________  (sign here)"
+        signed_on = "____________  (date)"
+    else:
+        if not isinstance(signature_name, str) or not signature_name.strip():
+            raise ValueError("signature_name must be explicitly provided")
+        if not isinstance(signature_date, str) or not signature_date.strip():
+            raise ValueError("signature_date must be explicitly provided")
+        signature = signature_name.strip()
+        signed_on = signature_date.strip()
 
     def escaped(value: Any) -> str:
         """Escape ReportLab Paragraph markup supplied by a user/provider."""
@@ -182,7 +191,9 @@ def build_hipaa_release_pdf(
     story.append(sig_tbl)
     story.append(Spacer(1, 8))
     story.append(Paragraph(
-        "The typed signature and date above were supplied explicitly to the "
+        ("DRAFT — NOT VALID UNTIL SIGNED. Complete the signature block above "
+         "before giving this form to your provider. " if unsigned_draft else "")
+        + "The typed signature and date above were supplied explicitly to the "
         "document generator; this template does not itself prove consent.",
         fine,
     ))

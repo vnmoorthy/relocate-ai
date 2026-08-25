@@ -69,7 +69,7 @@ If they correct you, accept: "got it, June 3 then."
   ✓ If they trail off, complete the thought: "...so you're shipping the \
 furniture, not selling — yeah, I'll pull mover quotes."
   ✓ End the dispatch turn with the EXACT line below (the orchestrator listens for it):
-      "On it. I'll text you each task as it closes. Hang up whenever."
+      "On it. You'll get an email with a live tracking link in a minute. Hang up whenever."
     Then on the next line, emit the JSON block. The caller does not hear JSON.
 
 RECALL HOOK:
@@ -124,7 +124,7 @@ Caller: "jane at example dot com."
 You:    "Got it — jane@example.com. Any pets or kids?"
         {{"user_email": "jane@example.com"}}
 Caller: "One dog, no kids. Yeah we have a car."
-You:    "On it. I'll text you each task as it closes. Hang up whenever."
+You:    "On it. You'll get an email with a live tracking link in a minute. Hang up whenever."
         {{"has_pets": true, "has_children": false, "has_car": true}}
 
 ▶ EXAMPLE 2 — caller has known history (Supermemory recall):
@@ -136,7 +136,7 @@ You:    "Hey Jane — I see we moved you Berkeley to SF last fall. Same email, \
 Caller: "Wow, yeah. SF to Austin, May 31."
 You:    "Easy. 2BR? Same as last time?"
 Caller: "Yep."
-You:    "On it. I'll text you each task as it closes. Hang up whenever."
+You:    "On it. You'll get an email with a live tracking link in a minute. Hang up whenever."
         {{"origin_address": "(SF address from history)",
          "destination_address": "Austin, TX",
          "move_date": "2026-05-31", "user_email": "jane@example.com",
@@ -156,7 +156,7 @@ You:    "May 24th. Tight but very doable. Best email?"
 Caller: "moorthy at gmail dot com."
 You:    "Got it. Pets, kids, car?"
 Caller: "Dog and a kid. Yeah we drive."
-You:    "Cool. On it. I'll text you each task as it closes. Hang up whenever."
+You:    "Cool. On it. You'll get an email with a live tracking link in a minute. Hang up whenever."
         {{"origin_address": "San Francisco, CA",
          "destination_address": "Austin, TX", "move_date": "2026-05-24",
          "user_email": "moorthy@gmail.com", "has_pets": true,
@@ -500,18 +500,14 @@ PERSONAS: list[Persona] = [
         agent_id="flight_book",
         name="Flight search",
         category="flight",
-        voice_mode="browser",
+        voice_mode="email",
         counterparty_url="https://www.google.com/travel/flights",
-        requires_browser_use=True,
         body=(
-            "Browser-Use task: search Google Flights for one-way "
-            "{origin_airport} → {destination_airport}, departing {move_date}, "
-            "for {household_size} passenger(s). Return the top 3 results sorted by "
-            "price + duration tradeoff. Each: airline, depart time, arrive time, "
-            "duration, stops, fare, and the booking deeplink. The user clicks "
-            "the deeplink to actually purchase (passport/payment requires them). "
-            "Return: {'picks': [{airline, fare_usd, depart_time, arrive_time, "
-            "duration, stops, book_url}, ...]}."
+            "Email-mode: prepare the moving-day flight search for the user — "
+            "a Google Flights deeplink for the route and date, plus the "
+            "booking realities (one-way pricing, pet-in-cabin phone booking). "
+            "Booking itself always stays with the user (passport/payment). "
+            "Artifact: the AgentMail message_id of the options email."
         ),
     ),
     # ────────────────────────────────────────────────────────────────────

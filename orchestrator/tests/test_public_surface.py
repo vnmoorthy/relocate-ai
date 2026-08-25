@@ -105,13 +105,40 @@ def test_public_intake_rate_limits_per_ip(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(main.settings, "enable_public_intake", True)
     monkeypatch.setattr(main, "fan_out", AsyncMock())
     monkeypatch.setattr(main.ws_broker, "broadcast", AsyncMock())
+    main._recent_intakes.clear()
+
+    def body(i: int) -> dict:
+        return {
+            "origin_address": "1 A St, San Francisco, CA 94110",
+            "destination_address": "2 B St, Austin, TX 78704",
+            "move_date": "2030-09-30", "user_email": f"m{i}@test.invalid", "website": "",
+        }
+
+    codes = [
+        client.post("/api/public/start-move", json=body(i)).status_code
+        for i in range(main._INTAKE_PER_IP_MIN + 1)
+    ]
+    assert codes[:-1] == [200] * main._INTAKE_PER_IP_MIN and codes[-1] == 429
+
+
+def test_public_intake_dedupes_identical_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = TestClient(main.app)
+    monkeypatch.setattr(main.settings, "enable_public_intake", True)
+    monkeypatch.setattr(main, "fan_out", AsyncMock())
+    monkeypatch.setattr(main, "_email_tracker_link", AsyncMock())
+    monkeypatch.setattr(main.ws_broker, "broadcast", AsyncMock())
+    main._recent_intakes.clear()
     body = {
         "origin_address": "1 A St, San Francisco, CA 94110",
         "destination_address": "2 B St, Austin, TX 78704",
-        "move_date": "2030-09-30", "user_email": "m@test.invalid", "website": "",
+        "move_date": "2030-09-30", "user_email": "same@test.invalid", "website": "",
     }
-    codes = [client.post("/api/public/start-move", json=body).status_code for _ in range(6)]
-    assert codes[:5] == [200] * 5 and codes[5] == 429
+    first = client.post("/api/public/start-move", json=body).json()
+    second = client.post("/api/public/start-move", json=body).json()
+    assert second["event_id"] == first["event_id"]
+    assert second.get("deduplicated") is True
+    # Only ONE event was dispatched.
+    assert len([e for e in state.events.values() if e.id == first["event_id"]]) == 1
 
 
 def test_public_move_snapshot_is_redacted(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -193,6 +220,9 @@ def test_snapshot_replies_expose_domain_and_time_only(
 
     body = client.get("/api/public/move/mkt_reply1").json()
 
-    assert body["replies"] == [{"from_domain": "uhaul.com", "received_at": 1_700_000_000.0}]
+    assert body["replies"] == [{
+        "from_domain": "uhaul.com", "received_at": 1_700_000_000.0,
+        "agent_id": None, "quote": None,
+    }]
     dumped = str(body)
     assert "quotes@" not in dumped and "2,850" not in dumped and "msg_1" not in dumped

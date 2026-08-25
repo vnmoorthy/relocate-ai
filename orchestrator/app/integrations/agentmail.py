@@ -168,8 +168,8 @@ async def _send_via_agentmail(
     recipients = to if isinstance(to, list) else [to]
     # Correlate replies: every outbound subject carries the move reference so
     # an emailed answer can be threaded back to its event (see replies.py).
-    if event_id and f"[ref:{event_id}]" not in subject:
-        subject = f"{subject} [ref:{event_id}]"
+    if event_id and "[ref:" not in subject:
+        subject = f"{subject} [ref:{event_id}:{agent_id}]"
     # Demo routing: reroute every send to the operator's own inbox, noting the
     # true intended recipient in the body. The override address still has to
     # pass the allowlist — belt and suspenders.
@@ -279,6 +279,65 @@ async def send_tracker_link(
     )
 
 
+def _city_of(address: str) -> str:
+    """Best-effort city segment of a US-style address for a search query."""
+    parts = [seg.strip() for seg in str(address).split(",") if seg.strip()]
+    if len(parts) >= 3:
+        return parts[-2].rsplit(" ", 1)[0] if any(c.isdigit() for c in parts[-2]) else parts[-2]
+    return parts[0] if parts else str(address)
+
+
+async def send_flight_options(
+    *, event_id: str, spec: dict, user_email: str
+) -> dict | None:
+    """Agent #13 — flight_book. Emails the prepared moving-day flight search.
+
+    No fares are quoted (that would be fabrication without a live search);
+    the artifact is a real, personalized deeplink the user clicks to see live
+    prices. Booking stays with the user by design.
+    """
+    from urllib.parse import quote_plus
+
+    origin_city = _city_of(spec.get("origin_address", ""))
+    dest_city = _city_of(spec.get("destination_address", ""))
+    move_date = spec.get("move_date", "")
+    query = f"one way flights from {origin_city} to {dest_city} on {move_date}"
+    search_url = f"https://www.google.com/travel/flights?q={quote_plus(query)}"
+    pet_note = (
+        "- You told us about a pet: in-cabin pet spots are capped per flight "
+        "and often bookable only BY PHONE — call the airline right after "
+        "picking a flight.\n"
+        if spec.get("has_pets") else ""
+    )
+    kids_note = (
+        "- Booking for the family: seat-together fees vanish if you book "
+        "directly with the airline instead of an OTA.\n"
+        if spec.get("has_children") else ""
+    )
+    body = (
+        f"Your moving-day flight search is set up:\n\n"
+        f"  {search_url}\n\n"
+        f"That link opens live prices for {origin_city} -> {dest_city} on "
+        f"{move_date} (one-way).\n\n"
+        f"Booking notes:\n"
+        f"- One-way fares move most in the 3-6 weeks before the date; set the "
+        f"price-tracking toggle on that page and Google emails you drops.\n"
+        f"{pet_note}{kids_note}"
+        f"- We never book or pay on your behalf: flights need your passport "
+        f"name and your card, so the final click is always yours.\n"
+    )
+    result = await _send_via_agentmail(
+        event_id=event_id,
+        agent_id="flight_book",
+        to=user_email,
+        subject=f"Flight search prepared: {origin_city} to {dest_city}, {move_date}",
+        body=body,
+    )
+    if result is not None:
+        result["search_url"] = search_url
+    return result
+
+
 async def request_mover_quotes(
     *, event_id: str, spec: dict, user_email: str
 ) -> dict | None:
@@ -302,7 +361,7 @@ async def request_mover_quotes(
         f"Notes: no piano, no safe, 1-truck job\n\n"
         f"Please reply with: OTD price, deposit, included services "
         f"(packing/insurance/fuel), truck availability confirmation.\n\n"
-        f"Replies to: {user_email}\n\n"
+        f"Customer contact: {user_email}\n\n"
         f"Thanks,\nRelocate on behalf of the customer\n"
     )
     return await _send_via_agentmail(
@@ -311,7 +370,6 @@ async def request_mover_quotes(
         to=recipients,
         subject=subject,
         body=body,
-        reply_to=user_email,
     )
 
 
@@ -338,7 +396,7 @@ async def request_school_enrollment(
         f"can be initiated as soon as the receiving school is identified.\n\n"
         f"Please advise on (a) school assignment for the destination address, "
         f"(b) required documentation, (c) next steps.\n\n"
-        f"Replies to: {user_email}\n\n"
+        f"Customer contact: {user_email}\n\n"
         f"Thank you,\nRelocate on behalf of the family\n"
     )
     return await _send_via_agentmail(
@@ -347,7 +405,6 @@ async def request_school_enrollment(
         to="enroll@austinisd.org",
         subject=subject,
         body=body,
-        reply_to=user_email,
     )
 
 
@@ -367,7 +424,7 @@ async def request_pcp_records(
         f"pickup or hold for forwarding once destination provider is named.\n"
         f"Records scope: complete record (visit notes, labs, imaging, meds).\n\n"
         f"Please confirm receipt and provide an ETA for the records package.\n\n"
-        f"Replies to: {user_email}\n\n"
+        f"Customer contact: {user_email}\n\n"
         f"Thank you,\nRelocate on behalf of the patient\n"
     )
     return await _send_via_agentmail(
@@ -376,7 +433,6 @@ async def request_pcp_records(
         to="records@onemedical.com",
         subject=subject,
         body=body,
-        reply_to=user_email,
         attachments=[{
             "filename": f"hipaa-release-{event_id}.pdf",
             "content_type": "application/pdf",
@@ -402,7 +458,7 @@ async def request_vet_records(
         f"Owner: {user_name}\n"
         f"Destination: Austin, TX (new vet TBD — please send to me directly)\n\n"
         f"Please include vaccines, surgical history, and current medications.\n\n"
-        f"Replies to: {user_email}\n\n"
+        f"Customer contact: {user_email}\n\n"
         f"Thank you,\nRelocate on behalf of the owner\n"
     )
     return await _send_via_agentmail(
@@ -411,7 +467,6 @@ async def request_vet_records(
         to=vet_email,
         subject=subject,
         body=body,
-        reply_to=user_email,
     )
 
 
@@ -432,7 +487,7 @@ async def request_gym_cancellation(
         f"Home club: SF Embarcadero\n"
         f"Effective date: {move_date}\n\n"
         f"Please confirm cancellation and provide the final pro-rated bill.\n\n"
-        f"Replies to: {user_email}\n\n"
+        f"Customer contact: {user_email}\n\n"
         f"Thank you,\nRelocate on behalf of the member\n"
     )
     return await _send_via_agentmail(
@@ -441,7 +496,6 @@ async def request_gym_cancellation(
         to="memberservices@equinox.com",
         subject=subject,
         body=body,
-        reply_to=user_email,
     )
 
 
@@ -463,7 +517,7 @@ async def send_buyer_followup_form(
     if not to_email:
         raise RuntimeError("buyer follow-up has no destination email")
 
-    subject = "Relocate tasks paused — secure intake is not available"
+    subject = "Your Relocate move — live tracker + what still needs you"
 
     # Build the per-field section. We give each field a one-line "why we need it"
     # so the user understands the ask.
@@ -479,16 +533,22 @@ async def send_buyer_followup_form(
 
     greeting = f"Hi {user_name.split()[0]}," if user_name else "Hi,"
 
+    tracker_link = f"{settings.public_site_url.rstrip('/')}/move/#{event_id}"
+
     body_text = f"""{greeting}
 
-Thanks for the call. Some low-risk tasks may be running, but the tasks listed \
-below are paused. Relocate deliberately did not ask for these sensitive fields \
-over the phone.
+Thanks for the call. Track every specialist live here:
 
-This message is informational. Replies are not processed by the orchestrator \
-yet. Do not send passwords, payment cards, SSN digits, prescription numbers, \
-account credentials, or other details by email. Tasks requiring those values \
-remain paused until Relocate's secure intake is available.
+  {tracker_link}
+
+Some low-risk tasks may be running, but the tasks listed below are paused. \
+Relocate deliberately did not ask for these sensitive fields over the phone.
+
+You can reply to this email — replies thread straight into your move's \
+timeline. But NEVER send passwords, payment cards, SSN digits, prescription \
+numbers, or account credentials by email: tasks requiring those values remain \
+paused until Relocate's secure intake is available, and a separate email lists \
+the ready-to-use scripts we prepared for each paused task.
 
 ==============================================================
 FIELDS BLOCKING TASKS (do not send these by email):
@@ -503,8 +563,8 @@ WHICH SPECIALISTS ARE WAITING ON WHICH FIELDS:
 {chr(10).join(blocked_lines) if blocked_lines else "  (no specialists blocked)"}
 
 No sensitive-data intake link is included because that service is not yet \
-implemented. The dashboard will label affected tasks "Needs user action"; it \
-will not claim they are complete.
+implemented. Your tracker labels affected tasks "Needs you"; it will never \
+claim they are complete.
 
 — Relocate
 """
@@ -579,7 +639,6 @@ in your Relocate history for next time.
         to=user_email,
         subject=subject,
         body=body,
-        reply_to=user_email,
     )
 
 
@@ -600,7 +659,7 @@ async def request_pharmacy_transfer_fallback(
         f"DOB: {user_dob}\n"
         f"RX numbers: {rx_numbers}\n\n"
         f"Please confirm transfer and pickup-ready ETA.\n\n"
-        f"Replies to: {user_email}\n\n"
+        f"Customer contact: {user_email}\n\n"
         f"Thank you,\nRelocate on behalf of the patient\n"
     )
     return await _send_via_agentmail(
@@ -609,5 +668,4 @@ async def request_pharmacy_transfer_fallback(
         to="customer.service@cvs.com",
         subject=subject,
         body=body,
-        reply_to=user_email,
     )

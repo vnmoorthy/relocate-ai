@@ -106,5 +106,5 @@ while true; do
   if ensure_tunnel; then
     point_webhook
   fi
-  sleep 60
+  sleep 15
 done
