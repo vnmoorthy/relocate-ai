@@ -109,3 +109,39 @@ def test_fan_out_derives_destination_zip_from_address(
     asyncio.run(marketplace.fan_out(event.id, spec))
 
     assert spec["destination_zip"] == "78748"
+
+
+def test_demo_override_reroutes_to_owner_and_notes_intended(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_safe_call(**kwargs):  # noqa: ANN003
+        captured.update(kwargs)
+        return {"message_id": "msg_demo"}
+
+    monkeypatch.setattr(settings, "agentmail_api_key", "test-key-not-real")
+    monkeypatch.setattr(settings, "agentmail_allowed_recipients", "owner@example.com")
+    monkeypatch.setattr(settings, "agentmail_demo_recipient_override", "owner@example.com")
+    monkeypatch.setattr(agentmail, "safe_call", fake_safe_call)
+
+    result = asyncio.run(agentmail._send_via_agentmail(
+        event_id="event-demo", agent_id="mover_quote",
+        to=["customer.service@uhaul.com", "customerservice@pods.com"],
+        subject="Quote request", body="Hello",
+    ))
+    # Two institutional recipients collapse into ONE send to the owner.
+    assert result == {"count": 1, "messages": [{"message_id": "msg_demo"}]}
+
+
+def test_demo_override_must_itself_be_allowlisted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "agentmail_api_key", "test-key-not-real")
+    monkeypatch.setattr(settings, "agentmail_allowed_recipients", "")
+    monkeypatch.setattr(settings, "agentmail_demo_recipient_override", "owner@example.com")
+    with pytest.raises(RecipientNotAllowed):
+        asyncio.run(agentmail._send_via_agentmail(
+            event_id="event-demo2", agent_id="mover_quote",
+            to=["customer.service@uhaul.com"], subject="s", body="b",
+        ))

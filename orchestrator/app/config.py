@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     # Fail-safe outbound-email policy: every AgentMail recipient must appear in
     # this comma-separated allowlist. An empty list blocks all outbound email.
     agentmail_allowed_recipients: str = ""
+    # Demo routing: when set, EVERY outbound email is rerouted to this single
+    # address (which must itself be allowlisted); the message notes the true
+    # intended recipient. Lets a demo produce real artifacts without ever
+    # contacting a real institution.
+    agentmail_demo_recipient_override: str = ""
     # Moss takes two credentials, not one API key.
     moss_project_id: str = ""
     moss_project_key: str = ""

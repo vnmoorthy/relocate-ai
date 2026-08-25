@@ -166,6 +166,15 @@ async def _send_via_agentmail(
         )
 
     recipients = to if isinstance(to, list) else [to]
+    # Demo routing: reroute every send to the operator's own inbox, noting the
+    # true intended recipient in the body. The override address still has to
+    # pass the allowlist — belt and suspenders.
+    override = settings.agentmail_demo_recipient_override.strip()
+    if override:
+        intended = ", ".join(recipients)
+        body = f"[demo routing: this message would be sent to {intended}]\n\n{body}"
+        subject = f"[demo → {intended[:60]}] {subject}"
+        recipients = [override]
     # Enforced before ANY recipient is contacted so a partially-allowlisted
     # multi-recipient send cannot leak the permitted subset.
     assert_recipients_allowed(recipients)

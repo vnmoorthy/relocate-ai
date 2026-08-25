@@ -18,6 +18,7 @@ os.environ.setdefault("PUBLIC_BASE_URL", "http://testserver")
 os.environ["DATABASE_PATH"] = ""
 # Public intake is a deployment decision; the suite asserts the closed default.
 os.environ["ENABLE_PUBLIC_INTAKE"] = "false"
+os.environ["AGENTMAIL_DEMO_RECIPIENT_OVERRIDE"] = ""
 
 # Explicitly blank every integration credential. A unit test that needs an
 # integration must monkeypatch its boundary rather than reaching the network.
