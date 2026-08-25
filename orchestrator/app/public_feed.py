@@ -49,6 +49,16 @@ def redact_public_event(event: dict[str, Any]) -> dict[str, Any] | None:
             "text": _TEXT_HIDDEN,
             "ts": event.get("ts"),
         }
+    if kind == "reply_received":
+        # An emailed reply exists for this move. The public surface learns the
+        # sender's domain and when it arrived — never the subject or body.
+        return {
+            "type": kind,
+            "event_id": event.get("event_id"),
+            "from_domain": str(event.get("from_domain") or ""),
+            "received_at": event.get("received_at"),
+            "ts": event.get("ts"),
+        }
     if kind == "sponsor_event":
         return {
             "type": kind,

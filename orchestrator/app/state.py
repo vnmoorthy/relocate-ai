@@ -86,6 +86,8 @@ class MarketplaceEvent:
     # Populated only when a measured/configured counterfactual exists.
     baseline_cents_total: float | None = None
     routing_decisions: list[dict[str, Any]] = field(default_factory=list)
+    # Inbound email replies correlated to this move (see integrations/replies.py).
+    replies: list[dict[str, Any]] = field(default_factory=list)
     started_at: float = field(default_factory=time.time)
     finalization_started: bool = False
     finalized_at: float | None = None

@@ -166,6 +166,10 @@ async def _send_via_agentmail(
         )
 
     recipients = to if isinstance(to, list) else [to]
+    # Correlate replies: every outbound subject carries the move reference so
+    # an emailed answer can be threaded back to its event (see replies.py).
+    if event_id and f"[ref:{event_id}]" not in subject:
+        subject = f"{subject} [ref:{event_id}]"
     # Demo routing: reroute every send to the operator's own inbox, noting the
     # true intended recipient in the body. The override address still has to
     # pass the allowlist — belt and suspenders.
@@ -233,7 +237,42 @@ async def _send_via_agentmail(
 
     if not sent_ids:
         raise RuntimeError(f"AgentMail send returned no message_id for {agent_id}")
+    # Ledger every outbound id: the reply poller skips them, so our own tagged
+    # sends can never be ingested as replies to themselves.
+    from .replies import note_outbound
+    for sent in sent_ids:
+        note_outbound(str(sent.get("message_id") or ""), event_id)
     return {"messages": sent_ids, "count": len(sent_ids)}
+
+
+async def send_tracker_link(
+    *, event_id: str, user_email: str, spec: dict
+) -> dict | None:
+    """Email the mover their shareable /move tracking link after a web dispatch.
+
+    Same pipeline as every specialist send: allowlist-enforced, demo-override
+    aware, subject ref-tagged — so replying to this email also threads back.
+    """
+    link = f"{settings.public_site_url.rstrip('/')}/move/#{event_id}"
+    origin = spec.get("origin_address", "your origin")
+    dest = spec.get("destination_address", "your destination")
+    body = (
+        f"Your move is dispatched.\n\n"
+        f"Route: {origin} -> {dest}\n"
+        f"Track every specialist live: {link}\n\n"
+        f"Statuses are honest: submitted means a provider accepted the request, "
+        f"not that the change is complete. Anything that needs you is flagged "
+        f"on the page.\n\n"
+        f"Reply to this email and it threads straight back into your move.\n\n"
+        f"- Relocate\n"
+    )
+    return await _send_via_agentmail(
+        event_id=event_id,
+        agent_id="concierge",
+        to=user_email,
+        subject="Your Relocate move is dispatched - track it live",
+        body=body,
+    )
 
 
 async def request_mover_quotes(

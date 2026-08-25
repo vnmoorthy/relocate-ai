@@ -40,6 +40,12 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
     seen_at REAL NOT NULL,
     PRIMARY KEY (agent_id, webhook_id)
 );
+CREATE TABLE IF NOT EXISTS mail_ledger (
+    message_id TEXT PRIMARY KEY,
+    direction TEXT NOT NULL,
+    event_id TEXT,
+    seen_at REAL NOT NULL
+);
 """
 
 
@@ -149,6 +155,25 @@ class Persistence:
                 "WHERE seen_at > ? ORDER BY seen_at ASC",
                 (newer_than,),
             ).fetchall()
+
+    # ── outbound/inbound mail ledger (reply-ingestion dedupe) ────────────
+    def record_mail(self, message_id: str, direction: str, event_id: str | None) -> None:
+        if self._conn is None or not message_id:
+            return
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO mail_ledger (message_id, direction, event_id, seen_at) "
+                "VALUES (?, ?, ?, ?)",
+                (message_id, direction, event_id, time.time()),
+            )
+            self._conn.commit()
+
+    def load_mail_ids(self) -> set[str]:
+        if self._conn is None:
+            return set()
+        with self._lock:
+            rows = self._conn.execute("SELECT message_id FROM mail_ledger").fetchall()
+        return {r[0] for r in rows}
 
     def prune_webhook_deliveries(self, older_than: float) -> None:
         if self._conn is None:

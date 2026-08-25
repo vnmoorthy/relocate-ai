@@ -224,3 +224,27 @@ test("counts keep submitted, done, action, failed, and working distinct", () => 
     working: 5,
   });
 });
+
+test("parseMoveSnapshot: replies keep domain+time, drop malformed rows", () => {
+  const snap = parseMoveSnapshot({
+    event_id: "mkt_x",
+    specialists: [],
+    replies: [
+      { from_domain: "uhaul.com", received_at: 1700000000 },
+      { from_domain: "pods.com" },
+      { received_at: 5 },
+      "junk",
+    ],
+  });
+  assert.ok(snap);
+  assert.deepEqual(snap.replies, [
+    { fromDomain: "uhaul.com", receivedAt: 1700000000 },
+    { fromDomain: "pods.com", receivedAt: null },
+  ]);
+});
+
+test("parseMoveSnapshot: missing replies array degrades to empty", () => {
+  const snap = parseMoveSnapshot({ event_id: "mkt_x", specialists: [] });
+  assert.ok(snap);
+  assert.deepEqual(snap.replies, []);
+});

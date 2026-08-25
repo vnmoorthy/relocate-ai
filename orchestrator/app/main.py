@@ -14,7 +14,7 @@ import json
 import logging
 import re
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -63,7 +63,15 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
         restored = load_webhook_deliveries_from_persistence()
         if restored:
             log.info("webhook dedupe records restored: %d", restored)
+    poller: asyncio.Task | None = None
+    if settings.agentmail_api_key and settings.agentmail_api_key != "REPLACE_ME":
+        from .integrations.replies import reply_poll_loop
+        poller = asyncio.create_task(reply_poll_loop())
     yield
+    if poller is not None:
+        poller.cancel()
+        with suppress(asyncio.CancelledError):
+            await poller
     persistence.close()
 
 
@@ -756,8 +764,26 @@ async def api_public_start_move(request: Request, payload: dict[str, Any]) -> di
         "fields": list(spec.keys()), "values": _safe_field_display(spec), "ts": time.time(),
     })
     asyncio.create_task(fan_out(event_id, spec))
+    asyncio.create_task(_email_tracker_link(event_id, spec))
     log.info("public intake dispatched: event=%s ip=%s", event_id, ip)
     return {"event_id": event_id, "dispatched": True}
+
+
+async def _email_tracker_link(event_id: str, spec: dict[str, Any]) -> None:
+    """Best-effort tracker-link email to the mover after a web dispatch.
+
+    Allowlist/override policy applies unchanged; a blocked or failed send is
+    logged, never fabricated, and never fails the intake response.
+    """
+    user_email = str(spec.get("user_email") or "").strip()
+    if not user_email or not settings.agentmail_api_key:
+        return
+    try:
+        from .integrations.agentmail import send_tracker_link
+        await send_tracker_link(event_id=event_id, user_email=user_email, spec=spec)
+        log.info("tracker link emailed: event=%s", event_id)
+    except Exception as exc:
+        log.warning("tracker link email not sent (event=%s): %s", event_id, exc)
 
 
 _SNAPSHOT_PER_IP_MIN = 30
@@ -795,6 +821,13 @@ async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str,
         }
         for agent_id, ctx in event.specialist_calls.items()
     ]
+    replies = [
+        {
+            "from_domain": str(r.get("from_domain") or ""),
+            "received_at": r.get("received_at"),
+        }
+        for r in event.replies
+    ]
     return {
         "event_id": event.id,
         "route": {
@@ -804,6 +837,7 @@ async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str,
         },
         "flags": {k: bool(event.spec.get(k)) for k in ("has_pets", "has_children", "has_car", "has_visa")},
         "specialists": specialists,
+        "replies": replies,
         "dispatched": bool(specialists),
         "finalized": event.finalized_at is not None,
         "final_outcome": event.final_outcome,

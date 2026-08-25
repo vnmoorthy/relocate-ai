@@ -170,3 +170,29 @@ def test_public_intake_accepts_optional_household_details(
     assert spec["child_name"] == "Sam" and spec["pet_species"] == "dog"
     assert spec["vet_email"] == "records@vet.invalid"
     assert "bank_name" not in spec  # empty strings are dropped, not stored
+
+
+def test_snapshot_replies_expose_domain_and_time_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.config import settings
+    from app.state import MarketplaceEvent
+
+    monkeypatch.setattr(settings, "enable_public_intake", True)
+    client = TestClient(main.app)
+    event = MarketplaceEvent(id="mkt_reply1", homeowner_call_id="call", spec={})
+    event.replies.append({
+        "message_id": "msg_1",
+        "from": "quotes@uhaul.com",
+        "from_domain": "uhaul.com",
+        "subject": "Re: Quote [ref:mkt_reply1]",
+        "preview": "OTD price $2,850 — call me at 555-0100",
+        "received_at": 1_700_000_000.0,
+    })
+    state.events[event.id] = event
+
+    body = client.get("/api/public/move/mkt_reply1").json()
+
+    assert body["replies"] == [{"from_domain": "uhaul.com", "received_at": 1_700_000_000.0}]
+    dumped = str(body)
+    assert "quotes@" not in dumped and "2,850" not in dumped and "msg_1" not in dumped

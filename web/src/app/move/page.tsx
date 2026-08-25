@@ -152,6 +152,10 @@ export default function MovePage() {
           }));
         } else if (event.type === "event_finalized") {
           patch((v) => ({ ...v, finalizedLive: true }));
+        } else if (event.type === "reply_received") {
+          // Replies live in the snapshot (server-side dedupe + redaction);
+          // a silent refetch keeps this page from double-counting.
+          void loadSnapshot(api, true);
         }
       };
       ws.onclose = () => {
@@ -374,6 +378,46 @@ export default function MovePage() {
                 </div>
               </div>
             </section>
+
+            {/* ── Replies ────────────────────────────────────────────── */}
+            {snapshot.replies.length > 0 && (
+              <section aria-labelledby="mv-replies-heading" className="mt-10">
+                <div className="flex items-baseline justify-between gap-4">
+                  <h2 id="mv-replies-heading" className="kicker">Replies</h2>
+                  <span className="tm-label text-[var(--tier-haiku)] shrink-0">
+                    {snapshot.replies.length} received
+                  </span>
+                </div>
+                <ul className="mv-list">
+                  {snapshot.replies.map((reply, index) => (
+                    <li key={`${reply.fromDomain}-${reply.receivedAt ?? index}`} className="mv-row">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span
+                          className="h-[5px] w-[5px] rounded-full bg-[var(--tier-haiku)] shrink-0"
+                          aria-hidden="true"
+                        />
+                        <h3 className="font-display text-[14px] leading-none text-[var(--ink-100)] truncate">
+                          {reply.fromDomain || "unknown sender"}
+                        </h3>
+                        <span className="tm-label text-[var(--ink-700)] ml-auto shrink-0">
+                          {reply.receivedAt
+                            ? new Date(reply.receivedAt * 1000).toLocaleString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                                hour: "numeric",
+                                minute: "2-digit",
+                              })
+                            : ""}
+                        </span>
+                      </div>
+                      <p className="mv-row-line">
+                        Emailed a response to your move — the full message is in your inbox.
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
 
             {/* ── What you still own ─────────────────────────────────── */}
             <section aria-labelledby="mv-own-heading" className="mt-10">

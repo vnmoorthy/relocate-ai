@@ -87,11 +87,17 @@ export interface MoveSpecialistSnapshot {
   closed_at: number | null;
 }
 
+export interface MoveReply {
+  fromDomain: string;
+  receivedAt: number | null;
+}
+
 export interface MoveSnapshot {
   event_id: string;
   route: { origin_address: string; destination_address: string; move_date: string };
   flags: { has_pets: boolean; has_children: boolean; has_car: boolean; has_visa: boolean };
   specialists: MoveSpecialistSnapshot[];
+  replies: MoveReply[];
   dispatched: boolean;
   finalized: boolean;
   final_outcome: string | null;
@@ -132,6 +138,21 @@ export function parseMoveSnapshot(raw: unknown): MoveSnapshot | null {
     }
   }
 
+  const replies: MoveReply[] = [];
+  if (Array.isArray(raw.replies)) {
+    for (const item of raw.replies) {
+      if (!isRecord(item)) continue;
+      if (typeof item.from_domain !== "string") continue;
+      replies.push({
+        fromDomain: item.from_domain,
+        receivedAt:
+          typeof item.received_at === "number" && Number.isFinite(item.received_at)
+            ? item.received_at
+            : null,
+      });
+    }
+  }
+
   return {
     event_id: raw.event_id,
     route: {
@@ -146,6 +167,7 @@ export function parseMoveSnapshot(raw: unknown): MoveSnapshot | null {
       has_visa: flags.has_visa === true,
     },
     specialists,
+    replies,
     dispatched: raw.dispatched === true,
     finalized: raw.finalized === true,
     final_outcome: typeof raw.final_outcome === "string" ? raw.final_outcome : null,

@@ -23,7 +23,8 @@ export type WSEvent =
   | EventWaitingForUserEvent
   | EventFinalizedEvent
   | SponsorEvent
-  | FieldsCollectedEvent;
+  | FieldsCollectedEvent
+  | ReplyReceivedEvent;
 
 export interface TranscriptTurnEvent {
   type: "transcript_turn";
@@ -98,6 +99,16 @@ export interface SponsorEvent {
   sponsor: "stripe" | "agentmail" | "browser_use" | "sponge" | "supermemory" | "moss" | "lob";
   action: string;
   detail?: string;
+  ts: number;
+}
+
+// Emitted when an emailed reply is correlated back to a move. The public
+// mirror carries only the sender's domain and arrival time — never content.
+export interface ReplyReceivedEvent {
+  type: "reply_received";
+  event_id: string;
+  from_domain: string;
+  received_at: number;
   ts: number;
 }
 

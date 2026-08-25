@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     # default test suite runs purely in memory.
     database_path: str = "data/relocate.db"
 
+    # Public website root — used in tracker-link emails.
+    public_site_url: str = "https://vnmoorthy.github.io/relocate-ai"
+
     # Public web intake (POST /api/public/start-move). Off by default; the
     # public website enables it only for supervised demo deployments.
     enable_public_intake: bool = False

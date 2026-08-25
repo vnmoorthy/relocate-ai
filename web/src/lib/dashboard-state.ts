@@ -197,6 +197,9 @@ export function applyDashboardEvent(state: DashboardState, event: WSEvent): Dash
       };
     case "fields_collected":
       return applyFields(nextState, event);
+    case "reply_received":
+      // Surfaced on the move page (snapshot + refetch); nothing to fold in here.
+      return nextState;
   }
 }
 
@@ -224,6 +227,7 @@ const EVENT_TYPES = new Set([
   "event_finalized",
   "sponsor_event",
   "fields_collected",
+  "reply_received",
 ]);
 const AGENT_STATES = new Set<AgentState>([
   "dispatched",
@@ -304,6 +308,10 @@ export function parseDashboardEvent(raw: unknown): WSEvent | null {
     case "event_finalized":
       return (raw.outcome === "submitted" || raw.outcome === "partial_failure") &&
         isFinalSummary(raw.summary)
+        ? (raw as unknown as WSEvent)
+        : null;
+    case "reply_received":
+      return typeof raw.from_domain === "string" && isFiniteNumber(raw.received_at)
         ? (raw as unknown as WSEvent)
         : null;
     case "sponsor_event":
