@@ -174,10 +174,14 @@ async def _send_via_agentmail(
     # true intended recipient in the body. The override address still has to
     # pass the allowlist — belt and suspenders.
     override = settings.agentmail_demo_recipient_override.strip()
-    if override:
+    if override and [r.lower() for r in recipients] != [override.lower()]:
         intended = ", ".join(recipients)
         body = f"[demo routing: this message would be sent to {intended}]\n\n{body}"
         subject = f"[demo → {intended[:60]}] {subject}"
+        recipients = [override]
+    elif override:
+        # Already addressed to the override (e.g. the mover's own tracker
+        # email) — no rerouting happened, so no relabeling either.
         recipients = [override]
     # Enforced before ANY recipient is contacted so a partially-allowlisted
     # multi-recipient send cannot leak the permitted subset.
