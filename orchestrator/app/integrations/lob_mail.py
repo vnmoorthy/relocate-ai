@@ -157,7 +157,8 @@ COMCAST_LETTER_HTML = """
     Effective cancellation date: {move_date}</p>
     <p>Reason for cancellation: moving out of Comcast's service area.</p>
     <p>Please confirm cancellation by email to <strong>{user_email}</strong>.
-    I will return any rented equipment within the 14-day return window.</p>
+    I will return any rented equipment within the return window stated in
+    my cancellation confirmation.</p>
     <p>Thank you.</p>
   </div>
   <div class="signature">

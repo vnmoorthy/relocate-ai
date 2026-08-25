@@ -319,15 +319,18 @@ async def send_flight_options(
         if spec.get("has_pets") else ""
     )
     kids_note = (
-        "- Booking for the family: seat-together fees vanish if you book "
-        "directly with the airline instead of an OTA.\n"
+        "- Booking for the family: seat-selection rules differ by fare — "
+        "check the airline's seat policy for your fare class before paying "
+        "for seats together (Basic Economy often blocks free selection).\n"
         if spec.get("has_children") else ""
     )
     body = (
         f"Your moving-day flight search is set up:\n\n"
         f"  {search_url}\n\n"
         f"That link opens live prices for {origin_city} -> {dest_city} on "
-        f"{move_date} (one-way).\n\n"
+        f"{move_date} (one-way). We read those city names off the addresses "
+        f"you gave us — adjust the airports on the page if they are not the "
+        f"ones you want.\n\n"
         f"Booking notes:\n"
         f"- One-way fares move most in the 3-6 weeks before the date; set the "
         f"price-tracking toggle on that page and Google emails you drops.\n"

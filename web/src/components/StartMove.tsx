@@ -234,7 +234,7 @@ export function StartMove({ api, onStarted }: Props) {
         />
         <TextField
           id={fieldId("phone")}
-          label="Phone (for your concierge callback)"
+          label="Phone (so the line recognizes you)"
           name="user_phone"
           type="tel"
           autoComplete="tel"

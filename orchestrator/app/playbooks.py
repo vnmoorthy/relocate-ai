@@ -96,8 +96,10 @@ def _comcast(spec: dict[str, Any]) -> dict[str, str]:
             f"and the address of the nearest return location in writing.\n\n"
             f"{_sig_block(spec)}"
             f"--- end ---\n\n"
-            f"Equipment note: return the modem/router within 10 days or an "
-            f"unreturned-equipment fee applies.\n"
+            f"Equipment note: return the modem/router within the return "
+            f"window Comcast states when you cancel (commonly 14 days) — "
+            f"confirm the exact deadline on the call, since an unreturned-"
+            f"equipment fee follows it.\n"
         ),
     }
 
