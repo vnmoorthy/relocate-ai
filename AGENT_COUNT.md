@@ -24,7 +24,7 @@ gitignored `orchestrator/agents.json` exists, the test also checks that registry
 | 10 | `vet_transfer` | veterinary records request | email | AgentMail identifier |
 | 11 | `gym_cancel` | membership cancellation | email | AgentMail identifier |
 | 12 | `pharmacy` | prescription transfer | browser adapter (disabled) | secure patient-authorized workflow required |
-| 13 | `flight_book` | flight search | browser | provider task plus search result links; not a purchase by default |
+| 13 | `flight_book` | flight search | email | AgentMail identifier for a personalized Google Flights deeplink; booking stays with the user |
 | 14 | `water_board` | water utility | browser | provider task plus stop-service result fields |
 | 15 | `uscis_ar11` | immigration form preparation | browser | provider task and user-signature handoff; not filing proof |
 | 16 | `id_card_update` | ID update package | postal mail | Lob letter/tracking identifiers and user-action handoff |
@@ -33,8 +33,8 @@ gitignored `orchestrator/agents.json` exists, the test also checks that registry
 Mode totals:
 
 - 1 inbound voice persona;
-- 8 browser specialists;
-- 6 email specialists;
+- 7 browser specialists;
+- 7 email specialists;
 - 2 postal-mail specialists.
 
 ## Conditional dispatch

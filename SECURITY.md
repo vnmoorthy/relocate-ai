@@ -38,87 +38,193 @@ rotate exposed credentials, and coordinate disclosure after a fix is available.
   container-build checks.
 - AgentPhone webhook authentication fails closed when an agent secret is
   missing. It validates required headers, timestamp freshness, a
-  timestamp-bound HMAC, and a delivery ID.
+  timestamp-bound HMAC, and a delivery ID, with three-state idempotency:
+  completed duplicates are acknowledged, a retry racing an in-flight delivery
+  gets 409, and interrupted deliveries stay retryable. Completed-delivery
+  records persist to SQLite across restarts.
+- Outbound email is default-deny: every recipient must appear in
+  `AGENTMAIL_ALLOWED_RECIPIENTS` (empty blocks all sends, keys or not), the
+  check runs before any recipient in a multi-recipient send is contacted, and
+  `AGENTMAIL_DEMO_RECIPIENT_OVERRIDE` reroutes every outbound message to one
+  operator-controlled address labeled with the true intended recipient — the
+  override address must itself be allowlisted.
 - The PAVO service has no built-in default credential and requires a bearer
   token for completion/model endpoints.
 - Admin/dev-trigger and dashboard access use separate configuration tokens;
-  the synthetic trigger can be disabled and is intended to remain unavailable
-  in production.
+  the synthetic trigger can be disabled and returns 404 in production
+  configuration.
 - CORS is configured from an explicit origin list rather than a production
   wildcard in the hardened configuration path.
 - Compose publishes services only on loopback, uses read-only filesystems for
   backend services, and mounts the generated webhook registry read-only.
-- The default Compose dashboard is disconnected from the live socket and runs
-  visibly in demo mode, avoiding a long-lived token in public JavaScript.
+- The public static site never carries a token: it uses only the redacted
+  public surface described below, and discovers a live backend via
+  `web/public/live.json`, which it treats as untrusted input (https-only URL,
+  no credentials/query/hash, 3-second health check) before connecting.
 - Missing completion providers return an error; the PAVO service does not
   fabricate a response after all providers fail.
 
 These controls establish safe defaults for the developer preview. They do not
 make the system production-secure.
 
+## The public unauthenticated surface
+
+Three endpoints are deliberately reachable without credentials so the public
+website can be a real product surface. Their design assumption is that every
+caller is hostile; the useful data never leaves the server.
+
+### `WS /ws/public` — redacted live feed
+
+- Always on. A server-side projection (`orchestrator/app/public_feed.py`) of
+  dashboard events: agent states, routing tiers, cost counters, reply
+  domains/timestamps. Every free-text field (transcripts, blockers, sponsor
+  detail) is blanked or replaced server-side — redaction never depends on the
+  client behaving.
+- Capacity-capped (300 concurrent clients; new connections beyond that are
+  closed with 1013), read-only (client frames are ignored), with a bootstrap
+  replay of the latest event's states on subscribe and a 2-second bound on
+  every send so a slow-read client cannot backpressure the webhook path.
+- Residual exposure, accepted for the preview: an observer learns that moves
+  are happening, their agent states, and reply sender domains. No identities,
+  no routes, no text.
+
+### `POST /api/public/start-move` — web intake
+
+- Off by default; `ENABLE_PUBLIC_INTAKE=true` is a deliberate deployment
+  decision for supervised demos.
+- Defenses: an offscreen honeypot field (any value rejects), per-IP rate
+  limits (12/min, 40/hr), a global cap (200/hr), strict validation of the
+  four required fields, and a 10-minute idempotency window keyed on
+  route+date+email so client retries return the original move instead of
+  double-dispatching (and double-emailing).
+- Invalid optional household fields are dropped, not stored.
+- The real backstop is the outbound allowlist: an intake submitted with an
+  arbitrary victim email produces **no email to that address** unless the
+  operator has explicitly allowlisted it (demo deployments reroute everything
+  to the operator's own inbox). Without allowlisting, an attacker can create
+  noise events on the public feed — not outbound mail.
+- Known limits, stated honestly: rate-limit state is in-process (resets on
+  restart, per-instance; `X-Forwarded-For` is trusted, which is only
+  meaningful behind a trusted proxy), and there is no email-ownership
+  verification before dispatching a move "for" an address. Both are Phase-1
+  items in [STATUS.md](STATUS.md).
+
+### `GET /api/public/move/{event_id}` — redacted move snapshot
+
+- Gated by the same `ENABLE_PUBLIC_INTAKE` switch; rate-limited per IP
+  (120/min).
+- The move id is the only capability: `mkt_` + 10 hex chars of a UUID4
+  (40 bits). Not enumerable in practice against the rate limit, but it is a
+  bearer link — anyone holding it (including counterparties, who receive it
+  in email subjects via the `[ref:]` tag) can view the snapshot. Treat the
+  tracker like a parcel-tracking link, because that is what it is.
+- The snapshot is a projection, never the event: route and date, boolean
+  household flags, per-task honest states and blocker *kinds*, static
+  playbook titles, reply sender domains/timestamps, and regex-extracted quote
+  display strings. Never emails, phone numbers, names, transcripts, playbook
+  bodies, raw blocker strings, or provider artifacts.
+
+### The `[ref:]` tag — reply-correlation threat model
+
+Every outbound specialist email carries `[ref:<event_id>:<agent_id>]` in its
+subject. The reply poller attaches any inbound message bearing a valid ref to
+that move. The tag is a correlation id, **not** an authentication of the
+sender — legitimate counterparties forward and quote these subjects, so
+sender verification is impossible at this layer. What an attacker who obtains
+or guesses a valid ref can actually do by emailing the inbox:
+
+1. **Inject a reply row**: the move's tracker and public feed show the
+   attacker's sender *domain*, a timestamp, and any dollar figures their text
+   happens to contain, rendered as a quote display. States never change — a
+   reply cannot flip a specialist to submitted or completed, and reply
+   bodies/subjects never reach the public surfaces.
+2. **Cause one forwarded email to the move owner**: the full reply text (up
+   to 4000 chars) is forwarded to the customer's inbox, labeled with the
+   sender domain — a spam/phishing vector equivalent to emailing the customer
+   directly, except it arrives via Relocate's inbox. The forward passes
+   through the same allowlist/override policy as every send, so on demo
+   deployments it reaches only the operator.
+
+That is the entire blast radius: a spoofable, redacted reply row plus one
+labeled forward. There is no path from an inbound email to state changes,
+data disclosure, or further outbound fan-out. Residual risks we accept and
+track: quote displays are attacker-influenceable text on the tracker
+(displayed as claims, not verified prices), and the mail ledger dedupes by
+message id, so a flood of distinct messages bearing one ref is bounded only
+by the poller's 50-message page — abuse filtering is listed in
+[STATUS.md](STATUS.md).
+
 ## Known security and privacy gaps
 
 ### Authentication and authorization
 
 - There is no end-user identity system, tenant model, or move-scoped access
-  policy.
-- Long-lived bearer tokens are only appropriate for private local development.
-  The dashboard WebSocket no longer accepts query-string tokens (they leak
-  through browser history, logs, screenshots, and referrers); the local live
-  view hands the token over via a URL hash into a subprotocol offer instead,
-  which is still a long-lived shared secret, not production auth.
-- A public static dashboard cannot safely carry a live dashboard secret.
+  policy beyond the unguessable move id.
+- Long-lived bearer tokens are only appropriate for private local
+  development. The dashboard WebSocket does not accept query-string tokens
+  (they leak through history, logs, screenshots); the local live view hands
+  the token over via a URL hash into a subprotocol offer instead, which is
+  still a long-lived shared secret, not production auth.
+- A public static dashboard cannot safely carry a live dashboard secret —
+  which is why the public site gets the redacted feed instead.
 - There is no identity-aware admin console, credential revocation UI, or
   privileged-action audit trail.
 
 ### Webhooks and idempotency
 
-- Completed webhook-delivery records persist to single-node SQLite and reload
-  on restart (interrupted deliveries deliberately stay retryable); replicas do
-  not coordinate, so run exactly one orchestrator instance.
+- Webhook-delivery records persist to single-node SQLite; replicas do not
+  coordinate, so run exactly one orchestrator instance.
 - The implemented HMAC construction must be contract-tested against the exact
-  current AgentPhone specification before exposure; header names and signed
-  payload formats are vendor contracts, not assumptions.
+  current AgentPhone specification; header names and signed payload formats
+  are vendor contracts, not assumptions.
 - There is no shared rate limiter, durable inbox, or WAF policy in this repo.
-- `agents.json` secret rotation and zero-downtime dual-secret handling are not
-  implemented.
+- `agents.json` secret rotation and zero-downtime dual-secret handling are
+  not implemented.
 
 ### Sensitive data
 
-- Active move state lives in single-node SQLite with no formal encryption, retention,
-  deletion, or tenant-isolation policy.
-- The follow-up email mentions a secure form, but that authenticated encrypted
-  intake experience is not built.
-- Some browser-task builders interpolate account details or credentials into a
-  provider task description. That is not acceptable for production password or
-  financial handling; use delegated authorization or a tightly controlled
-  credential vault and field-level policy.
-- Medical, prescription, child, immigration, address, and call-transcript data
-  may be sensitive or regulated. Provider agreements and legal/compliance
-  requirements have not been established by this repository.
-- PII-safe logging/redaction is not comprehensive, and external model/provider
-  requests can create additional data copies.
+- Active move state lives in single-node SQLite with no formal encryption,
+  retention, deletion, or tenant-isolation policy.
+- The follow-up email deliberately refuses to solicit sensitive fields and
+  says the secure intake does not exist yet; tasks needing those fields stay
+  paused with playbooks instead.
+- Some retained (runtime-blocked) browser-task builders interpolate account
+  details into a provider task description. That is not acceptable for
+  production credential handling; delegated authorization or a credential
+  vault is required before those paths re-enable.
+- Medical, prescription, child, immigration, address, and call-transcript
+  data may be sensitive or regulated. Provider agreements and
+  legal/compliance requirements have not been established by this repository.
+- PII-safe logging/redaction is not comprehensive, and external
+  model/provider requests can create additional data copies.
 
 ### Workflow safety
 
-- A provider request ID can be mistaken for business completion.
+- A provider request ID can be mistaken for business completion; every
+  surface labels `submitted` accordingly.
 - There is no universal user-approval gate for purchases, service changes,
-  certified mail, or other irreversible actions.
-- Work executes in the API process without a durable queue, so crashes can
-  cause lost, retried, or duplicate effects.
-- Provider recipient/target allowlists, reconciliation, dispute handling, and
-  cancellation workflows are incomplete.
+  certified mail, or other irreversible actions — which is why those paths
+  are policy-blocked entirely rather than partially guarded.
+- Work executes in the API process without a durable queue; a crash recovers
+  to honest `needs-user-action`, never fabricated completion, but retries and
+  scheduled work are not durable.
+- Institutional recipient addresses hardcoded in the email adapters are
+  unverified; the allowlist is what keeps them theoretical until an operator
+  deliberately enables them.
 
 ### Infrastructure and operations
 
-- Compose is not a production platform and has no TLS ingress, managed database,
-  durable queue, WAF, autoscaling, backup, or disaster recovery.
+- The demo line intentionally runs over a rotating cloudflared quick tunnel
+  from a laptop (`demo-line.sh`). That exposes exactly the webhook and the
+  public surface above to the internet; it is supervised, and it is not — and
+  must never be treated as — a production ingress. A named tunnel or cloud
+  host is the first production step.
+- Compose is not a production platform and has no TLS ingress, managed
+  database, durable queue, WAF, autoscaling, backup, or disaster recovery.
 - Monitoring is limited to logs/basic health; there are no security alerts,
   anomaly detection, SLOs, or incident automation.
-- A public development tunnel expands the attack surface and must never be
-  treated as a production ingress.
-- Container SBOM/signing, image scanning, runtime policy, and provenance are not
-  yet release gates.
+- Container SBOM/signing, image scanning, runtime policy, and provenance are
+  not yet release gates.
 
 ## Secret handling rules
 
@@ -131,24 +237,29 @@ make the system production-secure.
    provider keys blank.
 6. Do not put customer identifiers or credentials in `agents.json`; it should
    contain only deployment registry data and webhook secrets.
-7. Rotate immediately if a secret appears in git history, logs, build output,
+7. `web/public/live.json` is public by design and must only ever contain the
+   API origin — never a token, path, or query.
+8. Rotate immediately if a secret appears in git history, logs, build output,
    terminal sharing, or a provider task transcript. Revocation comes before
    repository cleanup.
-8. Treat webhook registries, authorized acceptance specs, generated PDFs, and
+9. Treat webhook registries, authorized acceptance specs, generated PDFs, and
    provider artifacts as sensitive even when they contain synthetic data.
 
 ## Safe local-development defaults
 
 - Bind services to `127.0.0.1`.
 - Keep `ENABLE_DEV_TRIGGER=false` unless actively testing it on a private host.
+- Keep `ENABLE_PUBLIC_INTAKE=false` except on a supervised demo deployment
+  with the allowlist/override configured first.
 - Use the empty WebSocket URL/default demo mode for a public static dashboard.
 - Use local/private HTTP only for loopback or container-private PAVO traffic;
   remote PAVO endpoints require TLS/private networking.
 - Run `./verify-all-agents.sh` for the normal safe backend checks.
 - Review the provider-acceptance source before setting either opt-in gate.
 - Never use live Stripe or Lob credentials in acceptance tests.
-- Do not open a tunnel until webhook authentication, route exposure, and
-  generated registry contents have been verified.
+- Do not open a tunnel until webhook authentication, the outbound allowlist,
+  and generated registry contents have been verified — `demo-line.sh` assumes
+  you have done this.
 
 ## Production security gates
 
@@ -162,9 +273,10 @@ Before serving real users, complete at least:
 - encrypted storage, data classification, retention/deletion/export, backups,
   and restore testing;
 - authenticated secure intake and consent/action-approval records;
+- inbound-mail abuse filtering and sender verification for the reply loop;
 - PII redaction and egress policy for logs, models, and providers;
-- rate limits, TLS, WAF/network boundaries, dependency/image scanning, SBOM,
-  signing, and release provenance;
+- rate limits backed by shared state, TLS, WAF/network boundaries,
+  dependency/image scanning, SBOM, signing, and release provenance;
 - security monitoring, incident response, customer notification, and recovery
   runbooks;
 - provider terms, data-processing agreements, and appropriate legal/compliance
