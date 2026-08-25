@@ -683,3 +683,49 @@ def test_transcript_backstop_fills_only_model_gaps() -> None:
         "My email is vnarasingamoorthy@gmail.com, thanks.", ctx,
     )
     assert merged == {"user_email": "vnarasingamoorthy@gmail.com"}
+
+
+def test_backstop_direction_comes_from_the_adjacent_cue() -> None:
+    """Review finding: scanning 40 chars for "to " let ordinary filler decide
+    direction — "I have to move from <addr>" filed the caller's CURRENT home
+    as their destination, and mover/USPS/Geico emails then described a move
+    INTO the address they are leaving."""
+    from app.transcript_extract import backstop_fields
+
+    origin_only = "Hi, I need to move out of 500 Oak Avenue, Denver, CO 80202 next month."
+    assert backstop_fields(origin_only, {}) == {
+        "origin_address": "500 Oak Avenue, Denver, CO 80202",
+    }
+    assert backstop_fields("I have to move from 500 Oak Avenue, Denver, CO 80202.", {}) == {
+        "origin_address": "500 Oak Avenue, Denver, CO 80202",
+    }
+    # Internal double space used to break the .find() offset and silently
+    # default to origin; positions now come from the match itself.
+    assert backstop_fields("I want to move to 500  Oak Avenue, Denver, CO 80202.", {}) == {
+        "destination_address": "500 Oak Avenue, Denver, CO 80202",
+    }
+    # A lone address with no directional cue is dropped, never guessed.
+    assert backstop_fields("It's 500 Oak Avenue, Denver, CO 80202.", {}) == {}
+
+
+def test_backstop_only_takes_a_date_tied_to_moving() -> None:
+    """Review finding: any full date in the utterance became the CORE move
+    date and shipped verbatim to movers and utilities."""
+    from app.transcript_extract import backstop_fields
+
+    assert backstop_fields(
+        "My daughter's birthday is 6/12/2026, so we'd like to move after that.", {},
+    ) == {}
+    assert backstop_fields(
+        "My lease ends 2026-01-15 and I have to be out before then.", {},
+    ) == {}
+    assert backstop_fields(
+        "our lease there starts July 1st 2026, but we don't actually move until August", {},
+    ) == {}
+    # Two candidate move dates in one breath is ambiguous — take neither.
+    assert backstop_fields("We move 2026-05-01, and the movers come 2026-05-02.", {}) == {}
+    # Unambiguous move dates still land.
+    assert backstop_fields("Moving day is October 20th, 2026.", {}) == {
+        "move_date": "2026-10-20",
+    }
+    assert backstop_fields("Relocating on 12/05/2026.", {}) == {"move_date": "2026-12-05"}

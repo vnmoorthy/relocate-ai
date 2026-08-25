@@ -183,3 +183,87 @@ def test_prepared_documents_email_attaches_gated_drafts(
     # The rendered Comcast letter is personalized from the spec.
     comcast = next(a for a in sent[0]["attachments"] if a["filename"].startswith("comcast"))
     assert b"588 Mission St" in comcast["content_bytes"]
+
+
+def test_tracker_only_claims_delivery_after_a_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review finding: the tracker said "sent to your inbox" whether or not
+    the digest email ever went (AgentMail suppression made that real once)."""
+    monkeypatch.setattr(settings, "enable_public_intake", True)
+    client = TestClient(main.app)
+    event = MarketplaceEvent(id="mkt_deliv1", homeowner_call_id="call", spec=dict(SPEC))
+    ctx = SpecialistCallContext(
+        call_id="pending", agent_id="pge_shutoff", event_id=event.id,
+        state="needs-user-action",
+    )
+    ctx.playbook = build_playbook("pge_shutoff", SPEC)
+    event.specialist_calls["pge_shutoff"] = ctx
+    state.events[event.id] = event
+
+    row = client.get("/api/public/move/mkt_deliv1").json()["specialists"][0]
+    assert row["playbook_title"] == "PG&E shutoff call script"
+    assert row["playbook_delivered"] is False
+
+    event.playbook_digest_sent = True
+    row = client.get("/api/public/move/mkt_deliv1").json()["specialists"][0]
+    assert row["playbook_delivered"] is True
+
+
+def test_digest_and_documents_are_not_resent_after_a_resume(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """resume_ready_specialists clears awaiting_user_notified so a later wave
+    can re-announce; the digest and documents must still go exactly once."""
+    event = MarketplaceEvent(id="mkt_resend", homeowner_call_id="call", spec=dict(SPEC))
+    ctx = SpecialistCallContext(
+        call_id="pending", agent_id="pge_shutoff", event_id=event.id,
+        state="needs-user-action",
+    )
+    ctx.playbook = build_playbook("pge_shutoff", SPEC)
+    event.specialist_calls["pge_shutoff"] = ctx
+    state.events[event.id] = event
+    monkeypatch.setattr(ws_broker, "broadcast", AsyncMock())
+    sent: list[dict] = []
+
+    async def fake_send(**kwargs):  # noqa: ANN003
+        sent.append(kwargs)
+        return {"message_id": "msg_digest"}
+
+    monkeypatch.setattr(marketplace.am, "send_move_package", fake_send)
+
+    asyncio.run(marketplace.finalize_event(event.id))
+    assert len(sent) == 1
+    assert event.playbook_digest_sent is True
+
+    # A resume re-opens the announcement, but not the mailbox.
+    event.awaiting_user_notified = False
+    asyncio.run(marketplace.finalize_event(event.id))
+    assert len(sent) == 1
+
+
+def test_self_delivered_agents_do_not_claim_provider_acceptance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """flight_book and bank_notify email the CUSTOMER; reporting them as
+    "submitted — provider acceptance" would overstate what happened."""
+    from app.personas import by_id
+
+    persona = by_id("flight_book")
+    event = MarketplaceEvent(id="mkt_selfdel", homeowner_call_id="call", spec=dict(SPEC))
+    event.specialist_calls[persona.agent_id] = SpecialistCallContext(
+        call_id="pending", agent_id=persona.agent_id, event_id=event.id,
+    )
+    state.events[event.id] = event
+    monkeypatch.setattr(ws_broker, "broadcast", AsyncMock())
+
+    async def fake_email(*_args: object, **_kwargs: object) -> dict:
+        return {"message_id": "msg_flight", "search_url": "https://example.invalid"}
+
+    monkeypatch.setattr(marketplace, "_run_email", fake_email)
+
+    asyncio.run(marketplace._run_one(persona, event.id, dict(SPEC)))
+
+    ctx = event.specialist_calls[persona.agent_id]
+    assert ctx.state == "submitted"
+    assert ctx.terminal_outcome == "prepared_for_user"

@@ -38,7 +38,10 @@ def public_ref(event_id: str) -> str:
 
 # Event types that are safe to mirror once projected by `redact_public_event`.
 _PASSTHROUGH_KEYS: dict[str, tuple[str, ...]] = {
-    "agent_state": ("type", "event_id", "agent_id", "state", "ts"),
+    # "bootstrap" marks a current-state replay rather than a live transition:
+    # the client uses it to avoid letting a stale replay overwrite fresher
+    # live state or reset its event-pinning clock.
+    "agent_state": ("type", "event_id", "agent_id", "state", "ts", "bootstrap"),
     "routing_decision": ("type", "event_id", "agent_id", "tier", "reason", "complexity", "turn", "ts"),
     "cost_update": ("type", "event_id", "pavo_cents", "baseline_cents", "decisions", "tier_counts", "ts"),
     "event_waiting_for_user": ("type", "event_id", "agents", "count", "ts"),

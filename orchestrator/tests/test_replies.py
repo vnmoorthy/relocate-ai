@@ -76,6 +76,32 @@ def test_parse_quote_extraction() -> None:
     assert replies.parse_quote("") is None
 
 
+def test_parse_quote_ignores_unit_rates_and_negated_claims() -> None:
+    """Review findings: an hourly rate outranked the real total (and took the
+    LOWEST badge), "no deposit required" reported the total as a deposit, and
+    "no trucks available" printed "availability confirmed"."""
+    hourly = replies.parse_quote("Our price is $95/hour. Total for your move: $2,850.")
+    assert hourly is not None
+    assert hourly["total_display"] == "$2,850"
+
+    no_deposit = replies.parse_quote("Total $3,000. No deposit required.")
+    assert no_deposit is not None
+    assert no_deposit["deposit_display"] is None
+
+    unavailable = replies.parse_quote(
+        "Sorry, no trucks available that week. Estimate would be $4,000."
+    )
+    assert unavailable is not None
+    assert unavailable["availability"] is False
+
+    confirmed = replies.parse_quote(
+        "All-in $2,980 with basic coverage. $200 deposit. Container confirmed."
+    )
+    assert confirmed == {
+        "total_display": "$2,980", "deposit_display": "$200", "availability": True,
+    }
+
+
 def test_correlated_reply_attaches_and_broadcasts(monkeypatch: pytest.MonkeyPatch) -> None:
     event = MarketplaceEvent(id="mkt_ab12cd34ef", homeowner_call_id="call", spec={})
     _solicited(event)

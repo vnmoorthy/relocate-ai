@@ -42,6 +42,11 @@ TERMINAL_PROVIDER_STATES = frozenset({
 })
 
 
+# Specialists whose successful artifact is an email to the customer, not a
+# request accepted by a counterparty.
+_SELF_DELIVERED_AGENTS = frozenset({"flight_book", "bank_notify"})
+
+
 class NeedsUserAction(RuntimeError):
     """The provider action cannot safely continue without human intervention."""
 
@@ -356,7 +361,12 @@ async def _run_one(p: Persona, event_id: str, spec: dict[str, Any]) -> None:
         event = state.events[event_id]
         ctx = event.specialist_calls[p.agent_id]
         ctx.bid = artifact
-        ctx.terminal_outcome = "submitted"
+        # flight_book and bank_notify email the CUSTOMER a prepared artifact;
+        # no counterparty received anything, so reporting "provider accepted"
+        # would overstate what happened.
+        ctx.terminal_outcome = (
+            "prepared_for_user" if p.agent_id in _SELF_DELIVERED_AGENTS else "submitted"
+        )
         ctx.blocker_kind = None
         ctx.blockers = []
         public_summary = _public_artifact_summary(p, artifact)
@@ -444,6 +454,7 @@ async def finalize_event(event_id: str) -> None:
             })
             await _send_playbook_digest(event)
             await _send_prepared_documents(event)
+            state.save_event(event)
             # Partial outcomes are still worth remembering for the next call —
             # settlement is the durable milestone real moves actually reach.
             user_phone = event.spec.get("user_phone")
@@ -537,7 +548,9 @@ async def _send_playbook_digest(event) -> None:  # noqa: ANN001 - MarketplaceEve
     (guarded by awaiting_user_notified at the call site).
     """
     user_email = event.spec.get("user_email")
-    if not user_email:
+    if not user_email or event.playbook_digest_sent:
+        # resume_ready_specialists clears awaiting_user_notified so a later
+        # wave can re-announce; the digest itself must still go out once.
         return
     playbooks = [
         (ctx.agent_id, ctx.playbook)
@@ -566,6 +579,8 @@ async def _send_playbook_digest(event) -> None:  # noqa: ANN001 - MarketplaceEve
             body_markdown=body,
         )
         if result:
+            event.playbook_digest_sent = True
+            state.save_event(event)
             log.info("playbook digest emailed: event=%s count=%d", event.id, len(playbooks))
         else:
             log.warning(
@@ -587,7 +602,7 @@ async def _send_prepared_documents(event) -> None:  # noqa: ANN001
     bare blocker. Best-effort, at most once per event (call-site guarded).
     """
     user_email = event.spec.get("user_email")
-    if not user_email:
+    if not user_email or event.prepared_docs_sent:
         return
     blocked = {
         agent_id: ctx
@@ -658,6 +673,8 @@ async def _send_prepared_documents(event) -> None:  # noqa: ANN001
             body=body,
             attachments=attachments,
         )
+        event.prepared_docs_sent = True
+        state.save_event(event)
         log.info("prepared documents emailed: event=%s count=%d", event.id, len(attachments))
     except Exception as exc:  # noqa: BLE001 - best-effort
         log.warning("prepared-documents email failed (event=%s): %s", event.id, exc)

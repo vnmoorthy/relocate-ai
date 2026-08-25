@@ -27,12 +27,21 @@ function specialist(overrides: Partial<MoveSpecialistSnapshot>): MoveSpecialistS
     blocker_kind: null,
     closed_at: null,
     playbookTitle: null,
+    playbookDelivered: false,
     ...overrides,
   };
 }
 
 function reply(overrides: Partial<MoveReply>): MoveReply {
-  return { fromDomain: "uhaul.com", receivedAt: null, agentId: null, quote: null, ...overrides };
+  // Quote comparison only accepts replies attributed to a quote-soliciting
+  // specialist, which is what a real mover reply carries.
+  return {
+    fromDomain: "uhaul.com",
+    receivedAt: null,
+    agentId: "mover_quote",
+    quote: null,
+    ...overrides,
+  };
 }
 
 test("move id comes from the hash and rejects anything unsafe", () => {
@@ -165,11 +174,11 @@ test("task copy maps blockers first, then states, honestly", () => {
 
 test("a prepared playbook wins the user-action line; blocker copy is the fallback", () => {
   assert.equal(
-    taskLine("needs-user-action", "secure_user_workflow_required", "PG&E shutoff call script"),
+    taskLine("needs-user-action", "secure_user_workflow_required", "PG&E shutoff call script", true),
     "Prepared: PG&E shutoff call script — sent to your inbox.",
   );
   assert.equal(
-    taskLine("needs-user-action", null, "AR-11 address letter"),
+    taskLine("needs-user-action", null, "AR-11 address letter", true),
     "Prepared: AR-11 address letter — sent to your inbox.",
   );
   assert.equal(
@@ -239,6 +248,7 @@ test("merge threads the playbook through and shows the prepared line", () => {
       state: "needs-user-action",
       blocker_kind: "secure_user_workflow_required",
       playbookTitle: "PG&E shutoff call script",
+      playbookDelivered: true,
     }),
     specialist({ agent_id: "usps_coa", state: "needs-user-action" }),
   ];
@@ -450,4 +460,59 @@ test("parseMoveSnapshot: public_ref parsed, malformed degrades to empty", () => 
   const badRef = parseMoveSnapshot({ event_id: "mkt_x", public_ref: 42, specialists: [] });
   assert.ok(badRef);
   assert.equal(badRef.public_ref, "");
+});
+
+test("taskLine claims an inbox delivery only when one actually happened", () => {
+  assert.equal(
+    taskLine("needs-user-action", "missing_fields", "PG&E shutoff call script", true),
+    "Prepared: PG&E shutoff call script — sent to your inbox.",
+  );
+  assert.equal(
+    taskLine("needs-user-action", "missing_fields", "PG&E shutoff call script", false),
+    "Prepared: PG&E shutoff call script — emailing it to you.",
+  );
+});
+
+test("taskLine does not call a customer-facing email a provider acceptance", () => {
+  assert.equal(
+    taskLine("submitted", null, null, false, "prepared_for_user"),
+    "Prepared for you — the final step is yours.",
+  );
+  assert.equal(
+    taskLine("submitted", null, null, false, "submitted"),
+    "Request submitted — provider acceptance, not completion.",
+  );
+});
+
+test("sortQuotedReplies compares only mover-quote replies", () => {
+  const base = { fromDomain: "x.com", receivedAt: 1 };
+  const quote = (total: string) => ({
+    totalDisplay: total,
+    depositDisplay: null,
+    availability: false,
+  });
+  const sorted = sortQuotedReplies([
+    { ...base, agentId: "school_district", quote: quote("$95") },
+    { ...base, agentId: "mover_quote", quote: quote("$3,420") },
+    { ...base, agentId: null, quote: quote("$10") },
+    { ...base, agentId: "mover_quote", quote: quote("$2,980") },
+  ] as MoveReply[]);
+  assert.equal(sorted.length, 2);
+  assert.equal(sorted[0].quote.totalDisplay, "$2,980");
+  assert.equal(sorted[1].quote.totalDisplay, "$3,420");
+});
+
+test("parseMoveSnapshot reads playbook_delivered strictly", () => {
+  const snap = parseMoveSnapshot({
+    event_id: "mkt_x",
+    specialists: [
+      { agent_id: "pge_shutoff", state: "needs-user-action",
+        playbook_title: "PG&E shutoff call script", playbook_delivered: true },
+      { agent_id: "usps_coa", state: "needs-user-action",
+        playbook_title: "USPS change-of-address walkthrough" },
+    ],
+  });
+  assert.ok(snap);
+  assert.equal(snap.specialists[0].playbookDelivered, true);
+  assert.equal(snap.specialists[1].playbookDelivered, false);
 });

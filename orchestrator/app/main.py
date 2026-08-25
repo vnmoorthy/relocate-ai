@@ -714,6 +714,7 @@ def _bootstrap_messages() -> list[dict[str, Any]]:
         {
             "type": "agent_state", "event_id": event.id, "agent_id": agent_id,
             "state": ctx.state, "ts": ctx.closed_at or ctx.started_at,
+            "bootstrap": True,
         }
         for agent_id, ctx in event.specialist_calls.items()
     ]
@@ -797,6 +798,7 @@ def _intake_rate_limited(ip: str, now: float) -> bool:
     _intake_global = [t for t in _intake_global if t > hour]
     if len(_intake_global) >= _INTAKE_GLOBAL_HOUR:
         return True
+    _sweep_hits(_intake_hits, hour)
     hits = [t for t in _intake_hits.get(ip, []) if t > hour]
     if len(hits) >= _INTAKE_PER_IP_HOUR or sum(1 for t in hits if t > minute) >= _INTAKE_PER_IP_MIN:
         _intake_hits[ip] = hits
@@ -912,6 +914,16 @@ async def _email_tracker_link(event_id: str, spec: dict[str, Any]) -> None:
 
 
 _SNAPSHOT_PER_IP_MIN = 120
+# Both hit maps key on client identity, so an adversary (or a busy CDN) can
+# mint entries without bound. Sweep expired keys once the map gets large.
+_HITS_MAP_SOFT_CAP = 4096
+
+
+def _sweep_hits(hits: dict[str, list[float]], older_than: float) -> None:
+    if len(hits) < _HITS_MAP_SOFT_CAP:
+        return
+    for key in [k for k, v in hits.items() if not v or max(v) <= older_than]:
+        hits.pop(key, None)
 _snapshot_hits: dict[str, list[float]] = {}
 
 
@@ -927,6 +939,7 @@ async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str,
         raise HTTPException(503, "public move pages are not enabled on this deployment")
     ip = _client_ip(request)
     now = time.time()
+    _sweep_hits(_snapshot_hits, now - 60)
     hits = [t for t in _snapshot_hits.get(ip, []) if t > now - 60]
     if len(hits) >= _SNAPSHOT_PER_IP_MIN:
         raise HTTPException(429, "too many requests")
@@ -946,6 +959,11 @@ async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str,
             # Static per-agent title only — playbook BODIES carry the user's
             # own details and travel by email, never through this endpoint.
             "playbook_title": (ctx.playbook or {}).get("title"),
+            # Only true once the digest send returned a receipt — the tracker
+            # must not claim an inbox delivery that never happened.
+            "playbook_delivered": bool(
+                ctx.playbook and event.playbook_digest_sent
+            ),
         }
         for agent_id, ctx in event.specialist_calls.items()
     ]

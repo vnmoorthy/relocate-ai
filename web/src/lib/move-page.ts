@@ -87,6 +87,8 @@ export interface MoveSpecialistSnapshot {
   closed_at: number | null;
   /** Title of a prepared script/letter/checklist already emailed to the user. */
   playbookTitle: string | null;
+  /** True only once the digest email actually returned a provider receipt. */
+  playbookDelivered: boolean;
 }
 
 /** Deterministic quote facts extracted from a provider's emailed reply. */
@@ -170,6 +172,7 @@ export function parseMoveSnapshot(raw: unknown): MoveSnapshot | null {
             ? item.closed_at
             : null,
         playbookTitle: asNonEmptyStringOrNull(item.playbook_title),
+        playbookDelivered: item.playbook_delivered === true,
       });
     }
   }
@@ -234,14 +237,22 @@ export function taskLine(
   state: string,
   blockerKind: string | null,
   playbookTitle: string | null = null,
+  playbookDelivered = false,
+  terminalOutcome: string | null = null,
 ): string {
   if (state === "needs-user-action" && playbookTitle) {
-    return `Prepared: ${playbookTitle} — sent to your inbox.`;
+    return playbookDelivered
+      ? `Prepared: ${playbookTitle} — sent to your inbox.`
+      : `Prepared: ${playbookTitle} — emailing it to you.`;
   }
   if (blockerKind && BLOCKER_LINES[blockerKind]) return BLOCKER_LINES[blockerKind];
   switch (state) {
     case "submitted":
-      return "Request submitted — provider acceptance, not completion.";
+      // Some specialists' only email goes to the customer; calling that a
+      // provider acceptance would overstate what happened.
+      return terminalOutcome === "prepared_for_user"
+        ? "Prepared for you — the final step is yours."
+        : "Request submitted — provider acceptance, not completion.";
     case "succeeded":
       return "Done.";
     case "failed":
@@ -279,6 +290,8 @@ export interface MoveTaskView {
   state: string;
   blockerKind: string | null;
   playbookTitle: string | null;
+  playbookDelivered: boolean;
+  terminalOutcome: string | null;
   line: string;
 }
 
@@ -304,7 +317,13 @@ export function mergeMoveTasks(
 ): MoveTaskView[] {
   const byId = new Map<
     string,
-    { state: string; blockerKind: string | null; playbookTitle: string | null }
+    {
+      state: string;
+      blockerKind: string | null;
+      playbookTitle: string | null;
+      playbookDelivered: boolean;
+      terminalOutcome: string | null;
+    }
   >();
   for (const specialist of specialists) {
     if (specialist.agent_id === "buyer") continue;
@@ -312,6 +331,8 @@ export function mergeMoveTasks(
       state: specialist.state,
       blockerKind: specialist.blocker_kind,
       playbookTitle: specialist.playbookTitle,
+      playbookDelivered: specialist.playbookDelivered,
+      terminalOutcome: specialist.terminal_outcome,
     });
   }
   for (const [agentId, live] of Object.entries(overlay)) {
@@ -322,6 +343,8 @@ export function mergeMoveTasks(
       state: live.state,
       blockerKind: stateHolds ? base.blockerKind : null,
       playbookTitle: stateHolds ? base.playbookTitle : null,
+      playbookDelivered: stateHolds ? base.playbookDelivered : false,
+      terminalOutcome: stateHolds ? base.terminalOutcome : null,
     });
   }
 
@@ -334,7 +357,15 @@ export function mergeMoveTasks(
       state: task.state,
       blockerKind: task.blockerKind,
       playbookTitle: task.playbookTitle,
-      line: taskLine(task.state, task.blockerKind, task.playbookTitle),
+      playbookDelivered: task.playbookDelivered,
+      terminalOutcome: task.terminalOutcome,
+      line: taskLine(
+        task.state,
+        task.blockerKind,
+        task.playbookTitle,
+        task.playbookDelivered,
+        task.terminalOutcome,
+      ),
     };
   });
   tasks.sort(
@@ -358,11 +389,21 @@ export function quoteTotalValue(totalDisplay: string): number | null {
  * Replies that carry a quote, cheapest first. Unparseable totals sort last;
  * ties keep arrival order (Array.prototype.sort is stable).
  */
+/**
+ * Only replies to a quote-soliciting specialist may be compared. A dollar
+ * figure in a school or vet reply is not a moving bid, and ranking it (or
+ * badging it "Lowest") would present unrelated numbers as competing quotes.
+ */
+const QUOTE_AGENTS = new Set(["mover_quote"]);
+
 export function sortQuotedReplies(
   replies: MoveReply[],
 ): Array<MoveReply & { quote: MoveReplyQuote }> {
   return replies
-    .filter((reply): reply is MoveReply & { quote: MoveReplyQuote } => reply.quote !== null)
+    .filter(
+      (reply): reply is MoveReply & { quote: MoveReplyQuote } =>
+        reply.quote !== null && reply.agentId !== null && QUOTE_AGENTS.has(reply.agentId),
+    )
     .sort((a, b) => {
       const left = quoteTotalValue(a.quote.totalDisplay);
       const right = quoteTotalValue(b.quote.totalDisplay);

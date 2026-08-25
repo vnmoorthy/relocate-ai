@@ -92,6 +92,11 @@ class MarketplaceEvent:
     # Inbound email replies correlated to this move (see integrations/replies.py).
     replies: list[dict[str, Any]] = field(default_factory=list)
     started_at: float = field(default_factory=time.time)
+    # Set only when the provider returned a receipt. The tracker's "sent to
+    # your inbox" line is gated on this — a failed send must never be
+    # reported to the user as delivered.
+    playbook_digest_sent: bool = False
+    prepared_docs_sent: bool = False
     finalization_started: bool = False
     finalized_at: float | None = None
     final_outcome: str | None = None

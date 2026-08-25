@@ -211,9 +211,10 @@ DL13A_LETTER_HTML = """
     <p>Signature: ____________________________________________</p>
     <p>Date: ____________________________________________</p>
     <p style="font-size:9pt;color:#666;">
-      Sign and date the wet copy within 24 hours of receipt. Retain for your
-      records. No further action required — the DMV updates within 10 days
-      of postmark.
+      DRAFT — nothing has been filed. Sign and date this copy, then mail it
+      to the DMV yourself (certified mail recommended) or file the same
+      change free at dmv.ca.gov/coa. The DMV typically updates within 10
+      days of postmark. Keep a copy for your records.
     </p>
   </div>
 </body>

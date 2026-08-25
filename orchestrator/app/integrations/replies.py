@@ -32,18 +32,31 @@ log = logging.getLogger(__name__)
 _REF_RE = re.compile(r"\[ref:(mkt_[0-9a-f]{4,})(?::([a-z_]+))?\]")
 _ADDR_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 _MONEY_RE = re.compile(r"\$\s*([0-9][\d,]*(?:\.\d{2})?)")
-_TOTAL_RE = re.compile(
-    r"(?:out[-\s]the[-\s]door|otd|total|all[-\s]in|price|quote)\D{0,30}"
-    r"\$\s*([0-9][\d,]*(?:\.\d{2})?)",
+# An amount immediately followed by a rate marker is a unit price, not a job
+# total. Without this an hourly "$95/hr" outranked a real $2,400 quote and
+# took the LOWEST badge on the comparison panel.
+_RATE_MARKER_RE = re.compile(
+    r"^\s*(?:/|per\s+|an?\s+)?(?:hr|hour|hourly|day|mile|cu\.?\s?ft|item|box)\b",
     re.IGNORECASE,
 )
-# Both phrasings appear in the wild: "deposit: $300" and "$300 deposit".
-_DEPOSIT_RE = re.compile(
-    r"deposit\D{0,30}\$\s*([0-9][\d,]*(?:\.\d{2})?)"
-    r"|\$\s*([0-9][\d,]*(?:\.\d{2})?)\s*(?:\w+\s+)?deposit",
+# Labels that genuinely mark a job total (not "price", which movers use for
+# unit rates just as often).
+_TOTAL_LABEL_RE = re.compile(
+    r"\b(?:out[-\s]the[-\s]door|otd|all[-\s]?in|grand\s+total|total|"
+    r"estimate|quote[ds]?)\b",
+    re.IGNORECASE,
+)
+_DEPOSIT_LABEL_RE = re.compile(r"\bdeposits?\b", re.IGNORECASE)
+# "no deposit required" must not report a deposit equal to the next figure.
+_NEGATION_RE = re.compile(
+    r"\b(?:no|not|non|without|zero|waived|waive|free\s+of|isn'?t|aren'?t|"
+    r"cannot|can'?t|unable|don'?t|doesn'?t|never)\b",
     re.IGNORECASE,
 )
 _AVAILABILITY_RE = re.compile(r"\b(?:confirmed?|available|availability)\b", re.IGNORECASE)
+_LABEL_WINDOW = 40   # chars before an amount that may carry its label
+_NEGATION_WINDOW = 28  # chars before a claim that may negate it
+
 # A specialist may be credited with a reply only if it actually sent a request.
 _SOLICITING_STATES = frozenset({"submitted", "succeeded", "in-progress", "calling"})
 POLL_INTERVAL_S = 45
@@ -72,30 +85,65 @@ def extract_ref(subject: str | None) -> tuple[str, str | None] | None:
     return (m.group(1), m.group(2)) if m else None
 
 
+def _negated(text: str, at: int) -> bool:
+    """True when a negation sits just before position ``at``."""
+    return bool(_NEGATION_RE.search(text[max(0, at - _NEGATION_WINDOW):at]))
+
+
 def parse_quote(text: str) -> dict[str, Any] | None:
     """Deterministic quote extraction from a counterparty's reply text.
 
-    Regex-only on purpose: an extracted number is either literally present in
-    the email or absent — nothing is inferred. Returns None when no dollar
-    amount appears at all.
+    Regex-only on purpose: every figure reported is literally present in the
+    email — nothing is inferred. Where the text is ambiguous or negated the
+    field is dropped rather than guessed, because these numbers are shown to
+    the mover as the counterparty's own words.
     """
     if not text:
         return None
-    amounts = _MONEY_RE.findall(text)
-    if not amounts:
+    candidates: list[tuple[float, str, int]] = []
+    for m in _MONEY_RE.finditer(text):
+        if _RATE_MARKER_RE.match(text[m.end():m.end() + 14]):
+            continue  # unit rate, not a job total
+        try:
+            candidates.append((float(m.group(1).replace(",", "")), m.group(1), m.start()))
+        except ValueError:
+            continue
+    if not candidates:
         return None
-    labeled = _TOTAL_RE.search(text)
-    if labeled:
-        total = labeled.group(1)
-    else:
-        # No labeled total: the largest amount is the best candidate.
-        total = max(amounts, key=lambda a: float(a.replace(",", "")))
-    deposit = _DEPOSIT_RE.search(text)
-    deposit_amount = (deposit.group(1) or deposit.group(2)) if deposit else None
+
+    labelled = [
+        c for c in candidates
+        if _TOTAL_LABEL_RE.search(text[max(0, c[2] - _LABEL_WINDOW):c[2]])
+        and not _negated(text, c[2])
+    ]
+    # Largest, not first: a labelled line often lists components before the
+    # figure that actually settles the job.
+    total = max(labelled or candidates, key=lambda c: c[0])[1]
+
+    deposit_display = None
+    for m in _DEPOSIT_LABEL_RE.finditer(text):
+        if _negated(text, m.start()):
+            continue  # "no deposit required"
+        near = [
+            c for c in candidates
+            if 0 <= c[2] - m.end() <= _LABEL_WINDOW or 0 <= m.start() - c[2] <= _LABEL_WINDOW
+        ]
+        # Never report the job total as its own deposit.
+        near = [c for c in near if c[1] != total]
+        if near:
+            deposit_display = f"${min(near, key=lambda c: c[0])[1]}"
+            break
+
+    availability = False
+    for m in _AVAILABILITY_RE.finditer(text):
+        if not _negated(text, m.start()):
+            availability = True
+            break
+
     return {
         "total_display": f"${total}",
-        "deposit_display": f"${deposit_amount}" if deposit_amount else None,
-        "availability": bool(_AVAILABILITY_RE.search(text)),
+        "deposit_display": deposit_display,
+        "availability": availability,
     }
 
 

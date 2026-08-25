@@ -54,6 +54,13 @@ export interface AgentStateEvent {
   agent_id: string;
   state: AgentState;
   ts: number;
+  /**
+   * True for a current-state replay sent when a socket subscribes, as
+   * opposed to a live transition. Its `ts` is historical, so it must not
+   * advance the pinning clock, and it must never overwrite state this
+   * client already learned from a live event.
+   */
+  bootstrap?: boolean;
 }
 
 export interface CostUpdateEvent {

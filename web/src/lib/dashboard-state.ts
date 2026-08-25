@@ -122,19 +122,29 @@ export function withConnection(
  */
 function canAdoptNewEvent(state: DashboardState, eventTs: number): boolean {
   if (state.finalized) return true;
-  return state.lastEventTs !== null && eventTs - state.lastEventTs >= EVENT_SILENCE_TAKEOVER_S;
+  // lastEventTs stays null while only a bootstrap replay has been seen: the
+  // pinned event has shown no live activity at all, so a genuinely live move
+  // takes the stage at once instead of waiting out the silence window.
+  if (state.lastEventTs === null) return true;
+  return eventTs - state.lastEventTs >= EVENT_SILENCE_TAKEOVER_S;
 }
 
 export function applyDashboardEvent(state: DashboardState, event: WSEvent): DashboardState {
+  // A bootstrap replay describes state as of subscribe time; its historical
+  // ts must not masquerade as live activity (that reset the clock and let a
+  // concurrent move wipe the swarm immediately).
+  const isBootstrap = event.type === "agent_state" && event.bootstrap === true;
+  const liveTs = isBootstrap ? null : event.ts;
+
   let nextState: DashboardState;
   if (!state.eventId) {
-    nextState = { ...state, eventId: event.event_id, lastEventTs: event.ts };
+    nextState = { ...state, eventId: event.event_id, lastEventTs: liveTs };
   } else if (state.eventId === event.event_id) {
-    nextState = { ...state, lastEventTs: event.ts };
+    nextState = { ...state, lastEventTs: liveTs ?? state.lastEventTs };
   } else if (canAdoptNewEvent(state, event.ts)) {
     nextState = {
       ...createDashboardState(state.connection, event.event_id),
-      lastEventTs: event.ts,
+      lastEventTs: liveTs,
     };
   } else {
     // Stay pinned: a concurrent dispatch (someone else starting a move while
@@ -181,7 +191,11 @@ export function applyDashboardEvent(state: DashboardState, event: WSEvent): Dash
         tierCounts,
       };
     }
-    case "agent_state":
+    case "agent_state": {
+      const known = nextState.agentStates[event.agent_id];
+      // Subscribe races a live broadcast: without this, a replayed
+      // "dispatched" could land after a live "submitted" and stick forever.
+      if (isBootstrap && known && known.sinceTs >= event.ts) return nextState;
       return {
         ...nextState,
         agentStates: {
@@ -189,6 +203,7 @@ export function applyDashboardEvent(state: DashboardState, event: WSEvent): Dash
           [event.agent_id]: { state: event.state, sinceTs: event.ts },
         },
       };
+    }
     case "cost_update":
       return {
         ...nextState,
@@ -323,7 +338,8 @@ export function parseDashboardEvent(raw: unknown): WSEvent | null {
     case "agent_state":
       return typeof raw.agent_id === "string" &&
         typeof raw.state === "string" &&
-        AGENT_STATES.has(raw.state as AgentState)
+        AGENT_STATES.has(raw.state as AgentState) &&
+        (raw.bootstrap === undefined || typeof raw.bootstrap === "boolean")
         ? (raw as unknown as WSEvent)
         : null;
     case "cost_update":
