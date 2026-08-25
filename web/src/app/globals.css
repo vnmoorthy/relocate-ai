@@ -1242,14 +1242,14 @@ main {
   row-gap: 0.25rem;
   overflow-wrap: anywhere;
 }
+/* Drawn arrow — webfont U+2192 coverage proved unreliable, so the route
+   separator is an inline SVG sized in em to track the heading. */
 .mv-route-arrow {
-  color: var(--text-tertiary);
-  font-weight: 300;
-  /* The condensed display face has no real U+2192 glyph — fall back to the
-     system sans so the arrow is actually visible between the cities. */
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
-  font-size: 0.5em;
+  width: 0.52em;
+  height: 0.26em;
+  flex-shrink: 0;
   align-self: center;
+  color: var(--text-tertiary);
 }
 
 /* Fact chips: move date + household flags. */

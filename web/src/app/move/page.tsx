@@ -295,7 +295,14 @@ export default function MovePage() {
             <p className="kicker mb-4">Your move · {shortMoveRef(snapshot.event_id)}</p>
             <h1 className="display-sub mv-route">
               <span>{cityFromAddress(snapshot.route.origin_address) || "Origin"}</span>
-              <span className="mv-route-arrow" aria-hidden="true">→</span>
+              <svg
+                className="mv-route-arrow"
+                aria-hidden="true"
+                viewBox="0 0 32 16"
+                fill="none"
+              >
+                <path d="M0 8h29M23 1.5l7 6.5-7 6.5" stroke="currentColor" strokeWidth="1.6" />
+              </svg>
               <span className="sr-only">to</span>
               <span>{cityFromAddress(snapshot.route.destination_address) || "Destination"}</span>
             </h1>
