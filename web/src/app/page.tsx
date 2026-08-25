@@ -25,6 +25,11 @@ const REPO_URL = "https://github.com/vnmoorthy/relocate-ai";
 
 // The live concierge demo line (AgentPhone). Served by the operator's
 // supervised deployment — see demo-line.sh.
+// The concierge number is provisioned per deployment. It was released by the
+// carrier, so the site must not advertise a line that cannot be reached:
+// flip PHONE_LIVE back to true (with the new number) the moment one is
+// attached to the buyer agent, and every CTA below returns on its own.
+const PHONE_LIVE = false;
 const PHONE_E164 = "+16184149537";
 const PHONE_DISPLAY = "+1 (618) 414-9537";
 
@@ -144,18 +149,31 @@ export default function Page() {
             One call.<br />Relocate.
           </h1>
           <p className="mt-6 max-w-[560px] text-[15px] sm:text-[16px] leading-[1.65] text-[var(--text-secondary)]">
-            One phone call briefs a swarm that coordinates your entire move —
-            requesting mover quotes, drafting utility shutoffs and USPS
-            forwarding, preparing USCIS and DMV forms for your signature.
+            One brief — by phone or on the web — sets a swarm coordinating your
+            entire move: requesting mover quotes, drafting utility shutoffs and
+            USPS forwarding, preparing USCIS and DMV forms for your signature.
           </p>
           <div className="mt-9 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-            <a href={`tel:${PHONE_E164}`} className="btn-solid">Call {PHONE_DISPLAY}</a>
-            <a href={liveApi ? "#start-move" : "#dashboard"} className="btn-outline">
-              {liveApi ? "Start your move" : "Watch the swarm"}
-            </a>
+            {PHONE_LIVE ? (
+              <>
+                <a href={`tel:${PHONE_E164}`} className="btn-solid">Call {PHONE_DISPLAY}</a>
+                <a href={liveApi ? "#start-move" : "#dashboard"} className="btn-outline">
+                  {liveApi ? "Start your move" : "Watch the swarm"}
+                </a>
+              </>
+            ) : (
+              <>
+                <a href={liveApi ? "#start-move" : "#dashboard"} className="btn-solid">
+                  {liveApi ? "Start your move" : "Watch the swarm"}
+                </a>
+                <a href="#dashboard" className="btn-outline">See the swarm</a>
+              </>
+            )}
           </div>
           <p className="mt-4 text-[12px] tracking-[0.08em] uppercase text-[var(--text-tertiary)]">
-            Live concierge demo line · US · talk to the swarm yourself
+            {PHONE_LIVE
+              ? "Live concierge demo line · US · talk to the swarm yourself"
+              : "Voice line between numbers · start your move on the web"}
           </p>
           {live.settled && !liveApi && !live.localFlow && (
             <p className="mt-2 text-[12px] leading-[1.6] text-[var(--text-quaternary)]">
@@ -397,9 +415,11 @@ export default function Page() {
                 the doors open.
               </p>
               <div className="mt-8 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-                <a href={`tel:${PHONE_E164}`} className="btn-solid">
-                  Call {PHONE_DISPLAY}
-                </a>
+                {PHONE_LIVE && (
+                  <a href={`tel:${PHONE_E164}`} className="btn-solid">
+                    Call {PHONE_DISPLAY}
+                  </a>
+                )}
                 <a
                   href="mailto:vnarasingamoorthy@gmail.com?subject=Early%20access%20request%20%E2%80%94%20Relocate&body=Hi%20%E2%80%94%20I%27d%20like%20early%20access%20to%20Relocate.%0A%0AMoving%20from%3A%20%0AMoving%20to%3A%20%0AApprox.%20date%3A%20%0A"
                   className="btn-outline"

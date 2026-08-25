@@ -18,7 +18,7 @@
 
 ---
 
-Call **+1 (618) 414-9537** (when the demo line is up) and a voice concierge
+Call the concierge number for your deployment and a voice concierge
 collects your move in about ninety seconds — origin, destination, date,
 household. Or skip the phone: the website's **Start your move** form briefs
 the same dispatcher. Either way the orchestrator fans out **16 specialist
@@ -27,6 +27,8 @@ quote requests, a school pre-enrollment inquiry, a vet records request, a
 bank call script, a personalized flight search), a 45-second poller ingests
 the replies and threads them back onto your move, and every event streams to
 a live dashboard plus a shareable per-move tracker page.
+
+> **Voice line status:** the previously published demo number was released by the carrier, so no number is attached to the buyer agent right now and the site does not advertise one. The voice pipeline itself is unchanged — attach a number to the `move-buyer` agent in AgentPhone, set `PHONE_LIVE = true` in `web/src/app/page.tsx`, and `demo-line.sh` re-points the webhook on its next pass. Web intake is live and needs no number.
 
 Whatever an agent cannot **verifiably** finish, it hands back to you — with
 the exact artifact you need: a call script filled in with your details, a
