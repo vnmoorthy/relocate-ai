@@ -33,6 +33,18 @@ def _isolated(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     replies._high_water = 0.0
 
 
+def _solicited(event, agent_id: str = "mover_quote"):
+    """Seed a specialist that actually sent a request for this move."""
+    from app.state import SpecialistCallContext
+
+    ctx = SpecialistCallContext(
+        call_id="c", agent_id=agent_id, event_id=event.id, state="submitted",
+    )
+    ctx.bid = {"count": 3}
+    event.specialist_calls[agent_id] = ctx
+    return ctx
+
+
 def _listing(monkeypatch: pytest.MonkeyPatch, messages: list[dict]) -> None:
     monkeypatch.setattr(replies, "_list_inbox_sync", lambda _after: messages)
     # Full-body fetch degrades to the listing preview in tests.
@@ -66,6 +78,7 @@ def test_parse_quote_extraction() -> None:
 
 def test_correlated_reply_attaches_and_broadcasts(monkeypatch: pytest.MonkeyPatch) -> None:
     event = MarketplaceEvent(id="mkt_ab12cd34ef", homeowner_call_id="call", spec={})
+    _solicited(event)
     state.events[event.id] = event
     _listing(monkeypatch, [{
         "message_id": "msg_reply_1",
@@ -250,6 +263,7 @@ def test_self_delivered_outbound_copy_is_not_a_reply(monkeypatch: pytest.MonkeyP
     delivered copy has a fresh message id, so only the Re:/Fwd: discriminator
     stands between an app send and a phantom 'reply'."""
     event = MarketplaceEvent(id="mkt_ab12cd34ef", homeowner_call_id="call", spec={})
+    _solicited(event)
     state.events[event.id] = event
     _listing(monkeypatch, [
         {   # our own outbound, delivered back to us — must be ignored
@@ -273,3 +287,52 @@ def test_self_delivered_outbound_copy_is_not_a_reply(monkeypatch: pytest.MonkeyP
     assert asyncio.run(replies.ingest_once()) == 1
     assert len(event.replies) == 1
     assert event.replies[0]["agent_id"] == "mover_quote"
+
+
+def test_spoofed_agent_id_is_not_credited(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The :agent_id suffix rides in a subject anyone holding the ref can write.
+
+    A counterparty that received the mover email can name bank_notify in its
+    reply tag; the reply still attaches (it is a real message about this move)
+    but must never be credited to a specialist that contacted nobody.
+    """
+    event = MarketplaceEvent(id="mkt_ab12cd34ef", homeowner_call_id="call", spec={})
+    _solicited(event, "mover_quote")            # only this one actually sent
+    state.events[event.id] = event
+    _listing(monkeypatch, [{
+        "message_id": "msg_spoof",
+        "from": "quotes@uhaul.com",
+        "subject": "Re: [ref:mkt_ab12cd34ef:bank_notify]",
+        "preview": "OTD $2,850",
+        "timestamp": 1_700_000_000.0,
+    }])
+
+    assert asyncio.run(replies.ingest_once()) == 1
+    assert event.replies[0]["agent_id"] is None
+    assert "replies_received" not in (event.specialist_calls["mover_quote"].bid or {})
+
+
+def test_owner_reply_never_becomes_a_competing_quote(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The mover replying to a forwarded quote quotes the original body. That
+    dollar figure is OUR forward echoed back, not a second bid — mining it
+    would fabricate a competing quote out of the customer's own email."""
+    event = MarketplaceEvent(
+        id="mkt_ab12cd34ef", homeowner_call_id="call",
+        spec={"user_email": "mover@test.invalid"},
+    )
+    _solicited(event)
+    state.events[event.id] = event
+    _listing(monkeypatch, [{
+        "message_id": "msg_owner",
+        "from": "Mover <MOVER@test.invalid>",
+        "subject": "Re: Reply from uhaul.com [ref:mkt_ab12cd34ef:mover_quote]",
+        "preview": "yes let's book it\n> Out-the-door total: $2,850",
+        "timestamp": 1_700_000_000.0,
+    }])
+
+    assert asyncio.run(replies.ingest_once()) == 1
+    reply = event.replies[0]
+    assert reply["from_owner"] is True
+    assert reply["quote"] is None

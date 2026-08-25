@@ -61,6 +61,17 @@ class Settings(BaseSettings):
     # default test suite runs purely in memory.
     database_path: str = "data/relocate.db"
 
+    # Client-IP source for rate limits and intake dedupe. True is correct
+    # behind the cloudflared tunnel (every request would otherwise look like
+    # 127.0.0.1 and one visitor would throttle everyone). Set false if the
+    # app is ever exposed directly, where the header is caller-controlled.
+    trust_proxy_headers: bool = True
+
+    # HMAC key for public event aliases (public_feed.public_ref). Blank falls
+    # back to a per-process key: aliases rotate on restart, which tracker
+    # pages self-heal from by resyncing their snapshot on reconnect.
+    public_ref_secret: str = ""
+
     # Public website root — used in tracker-link emails.
     public_site_url: str = "https://vnmoorthy.github.io/relocate-ai"
 

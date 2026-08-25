@@ -433,3 +433,21 @@ test("fewer than two quotes yields nothing to compare", () => {
   assert.equal(one.length, 1);
   assert.equal(sortQuotedReplies([reply({})]).length, 0);
 });
+
+test("parseMoveSnapshot: public_ref parsed, malformed degrades to empty", () => {
+  const withRef = parseMoveSnapshot({
+    event_id: "mkt_x",
+    public_ref: "pub_abc123",
+    specialists: [],
+  });
+  assert.ok(withRef);
+  assert.equal(withRef.public_ref, "pub_abc123");
+
+  const withoutRef = parseMoveSnapshot({ event_id: "mkt_x", specialists: [] });
+  assert.ok(withoutRef);
+  assert.equal(withoutRef.public_ref, "");
+
+  const badRef = parseMoveSnapshot({ event_id: "mkt_x", public_ref: 42, specialists: [] });
+  assert.ok(badRef);
+  assert.equal(badRef.public_ref, "");
+});

@@ -28,10 +28,12 @@ def _clean() -> Iterator[None]:
 
 
 def test_redaction_blanks_text_and_identifiers_but_keeps_state() -> None:
+    from app.public_feed import public_ref
+
     assert redact_public_event({
         "type": "agent_state", "event_id": "e", "agent_id": "vet_transfer",
         "state": "submitted", "ts": 1.0, "secret_extra": "x",
-    }) == {"type": "agent_state", "event_id": "e", "agent_id": "vet_transfer",
+    }) == {"type": "agent_state", "event_id": public_ref("e"), "agent_id": "vet_transfer",
            "state": "submitted", "ts": 1.0}
     turn = redact_public_event({
         "type": "transcript_turn", "event_id": "e", "agent_id": "buyer", "turn": 2,
@@ -226,3 +228,82 @@ def test_snapshot_replies_expose_domain_and_time_only(
     }]
     dumped = str(body)
     assert "quotes@" not in dumped and "2,850" not in dumped and "msg_1" not in dumped
+
+
+def test_public_feed_never_emits_the_real_event_id() -> None:
+    """The real id is a capability: it unlocks /api/public/move/{id}, which
+    carries the mover's street addresses. Every public projection — including
+    the bootstrap replay a fresh anonymous socket receives — must carry the
+    opaque alias instead."""
+    from app.public_feed import public_ref
+
+    real = "mkt_capability1"
+    projections = [
+        {"type": "agent_state", "event_id": real, "agent_id": "vet_transfer",
+         "state": "submitted", "ts": 1.0},
+        {"type": "transcript_turn", "event_id": real, "agent_id": "buyer", "turn": 1,
+         "role": "user", "text": "private", "ts": 1.0},
+        {"type": "fields_collected", "event_id": real, "turn": 1,
+         "fields": ["user_email"], "values": {"user_email": "x@y.com"}, "ts": 1.0},
+        {"type": "reply_received", "event_id": real, "from_domain": "uhaul.com",
+         "received_at": 1.0, "ts": 1.0},
+        {"type": "sponsor_event", "event_id": real, "sponsor": "agentmail",
+         "kind": "receipt", "status": "reported", "agent_id": "a", "detail": "msg", "ts": 1.0},
+        {"type": "event_finalized", "event_id": real, "outcome": "submitted",
+         "summary": {"submitted_count": 1}, "ts": 1.0},
+    ]
+    for payload in projections:
+        out = redact_public_event(payload)
+        assert out is not None, payload["type"]
+        assert real not in str(out), payload["type"]
+        assert out["event_id"] == public_ref(real), payload["type"]
+
+
+def test_snapshot_publishes_the_alias_so_a_tracker_can_correlate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.config import settings
+    from app.public_feed import public_ref
+    from app.state import MarketplaceEvent
+
+    monkeypatch.setattr(settings, "enable_public_intake", True)
+    client = TestClient(main.app)
+    event = MarketplaceEvent(id="mkt_alias1", homeowner_call_id="call", spec={})
+    state.events[event.id] = event
+
+    body = client.get("/api/public/move/mkt_alias1").json()
+
+    assert body["public_ref"] == public_ref("mkt_alias1")
+    assert body["public_ref"].startswith("pub_")
+
+
+def test_intake_dedupe_does_not_hand_a_tracker_to_another_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The dedupe key is scoped to the client.
+
+    A content-only key would return the victim's event_id — the tracker
+    capability — to anyone able to guess route+date+email.
+    """
+    client = TestClient(main.app)
+    monkeypatch.setattr(main.settings, "enable_public_intake", True)
+    monkeypatch.setattr(main, "fan_out", AsyncMock())
+    monkeypatch.setattr(main, "_email_tracker_link", AsyncMock())
+    monkeypatch.setattr(main.ws_broker, "broadcast", AsyncMock())
+    main._recent_intakes.clear()
+    main._intake_hits.clear()
+    main._intake_global.clear()
+    body = {
+        "origin_address": "1 A St, San Francisco, CA 94110",
+        "destination_address": "2 B St, Austin, TX 78704",
+        "move_date": "2030-09-30", "user_email": "victim@test.invalid", "website": "",
+    }
+
+    victim = client.post("/api/public/start-move", json=body).json()
+    # Same content, different client address.
+    attacker = client.post(
+        "/api/public/start-move", json=body, headers={"X-Forwarded-For": "203.0.113.9"},
+    ).json()
+
+    assert attacker["event_id"] != victim["event_id"]
+    assert attacker.get("deduplicated") is not True

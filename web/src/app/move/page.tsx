@@ -129,6 +129,10 @@ export default function MovePage() {
       reconnectAttempt += 1;
     };
 
+    // Set from the snapshot before connect(); the socket only opens after a
+    // successful snapshot load, so it is always populated by then.
+    let publicRef = "";
+
     const connect = (api: string) => {
       if (cancelled || socket) return;
       let ws: WebSocket;
@@ -152,7 +156,8 @@ export default function MovePage() {
       ws.onmessage = (message) => {
         if (cancelled || socket !== ws) return;
         const event = parseDashboardMessage(message.data);
-        if (!event || event.event_id !== moveId) return;
+        // The public feed publishes the alias, never the real move id.
+        if (!event || !publicRef || event.event_id !== publicRef) return;
         if (event.type === "agent_state") {
           patch((v) => ({
             ...v,
@@ -198,6 +203,7 @@ export default function MovePage() {
         const snapshot = parseMoveSnapshot(await res.json());
         if (cancelled) return;
         if (!snapshot) throw new Error("snapshot payload malformed");
+        publicRef = snapshot.public_ref;
         // A fresh snapshot is authoritative; live events re-apply on top.
         patch((v) => ({ ...v, phase: { kind: "ready", api, snapshot }, overlay: {} }));
         connect(api);

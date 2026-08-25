@@ -44,6 +44,8 @@ _DEPOSIT_RE = re.compile(
     re.IGNORECASE,
 )
 _AVAILABILITY_RE = re.compile(r"\b(?:confirmed?|available|availability)\b", re.IGNORECASE)
+# A specialist may be credited with a reply only if it actually sent a request.
+_SOLICITING_STATES = frozenset({"submitted", "succeeded", "in-progress", "calling"})
 POLL_INTERVAL_S = 45
 # First poll looks back this far; afterwards a high-water mark (with overlap)
 # keeps listings small. The ledger makes overlap harmless.
@@ -198,7 +200,17 @@ async def ingest_once() -> int:
             persistence.record_mail(mid, "ignored", None)
             continue
         reply = summarize_reply(msg)
-        reply["agent_id"] = ref[1] if ref else None
+        # The :agent_id suffix rides in a subject line anyone holding the ref
+        # can write. Attribute the reply only to a specialist that actually
+        # sent a request for this move; otherwise leave it unattributed
+        # rather than inflating an agent that contacted nobody.
+        claimed_agent = ref[1] if ref else None
+        claimed_ctx = event.specialist_calls.get(claimed_agent or "")
+        reply["agent_id"] = (
+            claimed_agent
+            if claimed_ctx is not None and claimed_ctx.state in _SOLICITING_STATES
+            else None
+        )
         # Fetch the full body for quote extraction — the listing only carries
         # a preview. Best-effort: a fetch failure degrades to preview parsing.
         full_text = str(msg.get("preview") or "")
@@ -208,16 +220,30 @@ async def ingest_once() -> int:
             ) or full_text
         except Exception as exc:  # noqa: BLE001
             log.warning("full-body fetch failed for %s: %s", mid, exc)
-        reply["quote"] = parse_quote(full_text)
+        # A reply from the move owner is their own words (usually quoting our
+        # forward). Record it, but never mine it for a counterparty quote —
+        # that would fabricate a competing bid out of the customer's own email.
+        owner_email = str(event.spec.get("user_email") or "").strip().lower()
+        from_owner = bool(owner_email) and reply["from"].lower() == owner_email
+        reply["from_owner"] = from_owner
+        reply["quote"] = None if from_owner else parse_quote(full_text)
         event.replies.append(reply)
         # Thread the reply onto the specialist that solicited it, so the
         # dashboard artifact shows the inbound half of the exchange.
         agent_ctx = event.specialist_calls.get(reply.get("agent_id") or "")
+        # (only a verified attribution reaches here — see above)
         if agent_ctx is not None and isinstance(agent_ctx.bid, dict):
             agent_ctx.bid["replies_received"] = int(agent_ctx.bid.get("replies_received") or 0) + 1
         state.save_event(event)
         persistence.record_mail(mid, "inbound", event.id)
-        await _forward_reply_to_user(event, reply, full_text)
+        try:
+            await asyncio.wait_for(
+                _forward_reply_to_user(event, reply, full_text), timeout=30,
+            )
+        except asyncio.TimeoutError:
+            # Forwarding is best-effort; a stalled provider must not wedge
+            # ingestion for every other move.
+            log.warning("reply forward timed out (event=%s)", event.id)
         attached += 1
         log.info("reply attached: event=%s from=%s", event.id, reply["from_domain"])
         await ws_broker.broadcast({

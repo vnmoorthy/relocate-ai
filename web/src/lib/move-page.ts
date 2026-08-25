@@ -106,6 +106,12 @@ export interface MoveReply {
 
 export interface MoveSnapshot {
   event_id: string;
+  /**
+   * Opaque alias this move is published under on the public live feed. The
+   * real event id is a capability (it unlocks this snapshot), so the feed
+   * never carries it — live events are matched on this instead.
+   */
+  public_ref: string;
   route: { origin_address: string; destination_address: string; move_date: string };
   flags: { has_pets: boolean; has_children: boolean; has_car: boolean; has_visa: boolean };
   specialists: MoveSpecialistSnapshot[];
@@ -187,6 +193,7 @@ export function parseMoveSnapshot(raw: unknown): MoveSnapshot | null {
 
   return {
     event_id: raw.event_id,
+    public_ref: typeof raw.public_ref === "string" ? raw.public_ref : "",
     route: {
       origin_address: asString(route.origin_address),
       destination_address: asString(route.destination_address),

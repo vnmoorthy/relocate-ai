@@ -27,7 +27,7 @@ from .marketplace import fan_out, finalize_event, resume_ready_specialists
 from .pavo_client import pavo_chat
 from .persistence import persistence
 from .personas import by_id, buyer_persona
-from .public_feed import redact_public_event
+from .public_feed import public_ref, redact_public_event
 from .security import (
     complete_agentphone_webhook,
     get_raw_body,
@@ -778,9 +778,16 @@ _intake_global: list[float] = []
 
 
 def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()[:64]
+    """Caller address for rate limits and intake dedupe.
+
+    ``X-Forwarded-For`` is caller-controlled unless a trusted proxy sets it,
+    so honoring it is a deployment decision (TRUST_PROXY_HEADERS), not a
+    default assumption.
+    """
+    if settings.trust_proxy_headers:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            return forwarded.split(",")[0].strip()[:64]
     return (request.client.host if request.client else "unknown")[:64]
 
 
@@ -843,8 +850,15 @@ async def api_public_start_move(request: Request, payload: dict[str, Any]) -> di
     # Same route+date+email from anyone within the window = the same move; a
     # client retry after a network error returns the original tracker instead
     # of dispatching (and emailing) everything twice.
+    # Keyed on the CLIENT too: a content-only key would hand this move's
+    # tracker id (a capability) to anyone else who could guess the same four
+    # values. A genuine client retry comes from the same address and still
+    # dedupes.
     dedupe_key = "|".join(
-        spec[k].lower() for k in ("origin_address", "destination_address", "move_date", "user_email")
+        [ip] + [
+            spec[k].lower()
+            for k in ("origin_address", "destination_address", "move_date", "user_email")
+        ]
     )
     now = time.time()
     for cached_key, (cached_id, cached_at) in list(_recent_intakes.items()):
@@ -956,6 +970,10 @@ async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str,
     ]
     return {
         "event_id": event.id,
+        # The live public feed emits this alias instead of the real id (which
+        # is a capability — see public_feed.public_ref). A tracker page that
+        # already holds the real id learns its alias here, and nowhere else.
+        "public_ref": public_ref(event.id),
         "route": {
             "origin_address": str(event.spec.get("origin_address", "")),
             "destination_address": str(event.spec.get("destination_address", "")),

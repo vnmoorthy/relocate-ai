@@ -69,6 +69,29 @@ make the system production-secure.
 
 ## The public unauthenticated surface
 
+**Event ids are never published.** The real `mkt_…` id is a capability: it
+unlocks `GET /api/public/move/{id}`, which carries the mover's street
+addresses. The public live feed therefore emits an opaque HMAC alias
+(`pub_…`, `public_feed.public_ref`) in place of the id on every projection,
+including the bootstrap replay a fresh anonymous socket receives. A tracker
+page learns its own alias from the snapshot it already had the id to fetch —
+the pairing is available nowhere else. `PUBLIC_REF_SECRET` keys the alias;
+blank falls back to a per-process key (aliases rotate on restart, and tracker
+pages resync from the snapshot on reconnect).
+
+**Client address.** Rate limits and web-intake deduplication key on the
+caller address. `X-Forwarded-For` is honored only when `TRUST_PROXY_HEADERS`
+is set (default true, correct behind the cloudflared tunnel where every
+request would otherwise appear to come from `127.0.0.1`). Exposed directly,
+that header is caller-controlled and the setting should be false.
+
+**Reply attribution.** The `[ref:<event_id>:<agent_id>]` subject tag is
+written by whoever replies. The agent half is credited only to a specialist
+that actually sent a request for that move; otherwise the reply attaches
+unattributed. A reply from the move owner's own address is never mined for a
+quote, so a customer forwarding our own message back cannot manufacture a
+competing bid on their tracker.
+
 Three endpoints are deliberately reachable without credentials so the public
 website can be a real product surface. Their design assumption is that every
 caller is hostile; the useful data never leaves the server.
