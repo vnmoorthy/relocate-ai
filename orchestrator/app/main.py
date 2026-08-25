@@ -275,6 +275,10 @@ async def _handle_buyer_turn(call_id: str, transcript: str, history: list[dict])
     # full schema. We merge into ctx.collected, broadcast which fields
     # arrived this turn, and dispatch the moment all CORE fields are in.
     new_fields = _extract_and_merge_fields(reply.content, ctx)
+    # Deterministic backstop: the 2B model drops fields stochastically, so
+    # high-structure CORE values are also recovered verbatim from the
+    # caller's own utterance — gaps only, the model's extraction wins.
+    new_fields.update(_merge_backstop_fields(transcript, ctx))
     voice_reply = _strip_machine_json(reply.content)
     await ws_broker.broadcast({
         "type": "transcript_turn", "event_id": ctx.event_id, "agent_id": "buyer",
@@ -419,6 +423,34 @@ async def _send_buyer_followup(ctx: BuyerCallContext) -> bool:
     finally:
         ctx.followup_in_progress = False
         state.save_context(ctx)
+
+
+def _merge_backstop_fields(transcript: str, ctx) -> dict:
+    """Validate + merge transcript-backstop CORE fields (see transcript_extract)."""
+    from .buyer_schema import by_name
+    from .transcript_extract import backstop_fields
+
+    merged: dict = {}
+    for k, v in backstop_fields(transcript, ctx.collected).items():
+        field = by_name(k)
+        if field is None or not field.validate(v):
+            continue
+        ctx.collected[k] = v
+        merged[k] = v
+        ctx.collection_history.append({
+            "turn": ctx.turn_count,
+            "field": k,
+            "value": v,
+            "previous": None,
+            "source": "transcript_backstop",
+            "ts": time.time(),
+        })
+    if merged:
+        log.info(
+            "transcript backstop recovered fields the model missed: %s",
+            sorted(merged),
+        )
+    return merged
 
 
 def _extract_and_merge_fields(text: str, ctx) -> dict:

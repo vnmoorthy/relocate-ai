@@ -652,3 +652,34 @@ def test_lone_core_example_match_is_dropped() -> None:
     )
     assert merged == {"move_date": "2026-10-20"}
     assert ctx.collected["move_date"] == "2026-10-20"
+
+
+def test_transcript_backstop_fills_only_model_gaps() -> None:
+    """The 2B model drops fields stochastically (observed live: one run lost
+    the addresses, the next lost the date). The backstop recovers verbatim
+    caller values for still-missing CORE fields and never overrides the
+    model's own extraction."""
+    from app.main import _merge_backstop_fields
+    from app.state import BuyerCallContext
+
+    ctx = BuyerCallContext(call_id="c-backstop", event_id="mkt_backstop")
+    merged = _merge_backstop_fields(
+        "I'm at 950 Howard Street, San Francisco, CA 94103, and the new "
+        "place is 4700 Duval Street, Austin, TX 78751.", ctx,
+    )
+    assert merged == {
+        "origin_address": "950 Howard Street, San Francisco, CA 94103",
+        "destination_address": "4700 Duval Street, Austin, TX 78751",
+    }
+    assert ctx.collection_history[-1]["source"] == "transcript_backstop"
+
+    # Model already collected the date — the backstop must not touch it.
+    ctx.collected["move_date"] = "2026-12-01"
+    merged = _merge_backstop_fields("Moving day is October 20th, 2026.", ctx)
+    assert merged == {}
+    assert ctx.collected["move_date"] == "2026-12-01"
+
+    merged = _merge_backstop_fields(
+        "My email is vnarasingamoorthy@gmail.com, thanks.", ctx,
+    )
+    assert merged == {"user_email": "vnarasingamoorthy@gmail.com"}
