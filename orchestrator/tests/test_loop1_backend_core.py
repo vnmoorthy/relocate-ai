@@ -627,3 +627,28 @@ def test_dev_trigger_requires_nonproduction_enablement_and_bearer(
 
     monkeypatch.setattr(main.settings, "enable_dev_trigger", True)
     main._require_dev_trigger_access(request)
+
+
+def test_lone_core_example_match_is_dropped() -> None:
+    """A single CORE value equal to the prompt example is regurgitation.
+
+    Observed live: gemma emitted {"move_date": "2026-05-31"} (the schema
+    example) before the caller ever gave a date, and the wrong date shipped
+    in real mover-quote emails. One core example match must now drop; the
+    caller's genuine date still merges.
+    """
+    from app.main import _extract_and_merge_fields
+    from app.state import BuyerCallContext
+
+    ctx = BuyerCallContext(call_id="c-regurg-core", event_id="mkt_regurg_core")
+    merged = _extract_and_merge_fields(
+        'Okay, May 31st it is. {"move_date": "2026-05-31"}', ctx,
+    )
+    assert merged == {}
+    assert "move_date" not in ctx.collected
+
+    merged = _extract_and_merge_fields(
+        'October 20th, got it. {"move_date": "2026-10-20"}', ctx,
+    )
+    assert merged == {"move_date": "2026-10-20"}
+    assert ctx.collected["move_date"] == "2026-10-20"

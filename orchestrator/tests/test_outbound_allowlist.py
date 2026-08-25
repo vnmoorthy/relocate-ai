@@ -145,3 +145,22 @@ def test_demo_override_must_itself_be_allowlisted(
             event_id="event-demo2", agent_id="mover_quote",
             to=["customer.service@uhaul.com"], subject="s", body="b",
         ))
+
+
+def test_move_package_respects_demo_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_safe_call(**kwargs):  # noqa: ANN003
+        captured.update(kwargs)
+        return {"message_id": "msg_pkg"}
+
+    monkeypatch.setattr(settings, "agentmail_api_key", "test-key-not-real")
+    monkeypatch.setattr(settings, "agentmail_allowed_recipients", "owner@example.com")
+    monkeypatch.setattr(settings, "agentmail_demo_recipient_override", "owner@example.com")
+    monkeypatch.setattr(agentmail, "safe_call", fake_safe_call)
+
+    result = asyncio.run(agentmail.send_move_package(
+        event_id="event-pkg", to_email="customer@example.net",
+        subject="Digest", body_markdown="Body",
+    ))
+    assert result == {"message_id": "msg_pkg"}

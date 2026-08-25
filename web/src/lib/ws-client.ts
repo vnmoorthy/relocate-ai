@@ -8,6 +8,7 @@ import {
   parseDashboardMessage,
   reconnectDelay,
   withConnection,
+  withJitter,
   type DashboardState,
 } from "./dashboard-state";
 import { buildDemoTimeline } from "./demo-replay";
@@ -102,7 +103,7 @@ export function useDashboardWS(wsUrl: string): DashboardState {
 
     const scheduleReconnect = (connect: () => void) => {
       if (cancelled || reconnectTimer !== undefined) return;
-      const delay = reconnectDelay(reconnectAttempt);
+      const delay = withJitter(reconnectDelay(reconnectAttempt));
       reconnectAttempt += 1;
       reconnectTimer = window.setTimeout(() => {
         reconnectTimer = undefined;

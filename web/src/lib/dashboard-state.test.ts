@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   applyDashboardEvent,
+  withJitter,
   createDashboardState,
   dashboardEventKey,
   parseDashboardEvent,
@@ -82,7 +83,7 @@ test("runtime parser accepts the protocol and rejects malformed payloads", () =>
   );
 });
 
-test("a new event id resets prior customer session state", () => {
+test("a concurrent event id cannot steal the stage from an active move", () => {
   let state = createDashboardState("live");
   state = applyDashboardEvent(state, routingEvent("evt-1", 1));
   state = applyDashboardEvent(state, {
@@ -93,12 +94,45 @@ test("a new event id resets prior customer session state", () => {
     values: { user_email: "private@example.com" },
     ts: 2,
   });
+  // Someone else dispatches evt-2 seconds later — the pinned move stays up.
   state = applyDashboardEvent(state, routingEvent("evt-2", 1, 3));
 
-  assert.equal(state.eventId, "evt-2");
+  assert.equal(state.eventId, "evt-1");
   assert.equal(state.routingDecisionCount, 1);
+  assert.deepEqual(state.collectedFields, { user_email: "private@example.com" });
+});
+
+test("a finalized event releases the stage to the next event id", () => {
+  let state = createDashboardState("live");
+  state = applyDashboardEvent(state, routingEvent("evt-1", 1));
+  state = applyDashboardEvent(state, {
+    type: "event_finalized",
+    event_id: "evt-1",
+    outcome: "submitted",
+    summary: { submitted_count: 4, failed_count: 0 },
+    ts: 5,
+  } as unknown as Parameters<typeof applyDashboardEvent>[1]);
+  state = applyDashboardEvent(state, routingEvent("evt-2", 1, 6));
+
+  assert.equal(state.eventId, "evt-2");
   assert.deepEqual(state.collectedFields, {});
-  assert.equal(state.connection, "live");
+});
+
+test("a silent pinned event yields the stage after the takeover window", () => {
+  let state = createDashboardState("live");
+  state = applyDashboardEvent(state, routingEvent("evt-1", 1, 10));
+  // 119s of silence: still pinned.
+  state = applyDashboardEvent(state, routingEvent("evt-2", 1, 129));
+  assert.equal(state.eventId, "evt-1");
+  // 120s+: the new move takes over.
+  state = applyDashboardEvent(state, routingEvent("evt-2", 1, 130));
+  assert.equal(state.eventId, "evt-2");
+});
+
+test("withJitter stays within ±30% and is deterministic under injected random", () => {
+  assert.equal(withJitter(1000, () => 0), 700);
+  assert.equal(withJitter(1000, () => 1), 1300);
+  assert.equal(withJitter(1000, () => 0.5), 1000);
 });
 
 test("cumulative counts survive recent-feed limits and completion is represented", () => {

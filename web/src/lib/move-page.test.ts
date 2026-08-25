@@ -5,12 +5,17 @@ import {
   cityFromAddress,
   formatMoveDate,
   mergeMoveTasks,
+  moveAgentName,
   moveIdFromHash,
   moveSnapshotUrl,
   moveTaskCounts,
   parseMoveSnapshot,
+  quoteTotalValue,
+  replyLine,
   shortMoveRef,
+  sortQuotedReplies,
   taskLine,
+  type MoveReply,
   type MoveSpecialistSnapshot,
 } from "./move-page.ts";
 
@@ -21,8 +26,13 @@ function specialist(overrides: Partial<MoveSpecialistSnapshot>): MoveSpecialistS
     terminal_outcome: null,
     blocker_kind: null,
     closed_at: null,
+    playbookTitle: null,
     ...overrides,
   };
+}
+
+function reply(overrides: Partial<MoveReply>): MoveReply {
+  return { fromDomain: "uhaul.com", receivedAt: null, agentId: null, quote: null, ...overrides };
 }
 
 test("move id comes from the hash and rejects anything unsafe", () => {
@@ -153,6 +163,27 @@ test("task copy maps blockers first, then states, honestly", () => {
   assert.equal(taskLine("dispatched", "unknown_blocker"), "Queued");
 });
 
+test("a prepared playbook wins the user-action line; blocker copy is the fallback", () => {
+  assert.equal(
+    taskLine("needs-user-action", "secure_user_workflow_required", "PG&E shutoff call script"),
+    "Prepared: PG&E shutoff call script — sent to your inbox.",
+  );
+  assert.equal(
+    taskLine("needs-user-action", null, "AR-11 address letter"),
+    "Prepared: AR-11 address letter — sent to your inbox.",
+  );
+  assert.equal(
+    taskLine("needs-user-action", "secure_user_workflow_required", null),
+    "Needs your signature or consent — we hand this to you with a playbook.",
+  );
+  // A playbook only explains a user-action row — other states keep their copy.
+  assert.equal(
+    taskLine("submitted", null, "PG&E shutoff call script"),
+    "Request submitted — provider acceptance, not completion.",
+  );
+  assert.equal(taskLine("dispatched", null, "PG&E shutoff call script"), "Queued");
+});
+
 test("merge overlays live states over the snapshot and keeps roster order", () => {
   const tasks = mergeMoveTasks(
     [
@@ -201,6 +232,31 @@ test("a blocker survives only while its state holds", () => {
   assert.equal(changed[0].line, "Request submitted — provider acceptance, not completion.");
 });
 
+test("merge threads the playbook through and shows the prepared line", () => {
+  const base = [
+    specialist({
+      agent_id: "pge_shutoff",
+      state: "needs-user-action",
+      blocker_kind: "secure_user_workflow_required",
+      playbookTitle: "PG&E shutoff call script",
+    }),
+    specialist({ agent_id: "usps_coa", state: "needs-user-action" }),
+  ];
+  const tasks = mergeMoveTasks(base, {});
+  assert.equal(tasks[0].playbookTitle, "PG&E shutoff call script");
+  assert.equal(tasks[0].line, "Prepared: PG&E shutoff call script — sent to your inbox.");
+  // No playbook → the generic user-action copy still applies.
+  assert.equal(tasks[1].playbookTitle, null);
+  assert.equal(tasks[1].line, "Waiting on you — check your summary email for the handoff.");
+
+  // Like the blocker, the playbook survives only while its state holds.
+  const held = mergeMoveTasks(base, { pge_shutoff: { state: "needs-user-action" } });
+  assert.equal(held[0].playbookTitle, "PG&E shutoff call script");
+  const moved = mergeMoveTasks(base, { pge_shutoff: { state: "submitted" } });
+  assert.equal(moved[0].playbookTitle, null);
+  assert.equal(moved[0].line, "Request submitted — provider acceptance, not completion.");
+});
+
 test("counts keep submitted, done, action, failed, and working distinct", () => {
   const counts = moveTaskCounts([
     { state: "submitted" },
@@ -238,8 +294,8 @@ test("parseMoveSnapshot: replies keep domain+time, drop malformed rows", () => {
   });
   assert.ok(snap);
   assert.deepEqual(snap.replies, [
-    { fromDomain: "uhaul.com", receivedAt: 1700000000 },
-    { fromDomain: "pods.com", receivedAt: null },
+    { fromDomain: "uhaul.com", receivedAt: 1700000000, agentId: null, quote: null },
+    { fromDomain: "pods.com", receivedAt: null, agentId: null, quote: null },
   ]);
 });
 
@@ -247,4 +303,133 @@ test("parseMoveSnapshot: missing replies array degrades to empty", () => {
   const snap = parseMoveSnapshot({ event_id: "mkt_x", specialists: [] });
   assert.ok(snap);
   assert.deepEqual(snap.replies, []);
+});
+
+test("parseMoveSnapshot: playbook_title survives only as a non-empty string", () => {
+  const snap = parseMoveSnapshot({
+    event_id: "mkt_x",
+    specialists: [
+      {
+        agent_id: "pge_shutoff",
+        state: "needs-user-action",
+        playbook_title: "PG&E shutoff call script",
+      },
+      { agent_id: "usps_coa", state: "submitted", playbook_title: "" },
+      { agent_id: "bank_notify", state: "dispatched", playbook_title: 42 },
+      { agent_id: "gym_cancel", state: "dispatched" },
+    ],
+  });
+  assert.ok(snap);
+  assert.equal(snap.specialists[0].playbookTitle, "PG&E shutoff call script");
+  assert.equal(snap.specialists[1].playbookTitle, null);
+  assert.equal(snap.specialists[2].playbookTitle, null);
+  assert.equal(snap.specialists[3].playbookTitle, null);
+});
+
+test("parseMoveSnapshot: reply agent_id + quote validate defensively", () => {
+  const snap = parseMoveSnapshot({
+    event_id: "mkt_x",
+    specialists: [],
+    replies: [
+      {
+        from_domain: "uhaul.com",
+        received_at: 1700000000,
+        agent_id: "mover_quote",
+        quote: { total_display: "$3,150", deposit_display: "$500", availability: true },
+      },
+      // No deposit, availability anything-but-true → false.
+      {
+        from_domain: "pods.com",
+        agent_id: "",
+        quote: { total_display: "$2,900", deposit_display: null, availability: "yes" },
+      },
+      // Malformed quotes degrade to null, never throw.
+      { from_domain: "a.com", agent_id: 7, quote: "garbage" },
+      { from_domain: "b.com", quote: { deposit_display: "$100", availability: true } },
+      { from_domain: "c.com", quote: { total_display: "", availability: true } },
+      { from_domain: "d.com", quote: { total_display: 3150 } },
+      { from_domain: "e.com", quote: [] },
+    ],
+  });
+  assert.ok(snap);
+  assert.deepEqual(snap.replies[0], {
+    fromDomain: "uhaul.com",
+    receivedAt: 1700000000,
+    agentId: "mover_quote",
+    quote: { totalDisplay: "$3,150", depositDisplay: "$500", availability: true },
+  });
+  assert.deepEqual(snap.replies[1].quote, {
+    totalDisplay: "$2,900",
+    depositDisplay: null,
+    availability: false,
+  });
+  assert.equal(snap.replies[1].agentId, null);
+  for (const row of snap.replies.slice(2)) {
+    assert.equal(row.quote, null);
+    assert.equal(row.agentId, null);
+  }
+});
+
+test("reply line leads with quote facts when extracted, generic otherwise", () => {
+  assert.equal(
+    replyLine(null),
+    "Emailed a response to your move — the full message is in your inbox.",
+  );
+  assert.equal(
+    replyLine({ totalDisplay: "$3,150", depositDisplay: null, availability: false }),
+    "Quoted $3,150 — full message in your inbox.",
+  );
+  assert.equal(
+    replyLine({ totalDisplay: "$3,150", depositDisplay: "$500", availability: true }),
+    "Quoted $3,150 · deposit $500 · availability confirmed — full message in your inbox.",
+  );
+  assert.equal(
+    replyLine({ totalDisplay: "$2,900", depositDisplay: null, availability: true }),
+    "Quoted $2,900 · availability confirmed — full message in your inbox.",
+  );
+});
+
+test("reply agent labels map only known roster ids", () => {
+  assert.equal(moveAgentName("mover_quote"), "Movers");
+  assert.equal(moveAgentName("usps_coa"), "USPS");
+  assert.equal(moveAgentName("mystery_agent"), null);
+  assert.equal(moveAgentName(null), null);
+});
+
+test("quote totals parse as money and sort cheapest-first, unparseable last", () => {
+  assert.equal(quoteTotalValue("$3,150"), 3150);
+  assert.equal(quoteTotalValue("$3,150.50"), 3150.5);
+  assert.equal(quoteTotalValue("2900"), 2900);
+  assert.equal(quoteTotalValue("call for pricing"), null);
+  assert.equal(quoteTotalValue(""), null);
+  assert.equal(quoteTotalValue("$3,150-ish"), null);
+
+  const quote = (totalDisplay: string) => ({
+    totalDisplay,
+    depositDisplay: null,
+    availability: false,
+  });
+  const sorted = sortQuotedReplies([
+    reply({ fromDomain: "pricey.com", quote: quote("$4,000") }),
+    reply({ fromDomain: "no-quote.com" }),
+    reply({ fromDomain: "vague.com", quote: quote("call us") }),
+    reply({ fromDomain: "cheap.com", quote: quote("$2,900") }),
+    reply({ fromDomain: "mid.com", quote: quote("$3,150.50") }),
+  ]);
+  assert.deepEqual(
+    sorted.map((row) => row.fromDomain),
+    ["cheap.com", "mid.com", "pricey.com", "vague.com"],
+  );
+});
+
+test("fewer than two quotes yields nothing to compare", () => {
+  const one = sortQuotedReplies([
+    reply({ fromDomain: "no-quote.com" }),
+    reply({
+      fromDomain: "solo.com",
+      quote: { totalDisplay: "$3,150", depositDisplay: null, availability: false },
+    }),
+  ]);
+  assert.equal(one.length, 1);
+  assert.equal(sortQuotedReplies([reply({})]).length, 0);
 });

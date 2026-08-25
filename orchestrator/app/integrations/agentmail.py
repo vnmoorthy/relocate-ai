@@ -79,6 +79,15 @@ async def send_move_package(
 
     if not to_email:
         raise RuntimeError("email destination is required")
+    # Same demo-routing contract as every specialist send: an override
+    # reroutes the message to the operator's inbox, noting who it was for.
+    override = settings.agentmail_demo_recipient_override.strip()
+    if override and to_email.lower() != override.lower():
+        body_markdown = (
+            f"[demo routing: this message would be sent to {to_email}]\n\n{body_markdown}"
+        )
+        subject = f"[demo → {to_email[:60]}] {subject}"
+        to_email = override
     if has_key:
         assert_recipients_allowed([to_email])
 

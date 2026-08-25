@@ -127,6 +127,7 @@ def _list_inbox_sync(after_epoch: float) -> list[dict[str, Any]]:
 
     client = AgentMail(api_key=settings.agentmail_api_key)
     inbox_id = _resolve_inbox(client)
+    self_address = str(inbox_id).lower()
     page = client.inboxes.messages.list(
         inbox_id,
         limit=50,
@@ -144,6 +145,7 @@ def _list_inbox_sync(after_epoch: float) -> list[dict[str, Any]]:
             "preview": getattr(item, "preview", "") or "",
             "timestamp": ts_epoch,
             "labels": list(getattr(item, "labels", None) or []),
+            "self_address": self_address,
         })
     return out
 
@@ -175,6 +177,20 @@ async def ingest_once() -> int:
         ts = float(msg.get("timestamp") or 0.0)
         _high_water = max(_high_water, ts)
         ref = extract_ref(msg.get("subject"))
+        # Demo deployments reroute outbound mail to this very inbox, and the
+        # delivered copy carries a DIFFERENT message id than the ledgered
+        # send — so the ledger alone can't catch it. A self-addressed message
+        # only counts as a reply when it actually is one ("Re:"/"Fwd:");
+        # external senders are ingested regardless.
+        sender_addr = _ADDR_RE.search(str(msg.get("from") or ""))
+        is_self = bool(
+            sender_addr
+            and sender_addr.group(0).lower() == str(msg.get("self_address") or "")
+        )
+        subject_lower = str(msg.get("subject") or "").strip().lower()
+        if is_self and not subject_lower.startswith(("re:", "fwd:", "fw:")):
+            persistence.record_mail(mid, "ignored", None)
+            continue
         event = state.events.get(ref[0]) if ref else None
         if event is None:
             # Not a correlated reply (or our own outbound, already in the

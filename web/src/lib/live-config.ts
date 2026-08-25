@@ -88,8 +88,7 @@ async function isHealthy(api: string): Promise<boolean> {
  * Resolve the live API origin for this page load, or null when the site
  * should stay in simulation. Never throws.
  */
-export async function discoverLiveApi(): Promise<string | null> {
-  if (typeof window === "undefined") return null;
+async function discoverOnce(): Promise<string | null> {
   try {
     const res = await fetch(`${BASE_PATH}/live.json?t=${Date.now()}`, {
       cache: "no-store",
@@ -101,6 +100,26 @@ export async function discoverLiveApi(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+const DISCOVERY_RETRY_DELAYS_MS = [1000, 2000];
+
+/**
+ * Live-backend discovery with short in-call retries: a one-shot probe let a
+ * single 3-second tunnel blip lock the page into simulation mode until a
+ * manual reload. A deployment genuinely without live.json still resolves
+ * null after the retries and the simulation fallback shows as before.
+ */
+export async function discoverLiveApi(): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  const first = await discoverOnce();
+  if (first) return first;
+  for (const delayMs of DISCOVERY_RETRY_DELAYS_MS) {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    const api = await discoverOnce();
+    if (api) return api;
+  }
+  return null;
 }
 
 // ── Web intake ────────────────────────────────────────────────────────────
@@ -122,6 +141,7 @@ export interface StartMoveInput {
   // (child name + grade → school enrollment, pet + vet email → vet records).
   /** Who is moving. */
   userName?: string;
+  userPhone?: string;
   /** Only sent when hasChildren. */
   childName?: string;
   /** Only sent when hasChildren. */
@@ -153,6 +173,7 @@ export interface StartMovePayload {
   // AND the matching household flag is on — an unchecked box never leaks the
   // text someone typed before unchecking it.
   user_name?: string;
+  user_phone?: string;
   child_name?: string;
   child_grade?: string;
   pet_name?: string;
@@ -162,6 +183,7 @@ export interface StartMovePayload {
 
 type OptionalPayloadKey =
   | "user_name"
+  | "user_phone"
   | "child_name"
   | "child_grade"
   | "pet_name"
@@ -215,6 +237,7 @@ export function buildStartMovePayload(input: StartMoveInput, honeypot = ""): Sta
     website: honeypot,
   };
   addOptional(payload, "user_name", input.userName);
+  addOptional(payload, "user_phone", input.userPhone);
   if (input.hasChildren) {
     addOptional(payload, "child_name", input.childName);
     addOptional(payload, "child_grade", input.childGrade);

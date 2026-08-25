@@ -85,11 +85,23 @@ export interface MoveSpecialistSnapshot {
   terminal_outcome: string | null;
   blocker_kind: string | null;
   closed_at: number | null;
+  /** Title of a prepared script/letter/checklist already emailed to the user. */
+  playbookTitle: string | null;
+}
+
+/** Deterministic quote facts extracted from a provider's emailed reply. */
+export interface MoveReplyQuote {
+  totalDisplay: string;
+  depositDisplay: string | null;
+  availability: boolean;
 }
 
 export interface MoveReply {
   fromDomain: string;
   receivedAt: number | null;
+  /** Which specialist's outreach this reply answers, when the backend knows. */
+  agentId: string | null;
+  quote: MoveReplyQuote | null;
 }
 
 export interface MoveSnapshot {
@@ -109,6 +121,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+/** Non-empty string → itself; anything else → null. */
+function asNonEmptyStringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/** Quote facts from a reply; null unless the shape (and total) is sound. */
+function parseReplyQuote(raw: unknown): MoveReplyQuote | null {
+  if (!isRecord(raw)) return null;
+  const totalDisplay = asNonEmptyStringOrNull(raw.total_display);
+  if (!totalDisplay) return null;
+  return {
+    totalDisplay,
+    depositDisplay: asNonEmptyStringOrNull(raw.deposit_display),
+    availability: raw.availability === true,
+  };
 }
 
 /** Validate the untrusted snapshot payload. Null only when fundamentally broken. */
@@ -134,6 +163,7 @@ export function parseMoveSnapshot(raw: unknown): MoveSnapshot | null {
           typeof item.closed_at === "number" && Number.isFinite(item.closed_at)
             ? item.closed_at
             : null,
+        playbookTitle: asNonEmptyStringOrNull(item.playbook_title),
       });
     }
   }
@@ -149,6 +179,8 @@ export function parseMoveSnapshot(raw: unknown): MoveSnapshot | null {
           typeof item.received_at === "number" && Number.isFinite(item.received_at)
             ? item.received_at
             : null,
+        agentId: asNonEmptyStringOrNull(item.agent_id),
+        quote: parseReplyQuote(item.quote),
       });
     }
   }
@@ -186,8 +218,19 @@ const BLOCKER_LINES: Record<string, string> = {
   orchestrator_restart: "Interrupted mid-run — flagged for a re-check.",
 };
 
-/** One-line human explanation for a task row. Blocker copy wins when present. */
-export function taskLine(state: string, blockerKind: string | null): string {
+/**
+ * One-line human explanation for a task row. On a user-action row a prepared
+ * playbook wins (the system already emailed a script for it); blocker copy is
+ * the fallback, then plain state copy.
+ */
+export function taskLine(
+  state: string,
+  blockerKind: string | null,
+  playbookTitle: string | null = null,
+): string {
+  if (state === "needs-user-action" && playbookTitle) {
+    return `Prepared: ${playbookTitle} — sent to your inbox.`;
+  }
   if (blockerKind && BLOCKER_LINES[blockerKind]) return BLOCKER_LINES[blockerKind];
   switch (state) {
     case "submitted":
@@ -211,6 +254,15 @@ export function taskLine(state: string, blockerKind: string | null): string {
   }
 }
 
+/** One-line summary for a reply row: quote facts when extracted, generic otherwise. */
+export function replyLine(quote: MoveReplyQuote | null): string {
+  if (!quote) return "Emailed a response to your move — the full message is in your inbox.";
+  let facts = `Quoted ${quote.totalDisplay}`;
+  if (quote.depositDisplay) facts += ` · deposit ${quote.depositDisplay}`;
+  if (quote.availability) facts += " · availability confirmed";
+  return `${facts} — full message in your inbox.`;
+}
+
 // ── Snapshot + live-overlay merge ─────────────────────────────────────────
 
 export interface MoveTaskView {
@@ -219,6 +271,7 @@ export interface MoveTaskView {
   category: string;
   state: string;
   blockerKind: string | null;
+  playbookTitle: string | null;
   line: string;
 }
 
@@ -227,29 +280,41 @@ const AGENT_META = new Map<string, (typeof ALL_AGENTS)[number]>(
 );
 const AGENT_ORDER = new Map<string, number>(ALL_AGENTS.map((agent, index) => [agent.id, index]));
 
+/** Display name for a known roster agent; null for unknown/absent ids. */
+export function moveAgentName(agentId: string | null): string | null {
+  return (agentId && AGENT_META.get(agentId)?.name) || null;
+}
+
 /**
  * Snapshot specialists overlaid with live agent_state events (overlay wins —
  * it is strictly newer than the snapshot). The concierge ("buyer") is not a
- * per-move task. A blocker survives only while the state it explained holds.
+ * per-move task. A blocker — and the playbook prepared for it — survives only
+ * while the state it explained holds.
  */
 export function mergeMoveTasks(
   specialists: MoveSpecialistSnapshot[],
   overlay: Record<string, { state: string }>,
 ): MoveTaskView[] {
-  const byId = new Map<string, { state: string; blockerKind: string | null }>();
+  const byId = new Map<
+    string,
+    { state: string; blockerKind: string | null; playbookTitle: string | null }
+  >();
   for (const specialist of specialists) {
     if (specialist.agent_id === "buyer") continue;
     byId.set(specialist.agent_id, {
       state: specialist.state,
       blockerKind: specialist.blocker_kind,
+      playbookTitle: specialist.playbookTitle,
     });
   }
   for (const [agentId, live] of Object.entries(overlay)) {
     if (agentId === "buyer") continue;
     const base = byId.get(agentId);
+    const stateHolds = base !== undefined && base.state === live.state;
     byId.set(agentId, {
       state: live.state,
-      blockerKind: base && base.state === live.state ? base.blockerKind : null,
+      blockerKind: stateHolds ? base.blockerKind : null,
+      playbookTitle: stateHolds ? base.playbookTitle : null,
     });
   }
 
@@ -261,7 +326,8 @@ export function mergeMoveTasks(
       category: meta?.category ?? "specialist",
       state: task.state,
       blockerKind: task.blockerKind,
-      line: taskLine(task.state, task.blockerKind),
+      playbookTitle: task.playbookTitle,
+      line: taskLine(task.state, task.blockerKind, task.playbookTitle),
     };
   });
   tasks.sort(
@@ -271,6 +337,33 @@ export function mergeMoveTasks(
       a.agentId.localeCompare(b.agentId),
   );
   return tasks;
+}
+
+// ── Quote comparison ──────────────────────────────────────────────────────
+
+/** "$3,150.50" → 3150.5; anything that doesn't parse cleanly → null. */
+export function quoteTotalValue(totalDisplay: string): number | null {
+  const bare = totalDisplay.replace(/[$,\s]/g, "");
+  return /^\d+(?:\.\d+)?$/.test(bare) ? Number(bare) : null;
+}
+
+/**
+ * Replies that carry a quote, cheapest first. Unparseable totals sort last;
+ * ties keep arrival order (Array.prototype.sort is stable).
+ */
+export function sortQuotedReplies(
+  replies: MoveReply[],
+): Array<MoveReply & { quote: MoveReplyQuote }> {
+  return replies
+    .filter((reply): reply is MoveReply & { quote: MoveReplyQuote } => reply.quote !== null)
+    .sort((a, b) => {
+      const left = quoteTotalValue(a.quote.totalDisplay);
+      const right = quoteTotalValue(b.quote.totalDisplay);
+      if (left === null && right === null) return 0;
+      if (left === null) return 1;
+      if (right === null) return -1;
+      return left - right;
+    });
 }
 
 // ── Progress counts ───────────────────────────────────────────────────────

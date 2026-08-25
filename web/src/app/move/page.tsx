@@ -2,17 +2,22 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AgentGlyph } from "@/components/AgentGlyph";
-import { parseDashboardMessage, reconnectDelay } from "@/lib/dashboard-state";
+import { parseDashboardMessage, reconnectDelay, withJitter } from "@/lib/dashboard-state";
 import { discoverLiveApi, publicWsUrl } from "@/lib/live-config";
 import {
   cityFromAddress,
   formatMoveDate,
   mergeMoveTasks,
+  moveAgentName,
   moveIdFromHash,
   moveSnapshotUrl,
   moveTaskCounts,
   parseMoveSnapshot,
+  replyLine,
   shortMoveRef,
+  sortQuotedReplies,
+  type MoveReply,
+  type MoveReplyQuote,
   type MoveSnapshot,
   type MoveTaskView,
 } from "@/lib/move-page";
@@ -117,7 +122,10 @@ export default function MovePage() {
     const scheduleReconnect = (api: string) => {
       if (cancelled) return;
       window.clearTimeout(reconnectTimer);
-      reconnectTimer = window.setTimeout(() => connect(api), reconnectDelay(reconnectAttempt));
+      reconnectTimer = window.setTimeout(
+        () => connect(api),
+        withJitter(reconnectDelay(reconnectAttempt)),
+      );
       reconnectAttempt += 1;
     };
 
@@ -233,6 +241,10 @@ export default function MovePage() {
     [snapshot, overlay],
   );
   const counts = useMemo(() => moveTaskCounts(tasks), [tasks]);
+  const quotedReplies = useMemo(
+    () => (snapshot ? sortQuotedReplies(snapshot.replies) : []),
+    [snapshot],
+  );
   const ownTasks = tasks.filter((task) => task.state === "needs-user-action");
   const finalized = (snapshot?.finalized ?? false) || finalizedLive;
 
@@ -386,6 +398,32 @@ export default function MovePage() {
               </div>
             </section>
 
+            {/* ── Quote comparison ───────────────────────────────────── */}
+            {quotedReplies.length >= 2 && (
+              <section aria-labelledby="mv-quotes-heading" className="mt-10">
+                <div className="flex items-baseline justify-between gap-4">
+                  <h2 id="mv-quotes-heading" className="kicker">Quotes</h2>
+                  <span className="tm-label text-[var(--text-quaternary)] shrink-0">
+                    {quotedReplies.length} to compare
+                  </span>
+                </div>
+                <div className="mv-quote-panel">
+                  <ul className="mv-quote-list">
+                    {quotedReplies.map((reply, index) => (
+                      <QuoteRow
+                        key={`${reply.fromDomain}-${reply.receivedAt ?? index}`}
+                        reply={reply}
+                        lowest={index === 0}
+                      />
+                    ))}
+                  </ul>
+                  <p className="mv-quote-foot">
+                    You choose — Relocate never books or signs anything without you.
+                  </p>
+                </div>
+              </section>
+            )}
+
             {/* ── Replies ────────────────────────────────────────────── */}
             {snapshot.replies.length > 0 && (
               <section aria-labelledby="mv-replies-heading" className="mt-10">
@@ -396,32 +434,41 @@ export default function MovePage() {
                   </span>
                 </div>
                 <ul className="mv-list">
-                  {snapshot.replies.map((reply, index) => (
-                    <li key={`${reply.fromDomain}-${reply.receivedAt ?? index}`} className="mv-row">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span
-                          className="h-[5px] w-[5px] rounded-full bg-[var(--tier-haiku)] shrink-0"
-                          aria-hidden="true"
-                        />
-                        <h3 className="font-display text-[14px] leading-none text-[var(--ink-100)] truncate">
-                          {reply.fromDomain || "unknown sender"}
-                        </h3>
-                        <span className="tm-label text-[var(--ink-700)] ml-auto shrink-0">
-                          {reply.receivedAt
-                            ? new Date(reply.receivedAt * 1000).toLocaleString("en-US", {
-                                month: "short",
-                                day: "numeric",
-                                hour: "numeric",
-                                minute: "2-digit",
-                              })
-                            : ""}
-                        </span>
-                      </div>
-                      <p className="mv-row-line">
-                        Emailed a response to your move — the full message is in your inbox.
-                      </p>
-                    </li>
-                  ))}
+                  {snapshot.replies.map((reply, index) => {
+                    const agentName = moveAgentName(reply.agentId);
+                    return (
+                      <li
+                        key={`${reply.fromDomain}-${reply.receivedAt ?? index}`}
+                        className="mv-row"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span
+                            className="h-[5px] w-[5px] rounded-full bg-[var(--tier-haiku)] shrink-0"
+                            aria-hidden="true"
+                          />
+                          <h3 className="font-display text-[14px] leading-none text-[var(--ink-100)] truncate">
+                            {reply.fromDomain || "unknown sender"}
+                          </h3>
+                          {agentName && (
+                            <span className="tm-label text-[var(--ink-700)] hidden sm:inline shrink-0">
+                              RE: {agentName}
+                            </span>
+                          )}
+                          <span className="tm-label text-[var(--ink-700)] ml-auto shrink-0">
+                            {reply.receivedAt
+                              ? new Date(reply.receivedAt * 1000).toLocaleString("en-US", {
+                                  month: "short",
+                                  day: "numeric",
+                                  hour: "numeric",
+                                  minute: "2-digit",
+                                })
+                              : ""}
+                          </span>
+                        </div>
+                        <p className="mv-row-line">{replyLine(reply.quote)}</p>
+                      </li>
+                    );
+                  })}
                 </ul>
               </section>
             )}
@@ -560,6 +607,43 @@ function TaskRow({ task }: { task: MoveTaskView }) {
         </span>
       </div>
       <p className="mv-row-line">{task.line}</p>
+    </li>
+  );
+}
+
+/** One quote in the comparison panel — cheapest-first ordering happens upstream. */
+function QuoteRow({
+  reply,
+  lowest,
+}: {
+  reply: MoveReply & { quote: MoveReplyQuote };
+  lowest: boolean;
+}) {
+  return (
+    <li className="mv-quote-row">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <h3 className="font-display text-[14px] leading-none text-[var(--ink-100)] truncate">
+          {reply.fromDomain || "unknown sender"}
+        </h3>
+        {lowest && <span className="tm-label text-[var(--mint)] shrink-0">Lowest</span>}
+        <span className="mv-quote-total ml-auto shrink-0">{reply.quote.totalDisplay}</span>
+      </div>
+      {(reply.quote.depositDisplay !== null || reply.quote.availability) && (
+        <p className="mv-quote-meta">
+          {reply.quote.depositDisplay !== null && (
+            <span>deposit {reply.quote.depositDisplay}</span>
+          )}
+          {reply.quote.availability && (
+            <span className="flex items-center gap-1.5 text-[var(--mint)]">
+              {/* Drawn tick — same rationale as the route arrow (webfont coverage). */}
+              <svg className="h-[8px] w-[10px]" viewBox="0 0 10 8" fill="none" aria-hidden="true">
+                <path d="M1 4.5L3.5 7 9 1" stroke="currentColor" strokeWidth="1.5" />
+              </svg>
+              availability confirmed
+            </span>
+          )}
+        </p>
+      )}
     </li>
   );
 }

@@ -40,6 +40,8 @@ export interface DashboardState {
   connection: DashboardConnection;
   connected: boolean;
   eventId: string | null;
+  /** Server ts (epoch seconds) of the last event applied for the pinned id. */
+  lastEventTs: number | null;
   demoMode: boolean;
   completed: boolean;
   completionSummary: Record<string, unknown> | null;
@@ -54,9 +56,21 @@ const MAX_TRANSCRIPT_TURNS = 12;
 const MAX_RECENT_DECISIONS = 100;
 const MAX_SPONSOR_EVENTS = 40;
 const MAX_RECONNECT_DELAY_MS = 30_000;
+// How long (server seconds) a pinned, unfinalized event may stay silent
+// before a different event id is allowed to take over the stage.
+const EVENT_SILENCE_TAKEOVER_S = 120;
 
+/** Deterministic reconnect backoff base. Jitter is applied at the call site. */
 export function reconnectDelay(attempt: number): number {
   return Math.min(MAX_RECONNECT_DELAY_MS, 1000 * 2 ** Math.max(0, attempt));
+}
+
+/**
+ * ±30% random jitter so a fleet of clients doesn't reconnect in lockstep
+ * after a server restart. `random` is injectable for tests.
+ */
+export function withJitter(delayMs: number, random: () => number = Math.random): number {
+  return Math.round(delayMs * (0.7 + random() * 0.6));
 }
 
 export function createDashboardState(
@@ -76,6 +90,7 @@ export function createDashboardState(
     connection,
     connected: connection === "live",
     eventId,
+    lastEventTs: null,
     demoMode: connection === "demo",
     completed: false,
     completionSummary: null,
@@ -99,13 +114,33 @@ export function withConnection(
   };
 }
 
+/**
+ * A different event id may take the stage only when the pinned event is over:
+ * finalized, or silent for EVENT_SILENCE_TAKEOVER_S by the server's clock.
+ * Pure on purpose — silence is measured against the incoming event's ts,
+ * never Date.now().
+ */
+function canAdoptNewEvent(state: DashboardState, eventTs: number): boolean {
+  if (state.finalized) return true;
+  return state.lastEventTs !== null && eventTs - state.lastEventTs >= EVENT_SILENCE_TAKEOVER_S;
+}
+
 export function applyDashboardEvent(state: DashboardState, event: WSEvent): DashboardState {
-  const nextState =
-    state.eventId && state.eventId !== event.event_id
-      ? createDashboardState(state.connection, event.event_id)
-      : state.eventId
-        ? state
-        : { ...state, eventId: event.event_id };
+  let nextState: DashboardState;
+  if (!state.eventId) {
+    nextState = { ...state, eventId: event.event_id, lastEventTs: event.ts };
+  } else if (state.eventId === event.event_id) {
+    nextState = { ...state, lastEventTs: event.ts };
+  } else if (canAdoptNewEvent(state, event.ts)) {
+    nextState = {
+      ...createDashboardState(state.connection, event.event_id),
+      lastEventTs: event.ts,
+    };
+  } else {
+    // Stay pinned: a concurrent dispatch (someone else starting a move while
+    // this one is mid-run) must not wipe the swarm on screen.
+    return state;
+  }
 
   switch (event.type) {
     case "transcript_turn": {

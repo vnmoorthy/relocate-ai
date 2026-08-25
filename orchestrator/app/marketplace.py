@@ -434,6 +434,7 @@ async def finalize_event(event_id: str) -> None:
     if needs_user:
         if not event.awaiting_user_notified:
             event.awaiting_user_notified = True
+            state.save_event(event)
             await ws_broker.broadcast({
                 "type": "event_waiting_for_user",
                 "event_id": event_id,
@@ -558,13 +559,19 @@ async def _send_playbook_digest(event) -> None:  # noqa: ANN001 - MarketplaceEve
         + "\n\n- Relocate\n"
     )
     try:
-        await am.send_move_package(
+        result = await am.send_move_package(
             event_id=event.id,
             to_email=user_email,
             subject=f"What we prepared for you — {len(playbooks)} ready-to-use scripts",
             body_markdown=body,
         )
-        log.info("playbook digest emailed: event=%s count=%d", event.id, len(playbooks))
+        if result:
+            log.info("playbook digest emailed: event=%s count=%d", event.id, len(playbooks))
+        else:
+            log.warning(
+                "playbook digest NOT delivered (provider returned no receipt): "
+                "event=%s", event.id,
+            )
     except RecipientNotAllowed as e:
         log.warning("playbook digest blocked by recipient allowlist: %s", e)
     except Exception:  # noqa: BLE001 - digest is best-effort
@@ -586,7 +593,7 @@ async def _send_prepared_documents(event) -> None:  # noqa: ANN001
         agent_id: ctx
         for agent_id, ctx in event.specialist_calls.items()
         if ctx.state == "needs-user-action"
-        and ctx.blocker_kind == "secure_user_workflow_required"
+        and ctx.blocker_kind in ("secure_user_workflow_required", "missing_fields")
     }
     attachments: list[dict] = []
     lines: list[str] = []

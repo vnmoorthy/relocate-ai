@@ -28,16 +28,21 @@ const REPO_URL = "https://github.com/vnmoorthy/relocate-ai";
 const PHONE_E164 = "+16184149537";
 const PHONE_DISPLAY = "+1 (618) 414-9537";
 
-const SPECIALIST_COUNT = ALL_AGENTS.length - 1;
 
 interface LiveLink {
   /** Discovered live API origin (see lib/live-config.ts); null = simulation. */
   api: string | null;
   /** The local token handoff (#ws-token=…) keeps the authenticated socket. */
   localFlow: boolean;
+  /** True once the first discovery attempt has resolved either way. */
+  settled: boolean;
 }
 
-const NO_LIVE_LINK: LiveLink = { api: null, localFlow: false };
+const NO_LIVE_LINK: LiveLink = { api: null, localFlow: false, settled: false };
+
+// While discovery is failing, retry on this cadence so a tunnel coming back
+// flips the page to live without a manual reload.
+const REDISCOVERY_MS = 60_000;
 
 export default function Page() {
   const [live, setLive] = useState<LiveLink>(NO_LIVE_LINK);
@@ -45,14 +50,23 @@ export default function Page() {
 
   useEffect(() => {
     let cancelled = false;
+    let retryTimer: number | undefined;
     // resolveWsToken() stashes a hash token in sessionStorage and strips it
     // from the URL; ws-client re-reads the stash on every connect attempt.
     const localFlow = resolveWsToken() !== "" && !isPlaceholderWsUrl(WS_URL);
-    discoverLiveApi().then((api) => {
-      if (!cancelled) setLive({ api, localFlow });
-    });
+    const attempt = () => {
+      void discoverLiveApi().then((api) => {
+        if (cancelled) return;
+        setLive({ api, localFlow, settled: true });
+        // Simulation is a fallback, not a verdict: keep probing so the page
+        // goes live the moment the backend is reachable again.
+        if (!api) retryTimer = window.setTimeout(attempt, REDISCOVERY_MS);
+      });
+    };
+    attempt();
     return () => {
       cancelled = true;
+      window.clearTimeout(retryTimer);
     };
   }, []);
 
@@ -78,6 +92,7 @@ export default function Page() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  const dispatchedCount = Object.keys(s.agentStates).filter((id) => id !== "buyer").length;
   const submittedCount =
     typeof s.finalSummary?.submitted_count === "number" ? s.finalSummary.submitted_count : 0;
   const failedCount =
@@ -135,13 +150,18 @@ export default function Page() {
           </p>
           <div className="mt-9 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
             <a href={`tel:${PHONE_E164}`} className="btn-solid">Call {PHONE_DISPLAY}</a>
-            <a href="#dashboard" className="btn-outline">
+            <a href={liveApi ? "#start-move" : "#dashboard"} className="btn-outline">
               {liveApi ? "Start your move" : "Watch the swarm"}
             </a>
           </div>
           <p className="mt-4 text-[12px] tracking-[0.08em] uppercase text-[var(--text-tertiary)]">
             Live concierge demo line · US · talk to the swarm yourself
           </p>
+          {live.settled && !liveApi && !live.localFlow && (
+            <p className="mt-2 text-[12px] leading-[1.6] text-[var(--text-quaternary)]">
+              Line quiet? Start your move on the web below — same swarm.
+            </p>
+          )}
         </div>
 
         <a href="#dashboard" className="scroll-cue" aria-label="Scroll to the swarm">
@@ -197,7 +217,7 @@ export default function Page() {
               role="status"
               aria-live="polite"
             >
-              {SPECIALIST_COUNT} specialists dispatched · {submittedCount} submitted
+              {dispatchedCount} specialist{dispatchedCount === 1 ? "" : "s"} dispatched · {submittedCount} submitted
               {failedCount > 0 ? ` · ${failedCount} failed` : ""}.
             </p>
           )}

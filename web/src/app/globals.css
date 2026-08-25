@@ -1406,6 +1406,51 @@ main {
   50% { opacity: 1; }
 }
 
+/* Quote comparison — cheapest first, mint LOWEST tag; the reader decides. */
+.mv-quote-panel {
+  margin-top: 1rem;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-base);
+}
+.mv-quote-list {
+  list-style: none;
+  padding: 0;
+}
+.mv-quote-row {
+  padding: 0.8rem 0.9rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.mv-quote-row:last-child {
+  border-bottom: 0;
+}
+.mv-quote-total {
+  font-family: var(--font-geist-mono);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-100);
+}
+.mv-quote-meta {
+  margin-top: 0.45rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.9rem;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+.mv-quote-foot {
+  padding: 0.65rem 0.9rem;
+  border-top: 1px solid var(--border-default);
+  font-size: 11px;
+  line-height: 1.6;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+
 /* ──────────────────────────────────────────────────────────────────────────
    A11y: focus rings + reduced-motion respect
    ────────────────────────────────────────────────────────────────────────── */

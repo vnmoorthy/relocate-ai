@@ -32,6 +32,7 @@ type Status =
 /** Optional detail is held as "" (never undefined) so inputs stay controlled. */
 type HouseholdField =
   | "userName"
+  | "userPhone"
   | "childName"
   | "childGrade"
   | "petName"
@@ -50,6 +51,7 @@ const EMPTY: FormState = {
   hasCar: false,
   hasVisa: false,
   userName: "",
+  userPhone: "",
   childName: "",
   childGrade: "",
   petName: "",
@@ -229,6 +231,17 @@ export function StartMove({ api, onStarted }: Props) {
           value={form.userName}
           disabled={pending}
           onChange={(value) => setField("userName", value)}
+        />
+        <TextField
+          id={fieldId("phone")}
+          label="Phone (for your concierge callback)"
+          name="user_phone"
+          type="tel"
+          autoComplete="tel"
+          placeholder="Optional"
+          value={form.userPhone}
+          disabled={pending}
+          onChange={(value) => setField("userPhone", value)}
         />
       </div>
 
@@ -412,7 +425,7 @@ function TextField({
   id: string;
   label: string;
   name: string;
-  type?: "text" | "date" | "email";
+  type?: "text" | "date" | "email" | "tel";
   value: string;
   placeholder?: string;
   autoComplete?: string;

@@ -352,12 +352,24 @@ def _finalize_buyer_call(ctx: BuyerCallContext) -> None:
     needs-user-action handoffs.
     """
     if not ctx.dispatched:
-        from .buyer_schema import is_dispatch_ready
+        from .buyer_schema import fields_by_tier, is_dispatch_ready
         if is_dispatch_ready(ctx.collected):
             _dispatch_fan_out(ctx)
             log.info(
                 "buyer dispatched at call end with unanswered household "
                 "questions: event=%s", ctx.event_id,
+            )
+        else:
+            # A silent no-op here would hide a real product failure: the call
+            # ended, extraction fell short, and there is no channel to reach
+            # the caller. Surface it loudly for the operator.
+            missing = [
+                f.name for f in fields_by_tier("core") if not ctx.collected.get(f.name)
+            ]
+            log.warning(
+                "call ended NOT dispatchable: event=%s missing_core=%s "
+                "collected=%s — nothing dispatched, caller has no tracker",
+                ctx.event_id, missing, sorted(ctx.collected),
             )
     if ctx.dispatched and not ctx.followup_sent and not ctx.followup_in_progress:
         ctx.followup_in_progress = True
@@ -456,12 +468,22 @@ def _extract_and_merge_fields(text: str, ctx) -> dict:
             if isinstance(v, str) and field.tier != "conditional"
             and v.strip() == field.example
         }
-        if len(example_matches) >= 3:
+        # CORE values (route, date, email) are high-entropy: one exact match
+        # against the prompt's example is regurgitation with near-certainty,
+        # and merging it dispatches real emails with wrong facts (observed
+        # live: the example date shipped in a mover quote). Low-entropy fields
+        # keep the >=3 coincidence threshold.
+        core_examples = {
+            k for k, v, field in validated
+            if k in example_matches and field.tier == "core"
+        }
+        if len(example_matches) >= 3 or core_examples:
+            dropped = example_matches if len(example_matches) >= 3 else core_examples
             log.warning(
                 "dropping %d example-regurgitated fields from buyer emission: %s",
-                len(example_matches), sorted(example_matches),
+                len(dropped), sorted(dropped),
             )
-            validated = [item for item in validated if item[0] not in example_matches]
+            validated = [item for item in validated if item[0] not in dropped]
 
         for k, v, _field in validated:
             previous = ctx.collected.get(k)

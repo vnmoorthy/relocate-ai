@@ -243,3 +243,33 @@ def test_reply_increments_soliciting_specialist(monkeypatch: pytest.MonkeyPatch)
     asyncio.run(replies.ingest_once())
 
     assert ctx.bid["replies_received"] == 1
+
+
+def test_self_delivered_outbound_copy_is_not_a_reply(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Demo override reroutes outbound to the polled inbox itself; the
+    delivered copy has a fresh message id, so only the Re:/Fwd: discriminator
+    stands between an app send and a phantom 'reply'."""
+    event = MarketplaceEvent(id="mkt_ab12cd34ef", homeowner_call_id="call", spec={})
+    state.events[event.id] = event
+    _listing(monkeypatch, [
+        {   # our own outbound, delivered back to us — must be ignored
+            "message_id": "msg_selfcopy",
+            "from": "Relocate <inbox@agentmail.to>",
+            "subject": "[demo → enroll@x.org] Pre-enrollment [ref:mkt_ab12cd34ef:school_district]",
+            "preview": "Hello",
+            "timestamp": 1_700_000_000.0,
+            "self_address": "inbox@agentmail.to",
+        },
+        {   # a genuine self-addressed REPLY still ingests
+            "message_id": "msg_selfreply",
+            "from": "inbox@agentmail.to",
+            "subject": "Re: Quote [ref:mkt_ab12cd34ef:mover_quote]",
+            "preview": "OTD $2,000",
+            "timestamp": 1_700_000_001.0,
+            "self_address": "inbox@agentmail.to",
+        },
+    ])
+
+    assert asyncio.run(replies.ingest_once()) == 1
+    assert len(event.replies) == 1
+    assert event.replies[0]["agent_id"] == "mover_quote"
