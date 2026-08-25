@@ -1245,6 +1245,11 @@ main {
 .mv-route-arrow {
   color: var(--text-tertiary);
   font-weight: 300;
+  /* The condensed display face has no real U+2192 glyph — fall back to the
+     system sans so the arrow is actually visible between the cities. */
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-size: 0.5em;
+  align-self: center;
 }
 
 /* Fact chips: move date + household flags. */
