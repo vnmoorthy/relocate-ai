@@ -720,9 +720,17 @@ def _bootstrap_messages() -> list[dict[str, Any]]:
     return msgs
 
 
-async def _send_bootstrap(ws: WebSocket) -> None:
+async def _send_bootstrap(ws: WebSocket, *, public: bool = False) -> None:
     try:
         for msg in _bootstrap_messages():
+            if public:
+                # Same projector as every live public payload — the direct
+                # send must never become an unredacted side door if the
+                # bootstrap set ever grows beyond agent_state.
+                projected = redact_public_event(msg)
+                if projected is None:
+                    continue
+                msg = projected
             await asyncio.wait_for(ws.send_text(json.dumps(msg)), timeout=2.0)
     except Exception:  # noqa: BLE001 - a failed bootstrap is just a blank stage
         pass
@@ -746,7 +754,7 @@ async def ws_public(ws: WebSocket) -> None:
         await ws.close(code=1013, reason="public feed at capacity")
         return
     await public_broker.subscribe(ws)
-    await _send_bootstrap(ws)
+    await _send_bootstrap(ws, public=True)
     try:
         while True:
             await ws.receive_text()  # clients never send; this just detects close
