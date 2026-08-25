@@ -70,6 +70,21 @@ def test_correlated_reply_attaches_and_broadcasts(monkeypatch: pytest.MonkeyPatc
     assert payload["from_domain"] == "uhaul.com"
 
 
+def test_display_name_sender_yields_clean_domain(monkeypatch: pytest.MonkeyPatch) -> None:
+    event = MarketplaceEvent(id="mkt_ab12cd34ef", homeowner_call_id="call", spec={})
+    state.events[event.id] = event
+    _listing(monkeypatch, [{
+        "message_id": "msg_display",
+        "from": "U-Haul Dispatch <Quotes@UHAUL.com>",
+        "subject": "Re: [ref:mkt_ab12cd34ef]",
+        "preview": "quote",
+        "timestamp": 1_700_000_000.0,
+    }])
+    assert asyncio.run(replies.ingest_once()) == 1
+    assert event.replies[0]["from"] == "quotes@uhaul.com"
+    assert event.replies[0]["from_domain"] == "uhaul.com"
+
+
 def test_dedupe_across_polls(monkeypatch: pytest.MonkeyPatch) -> None:
     event = MarketplaceEvent(id="mkt_ab12cd34ef", homeowner_call_id="call", spec={})
     state.events[event.id] = event

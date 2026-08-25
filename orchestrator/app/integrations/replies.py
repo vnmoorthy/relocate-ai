@@ -29,6 +29,7 @@ from ..ws import ws_broker
 log = logging.getLogger(__name__)
 
 _REF_RE = re.compile(r"\[ref:(mkt_[0-9a-f]{4,})\]")
+_ADDR_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 POLL_INTERVAL_S = 45
 # First poll looks back this far; afterwards a high-water mark (with overlap)
 # keeps listings small. The ledger makes overlap harmless.
@@ -60,8 +61,11 @@ def summarize_reply(msg: dict[str, Any]) -> dict[str, Any]:
     The stored record is the operator-visible artifact; the public snapshot
     redacts it further (domain + subject only).
     """
-    sender = str(msg.get("from") or "")
-    domain = sender.rsplit("@", 1)[-1].lower() if "@" in sender else ""
+    raw_sender = str(msg.get("from") or "")
+    # Senders arrive as either "addr@x.com" or "Display Name <addr@x.com>".
+    addr_match = _ADDR_RE.search(raw_sender)
+    sender = addr_match.group(0).lower() if addr_match else raw_sender
+    domain = sender.rsplit("@", 1)[-1] if "@" in sender else ""
     preview = str(msg.get("preview") or msg.get("text") or "")[:400]
     return {
         "message_id": str(msg.get("message_id") or ""),
