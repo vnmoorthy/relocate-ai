@@ -31,6 +31,7 @@ from .integrations.moss import retrieve_runbooks_for_specialists
 from .integrations.supermemory import persist_move, recall_user_profile
 from .personas import all_specialists, Persona
 from .playbooks import build_playbook
+from .prepared import build_section
 from .state import state, SpecialistCallContext
 from .ws import ws_broker
 
@@ -285,6 +286,7 @@ async def fan_out(event_id: str, spec: dict[str, Any]) -> None:
     # Run ready specialists concurrently. _run_one captures its own exceptions so
     # one provider cannot crash the wave.
     await asyncio.gather(*[_run_one(p, event_id, spec) for p in ready])
+    await _send_arrival_pack(event)
     await finalize_event(event_id)
 
 
@@ -341,7 +343,9 @@ async def _run_one(p: Persona, event_id: str, spec: dict[str, Any]) -> None:
         return
 
     try:
-        if p.voice_mode == "browser":
+        if p.voice_mode == "prepared":
+            artifact = await _run_prepared(p, event_id, spec)
+        elif p.voice_mode == "browser":
             # The repository's Browser Use adapter is v1. The provider now uses
             # v2 tasks + a protected secrets channel, so fail safely until that
             # migration is implemented and contract-tested.
@@ -365,7 +369,9 @@ async def _run_one(p: Persona, event_id: str, spec: dict[str, Any]) -> None:
         # no counterparty received anything, so reporting "provider accepted"
         # would overstate what happened.
         ctx.terminal_outcome = (
-            "prepared_for_user" if p.agent_id in _SELF_DELIVERED_AGENTS else "submitted"
+            "prepared_for_user"
+            if p.agent_id in _SELF_DELIVERED_AGENTS or p.voice_mode == "prepared"
+            else "submitted"
         )
         ctx.blocker_kind = None
         ctx.blockers = []
@@ -762,6 +768,72 @@ async def _run_email(
         return await am.send_flight_options(event_id=event_id, spec=spec, user_email=user_email)
 
     raise RuntimeError(f"no email handler for agent {p.agent_id}")
+
+
+async def _run_prepared(
+    p: Persona, event_id: str, spec: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Build this specialist's section of the arrival pack.
+
+    No counterparty is contacted, so there is nothing to await and nothing to
+    claim: the artifact is the section itself, batched into one email once the
+    wave settles (see _send_arrival_pack).
+    """
+    await _emit_agent_state(event_id, p.agent_id, "in-progress")
+    section = build_section(p.agent_id, spec)
+    if section is None:
+        raise RuntimeError(f"no prepared section registered for {p.agent_id}")
+    return {"kind": "prepared_section", **section}
+
+
+async def _send_arrival_pack(event) -> None:  # noqa: ANN001
+    """One email carrying every prepared section for this move.
+
+    Twelve specialists each mailing separately would bury the customer, so
+    the pack goes out once. Best-effort: a failed send is logged, never
+    reported as delivered.
+    """
+    if event.arrival_pack_sent:
+        return
+    user_email = event.spec.get("user_email")
+    if not user_email:
+        return
+    sections = [
+        ctx.bid for ctx in event.specialist_calls.values()
+        if isinstance(ctx.bid, dict) and ctx.bid.get("kind") == "prepared_section"
+    ]
+    if not sections:
+        return
+    parts = [
+        f"{i}. {s['title']}\n{'-' * len(str(s['title']))}\n{s['body']}"
+        for i, s in enumerate(sections, 1)
+    ]
+    body = (
+        f"{len(sections)} things prepared for your move.\n\n"
+        f"Each one is built from the details you gave us. Anything in "
+        f"<angle brackets> is a value only you have — fill it in as you go. "
+        f"Relocate never books, signs, or pays for any of this; these are "
+        f"yours to act on.\n\n"
+        + "\n\n".join(parts)
+        + "\n\n- Relocate\n"
+    )
+    try:
+        result = await am.send_move_package(
+            event_id=event.id,
+            to_email=user_email,
+            subject=f"Your arrival pack — {len(sections)} things ready",
+            body_markdown=body,
+        )
+        if result:
+            event.arrival_pack_sent = True
+            state.save_event(event)
+            log.info("arrival pack emailed: event=%s sections=%d", event.id, len(sections))
+        else:
+            log.warning("arrival pack NOT delivered (no receipt): event=%s", event.id)
+    except RecipientNotAllowed as e:
+        log.warning("arrival pack blocked by recipient allowlist: %s", e)
+    except Exception:  # noqa: BLE001 - best-effort
+        log.exception("arrival pack failed: event=%s", event.id)
 
 
 async def _run_mail(p: Persona, event_id: str, spec: dict[str, Any]) -> dict:

@@ -27,6 +27,7 @@ from .marketplace import fan_out, finalize_event, resume_ready_specialists
 from .pavo_client import pavo_chat
 from .persistence import persistence
 from .personas import by_id, buyer_persona
+from .demo_auth import enabled as demo_enabled, issue_token, valid_token, verify_credentials
 from .public_feed import public_ref, redact_public_event
 from .security import (
     complete_agentphone_webhook,
@@ -874,7 +875,12 @@ async def api_public_start_move(request: Request, payload: dict[str, Any]) -> di
     event_id = state.new_event_id()
     _recent_intakes[dedupe_key] = (event_id, now)
     call_id = f"web_{event_id[4:]}"
-    state.events[event_id] = MarketplaceEvent(id=event_id, homeowner_call_id=call_id, spec=spec)
+    # A move started from the gated product page belongs to that workspace;
+    # everything else stays out of its list.
+    channel = "demo" if valid_token(str(payload.get("demo_token") or "")) else "web"
+    state.events[event_id] = MarketplaceEvent(
+        id=event_id, homeowner_call_id=call_id, spec=spec, origin_channel=channel,
+    )
     ctx = BuyerCallContext(
         call_id=call_id, event_id=event_id, collected=dict(spec), parsed_spec=spec,
         dispatched=True, call_ended=True, followup_sent=True,  # web intake has no voice follow-up
@@ -1005,6 +1011,85 @@ async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str,
         "final_outcome": event.final_outcome,
         "ts": now,
     }
+
+
+_DEMO_LOGIN_PER_IP_MIN = 8
+_demo_login_hits: dict[str, list[float]] = {}
+
+
+@app.post("/api/public/demo-login")
+async def api_demo_login(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
+    """Exchange the demo workspace credentials for a signed, expiring token.
+
+    The product page is a static export and cannot hold a secret, so the
+    password lives here and only a token ever reaches the browser.
+    """
+    if not demo_enabled():
+        raise HTTPException(503, "demo access is not enabled on this deployment")
+    ip = _client_ip(request)
+    now = time.time()
+    _sweep_hits(_demo_login_hits, now - 60)
+    hits = [t for t in _demo_login_hits.get(ip, []) if t > now - 60]
+    if len(hits) >= _DEMO_LOGIN_PER_IP_MIN:
+        raise HTTPException(429, "too many attempts — wait a minute")
+    hits.append(now)
+    _demo_login_hits[ip] = hits
+
+    username = str(payload.get("username") or "")
+    password = str(payload.get("password") or "")
+    if not verify_credentials(username, password):
+        raise HTTPException(401, "invalid credentials")
+    token, expires_at = issue_token(now)
+    log.info("demo workspace login: ip=%s", ip)
+    return {"token": token, "expires_at": expires_at}
+
+
+def _require_demo_token(request: Request) -> None:
+    if not demo_enabled():
+        raise HTTPException(503, "demo access is not enabled on this deployment")
+    if not valid_token(_bearer_token(request.headers.get("authorization"))):
+        raise HTTPException(401, "sign in to the demo workspace")
+
+
+@app.get("/api/public/demo/moves")
+async def api_demo_moves(request: Request) -> dict[str, Any]:
+    """Moves created through the gated product page, newest first.
+
+    Scoped to origin_channel == "demo" on purpose: the credentials are
+    published to reviewers, so real callers' moves must never appear here.
+    """
+    _require_demo_token(request)
+    moves: list[dict[str, Any]] = []
+    for event in state.events.values():
+        if event.origin_channel != "demo":
+            continue
+        counts = {"submitted": 0, "action": 0, "failed": 0, "working": 0, "done": 0}
+        for ctx in event.specialist_calls.values():
+            if ctx.state == "submitted":
+                counts["submitted"] += 1
+            elif ctx.state == "succeeded":
+                counts["done"] += 1
+            elif ctx.state == "needs-user-action":
+                counts["action"] += 1
+            elif ctx.state in ("failed", "error"):
+                counts["failed"] += 1
+            else:
+                counts["working"] += 1
+        counts["total"] = len(event.specialist_calls)
+        moves.append({
+            "event_id": event.id,
+            "public_ref": public_ref(event.id),
+            "route": {
+                "origin_address": str(event.spec.get("origin_address", "")),
+                "destination_address": str(event.spec.get("destination_address", "")),
+                "move_date": str(event.spec.get("move_date", "")),
+            },
+            "counts": counts,
+            "started_at": event.started_at,
+            "finalized": event.finalized_at is not None,
+        })
+    moves.sort(key=lambda m: float(m["started_at"]), reverse=True)  # type: ignore[arg-type]
+    return {"moves": moves[:50]}
 
 
 def _require_dev_trigger_access(request: Request) -> None:

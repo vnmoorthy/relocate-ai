@@ -21,7 +21,7 @@ from typing import Literal
 from .buyer_schema import schema_block_for_prompt, dispatch_json_example
 
 
-VoiceMode = Literal["voice", "browser", "email", "mail"]
+VoiceMode = Literal["voice", "browser", "email", "mail", "prepared"]
 
 
 # ────────────────────────────────────────────────────────────────────

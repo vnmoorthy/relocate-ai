@@ -67,6 +67,13 @@ class Settings(BaseSettings):
     # app is ever exposed directly, where the header is caller-controlled.
     trust_proxy_headers: bool = True
 
+    # Gated product surface (/app). Credentials live here, never in the web
+    # bundle: the static page posts them and the server verifies. Blank
+    # password disables the endpoint entirely.
+    demo_username: str = "demo"
+    demo_password: str = ""
+    demo_session_hours: int = 12
+
     # HMAC key for public event aliases (public_feed.public_ref). Blank falls
     # back to a per-process key: aliases rotate on restart, which tracker
     # pages self-heal from by resyncing their snapshot on reconnect.
