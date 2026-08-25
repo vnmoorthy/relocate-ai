@@ -159,6 +159,15 @@ BUYER_FIELDS: list[BuyerField] = [
         example="Jane Smith",
     ),
     BuyerField(
+        name="work_address",
+        tier="optional", voice_safe=True,
+        agent_ids=("housing_search", "commute_route"),
+        ask_phrasing="Where will you be working — the office address, roughly?",
+        plain_label="Work address at the destination",
+        example="500 W 2nd St, Austin, TX 78701",
+        validate=_is_address,
+    ),
+    BuyerField(
         name="household_size",
         tier="optional", voice_safe=True,
         agent_ids=("mover_quote",),

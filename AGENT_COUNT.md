@@ -29,13 +29,33 @@ gitignored `orchestrator/agents.json` exists, the test also checks that registry
 | 15 | `uscis_ar11` | immigration form preparation | browser | provider task and user-signature handoff; not filing proof |
 | 16 | `id_card_update` | ID update package | postal mail | Lob letter/tracking identifiers and user-action handoff |
 | 17 | `bank_notify` | bank notification playbook | email | AgentMail identifier for a human-led call script |
+| 18 | `housing_search` | where to live near work, and who you already know there | prepared | a personalized section of the arrival-pack email; no counterparty contacted |
+| 19 | `arrival_transport` | arrival-day ground transport plan | prepared | a personalized section of the arrival-pack email; no counterparty contacted |
+| 20 | `mobile_carrier` | keeping your number when you change carriers | prepared | a personalized section of the arrival-pack email; no counterparty contacted |
+| 21 | `gov_address_update` | government records that still have your old address | prepared | a personalized section of the arrival-pack email; no counterparty contacted |
+| 22 | `visa_support` | brief your immigration counsel | prepared | a personalized section of the arrival-pack email; no counterparty contacted |
+| 23 | `landlord_notice` | give your landlord notice | prepared | a personalized section of the arrival-pack email; no counterparty contacted |
+| 24 | `intl_banking` | banking in the new country | prepared | a personalized section of the arrival-pack email; no counterparty contacted |
+| 25 | `fx_planning` | currency transfer comparison guide | prepared | a personalized section of the arrival-pack email; no counterparty contacted |
+| 26 | `contacts_notify` | who to tell about your new address | prepared | a personalized section of the arrival-pack email; no counterparty contacted |
+| 27 | `grocery_setup` | food and essentials for the first 48 hours | prepared | a personalized section of the arrival-pack email; no counterparty contacted |
+| 28 | `commute_route` | commute route, both directions | prepared | a personalized section of the arrival-pack email; no counterparty contacted |
+| 29 | `furniture_setup` | furnishing the new place | prepared | a personalized section of the arrival-pack email; no counterparty contacted |
 
 Mode totals:
 
 - 1 inbound voice persona;
 - 7 browser specialists;
 - 7 email specialists;
-- 2 postal-mail specialists.
+- 2 postal-mail specialists;
+- 12 prepared-artifact specialists.
+
+Prepared specialists cover the needs customers raise first — somewhere to
+live, getting there, staying reachable, telling people and institutions, the
+first week on the ground. None of them can be transacted on the customer's
+behalf, so each returns a personalized section instead of contacting anyone,
+and all sections batch into one arrival-pack email. Their honest terminal
+outcome is `prepared_for_user`, never `submitted`.
 
 ## Conditional dispatch
 

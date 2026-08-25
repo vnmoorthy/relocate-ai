@@ -61,8 +61,18 @@ def _agent_count_md_ids() -> set[str]:
     )
 
 
+def _webhook_persona_ids() -> set[str]:
+    """Personas that AgentPhone must know about.
+
+    Prepared specialists never receive a call or a webhook — they build the
+    customer's next step locally — so they are legitimately absent from the
+    provider registry.
+    """
+    return {p.agent_id for p in PERSONAS if p.voice_mode != "prepared"}
+
+
 def test_personas_match_agents_json():
-    p_ids = _personas_ids()
+    p_ids = _webhook_persona_ids()
     j_ids = _agents_json_ids()
     diff = p_ids.symmetric_difference(j_ids)
     assert not diff, (
@@ -111,15 +121,18 @@ def test_no_removed_agents_linger():
 
 def test_every_persona_has_a_handler():
     """Every persona must declare a mode marketplace knows how to dispatch."""
-    valid = {"voice", "browser", "email", "mail"}
+    valid = {"voice", "browser", "email", "mail", "prepared"}
     for p in PERSONAS:
         assert p.voice_mode in valid, f"persona {p.agent_id} has unsupported voice_mode={p.voice_mode}"
 
 
-def test_shipping_count_is_seventeen():
-    """v2.1 ships 17 agents (1 buyer + 16 specialists). If this needs to change,
-    edit AGENT_COUNT.md + this test + ALL_AGENTS in web/src/lib/types.ts."""
-    assert len(PERSONAS) == 17, (
-        f"Expected 17 shipping agents, got {len(PERSONAS)}. "
-        "If intentional, update test_shipping_count_is_seventeen + AGENT_COUNT.md."
+def test_shipping_count_is_twenty_nine():
+    """29 agents: 1 buyer + 16 provider-facing specialists + 12 prepared ones.
+
+    If this needs to change, edit AGENT_COUNT.md + this test + ALL_AGENTS in
+    web/src/lib/types.ts — the other tests here enforce that they agree.
+    """
+    prepared = [p for p in PERSONAS if p.voice_mode == "prepared"]
+    assert len(PERSONAS) == 29 and len(prepared) == 12, (
+        f"Expected 29 agents (12 prepared), got {len(PERSONAS)} ({len(prepared)} prepared)."
     )

@@ -630,3 +630,11 @@ def all_specialists() -> list[Persona]:
 
 def buyer_persona() -> Persona:
     return by_id("buyer")
+
+
+# The prepared-artifact specialists live in their own module (generated from
+# authored + fact-checked content); imported last so Persona and PERSONAS are
+# both defined by the time it loads.
+from .personas_extra import EXTRA_PERSONAS  # noqa: E402
+
+PERSONAS.extend(EXTRA_PERSONAS)

@@ -30,6 +30,7 @@ from .integrations.hipaa_pdf import build_hipaa_release_pdf
 from .integrations.moss import retrieve_runbooks_for_specialists
 from .integrations.supermemory import persist_move, recall_user_profile
 from .personas import all_specialists, Persona
+from .personas_extra import EXTRA_REQUIRED_FIELDS
 from .playbooks import build_playbook
 from .prepared import build_section
 from .state import state, SpecialistCallContext
@@ -133,6 +134,9 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     ),
     "bank_notify": ("destination_address", "move_date", "user_email"),
 }
+
+
+REQUIRED_FIELDS.update(EXTRA_REQUIRED_FIELDS)
 
 
 def missing_prerequisites(agent_id: str, spec: dict[str, Any]) -> list[str]:

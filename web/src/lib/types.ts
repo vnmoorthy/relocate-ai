@@ -142,7 +142,7 @@ export interface FieldsCollectedEvent {
 // ca_voter (CA DL identity bar).
 //
 // Order = clockwise burst sequence starting at the top (-90°).
-export type AgentMode = "voice" | "browser" | "email" | "mail";
+export type AgentMode = "voice" | "browser" | "email" | "mail" | "prepared";
 
 // Display names kept short (single-line at narrow card widths). Categories
 // stay full-word for the SUBTITLE row in the AgentCell.
@@ -164,6 +164,20 @@ export const ALL_AGENTS = [
   { id: "uscis_ar11", name: "USCIS", category: "immigration", mode: "browser" as AgentMode, live: true },
   { id: "id_card_update", name: "DMV", category: "dl card", mode: "mail" as AgentMode, live: true },
   { id: "bank_notify", name: "Bank", category: "bank", mode: "email" as AgentMode, live: true },
+  // Prepared-artifact specialists: they produce the customer's next step
+  // rather than contacting a counterparty (see orchestrator/app/prepared.py).
+  { id: "housing_search", name: "Housing", category: "housing", mode: "prepared" as AgentMode, live: true },
+  { id: "arrival_transport", name: "Transport", category: "arrival", mode: "prepared" as AgentMode, live: true },
+  { id: "mobile_carrier", name: "Mobile", category: "carrier", mode: "prepared" as AgentMode, live: true },
+  { id: "gov_address_update", name: "Gov", category: "records", mode: "prepared" as AgentMode, live: true },
+  { id: "visa_support", name: "Visa", category: "immigration", mode: "prepared" as AgentMode, live: true },
+  { id: "landlord_notice", name: "Landlord", category: "tenancy", mode: "prepared" as AgentMode, live: true },
+  { id: "intl_banking", name: "Intl bank", category: "banking", mode: "prepared" as AgentMode, live: true },
+  { id: "fx_planning", name: "Currency", category: "fx", mode: "prepared" as AgentMode, live: true },
+  { id: "contacts_notify", name: "Contacts", category: "people", mode: "prepared" as AgentMode, live: true },
+  { id: "grocery_setup", name: "Groceries", category: "essentials", mode: "prepared" as AgentMode, live: true },
+  { id: "commute_route", name: "Commute", category: "route", mode: "prepared" as AgentMode, live: true },
+  { id: "furniture_setup", name: "Furniture", category: "home", mode: "prepared" as AgentMode, live: true },
 ] as const;
 
 // Backwards-compat alias for any old consumers.

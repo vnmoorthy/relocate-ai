@@ -42,9 +42,13 @@ def _isolated() -> Iterator[None]:
     state.events.clear()
 
 
-def test_every_specialist_has_a_builder() -> None:
-    specialist_ids = {p.agent_id for p in all_specialists()}
-    assert specialist_ids <= set(_BUILDERS), specialist_ids - set(_BUILDERS)
+def test_every_specialist_can_prepare_something_when_blocked() -> None:
+    """No specialist may dead-end. Provider-facing ones have hand-written
+    builders; prepared ones fall back to their generated checklist."""
+    for persona in all_specialists():
+        pb = build_playbook(persona.agent_id, SPEC)
+        assert pb is not None, f"{persona.agent_id} has no playbook"
+        assert pb["title"] and len(pb["body"]) > 80, persona.agent_id
 
 
 def test_playbooks_personalize_and_placeholder_honestly() -> None:

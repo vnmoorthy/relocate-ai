@@ -836,7 +836,7 @@ async def api_public_start_move(request: Request, payload: dict[str, Any]) -> di
     # does when the caller volunteers the same facts. Anything invalid is
     # dropped rather than rejected — the move still dispatches.
     for name in (
-        "user_name", "user_phone", "household_size", "child_name", "child_grade",
+        "user_name", "user_phone", "work_address", "household_size", "child_name", "child_grade",
         "pet_name", "pet_species", "vet_email", "bank_name",
     ):
         raw = payload.get(name)

@@ -54,3 +54,8 @@ def build_section(agent_id: str, spec: dict[str, Any]) -> dict[str, str] | None:
         return None
     title, template = entry
     return {"title": title, "body": render(template, spec)}
+
+
+# Load the generated section content. Imported last so ``register`` exists by
+# the time it runs; without this the registry would be silently empty.
+from . import prepared_sections  # noqa: E402,F401

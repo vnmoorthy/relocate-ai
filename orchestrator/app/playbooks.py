@@ -372,6 +372,16 @@ _BUILDERS: dict[str, Callable[[dict[str, Any]], dict[str, str]]] = {
 def build_playbook(agent_id: str, spec: dict[str, Any]) -> dict[str, str] | None:
     """Return {"title", "body"} for a blocked specialist, or None if unknown."""
     builder = _BUILDERS.get(agent_id)
-    if builder is None:
+    if builder is not None:
+        return builder(spec)
+    # Prepared specialists carry their blocked-state checklist alongside their
+    # section content (generated module), rendered through the same
+    # placeholder-safe formatter.
+    from .prepared import render
+    from .prepared_sections import PLAYBOOKS
+
+    entry = PLAYBOOKS.get(agent_id)
+    if entry is None:
         return None
-    return builder(spec)
+    title, template = entry
+    return {"title": title, "body": render(template, spec)}

@@ -111,12 +111,14 @@ async def test_all_sixteen_specialists_report_honest_terminal_state(
     monkeypatch.setattr(marketplace, "_run_browser", mocked_provider)
     monkeypatch.setattr(marketplace, "_run_email", mocked_provider)
     monkeypatch.setattr(marketplace, "_run_mail", mocked_provider)
+    monkeypatch.setattr(marketplace, "_run_prepared", mocked_provider)
+    monkeypatch.setattr(marketplace, "_send_arrival_pack", AsyncMock())
 
     await marketplace.fan_out(event_id, dict(ALL_CONDITIONS_SPEC))
     await asyncio.sleep(0)  # allow the mocked sponsor lookup tasks to finish
 
     expected = {persona.agent_id for persona in all_specialists()}
-    assert len(expected) == 16
+    assert len(expected) == 28  # 16 provider-facing + 12 prepared
     assert set(event.specialist_calls) == expected
     policy_blocked = {
         persona.agent_id for persona in all_specialists()
