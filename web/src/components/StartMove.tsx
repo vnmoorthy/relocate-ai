@@ -1,8 +1,9 @@
 "use client";
 
-import { useId, useRef, useState, type FormEvent } from "react";
+import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   buildStartMovePayload,
+  isValidEmail,
   startMoveErrorMessage,
   startMoveUrl,
   validateStartMove,
@@ -28,7 +29,18 @@ type Status =
   | { kind: "ok"; eventId: string }
   | { kind: "error"; message: string };
 
-const EMPTY: StartMoveInput = {
+/** Optional detail is held as "" (never undefined) so inputs stay controlled. */
+type HouseholdField =
+  | "userName"
+  | "childName"
+  | "childGrade"
+  | "petName"
+  | "petSpecies"
+  | "vetEmail";
+
+type FormState = StartMoveInput & Record<HouseholdField, string>;
+
+const EMPTY: FormState = {
   origin: "",
   destination: "",
   moveDate: "",
@@ -37,6 +49,12 @@ const EMPTY: StartMoveInput = {
   hasChildren: false,
   hasCar: false,
   hasVisa: false,
+  userName: "",
+  childName: "",
+  childGrade: "",
+  petName: "",
+  petSpecies: "",
+  vetEmail: "",
 };
 
 const TOGGLES: Array<{ key: "hasPets" | "hasChildren" | "hasCar" | "hasVisa"; label: string }> = [
@@ -48,22 +66,31 @@ const TOGGLES: Array<{ key: "hasPets" | "hasChildren" | "hasCar" | "hasVisa"; la
 
 const FIELD_ORDER: StartMoveField[] = ["origin", "destination", "moveDate", "email"];
 
+// Same sentence under every conditional block: it says why the extra typing is
+// worth it without promising anything.
+const SUB_HINT = "Optional — supplying this lets that specialist actually file the request.";
+
 /**
  * Web intake for a REAL dispatch. Rendered only when a live backend has been
  * discovered — there is no simulated submit path. POSTs the contract payload
  * to /api/public/start-move and reports the outcome inline.
+ *
+ * The four required fields brief the dispatcher; the optional household detail
+ * (revealed by the Kids / Pets toggles) is what lets the school and vet
+ * specialists file a real request instead of handing back to the human.
  */
 export function StartMove({ api, onStarted }: Props) {
   const uid = useId();
-  const [form, setForm] = useState<StartMoveInput>(EMPTY);
+  const [form, setForm] = useState<FormState>(EMPTY);
   const [errors, setErrors] = useState<StartMoveErrors>({});
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+  const [vetEmailTouched, setVetEmailTouched] = useState(false);
   const honeypotRef = useRef<HTMLInputElement | null>(null);
   const fieldRefs = useRef<Partial<Record<StartMoveField, HTMLInputElement | null>>>({});
 
   const pending = status.kind === "pending";
 
-  const setField = <K extends keyof StartMoveInput>(key: K, value: StartMoveInput[K]) => {
+  const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
     if (key in errors) {
       setErrors((current) => {
@@ -73,6 +100,14 @@ export function StartMove({ api, onStarted }: Props) {
       });
     }
   };
+
+  // Advisory only — a malformed vet email never blocks the dispatch, it is
+  // simply dropped server-side. Held back until the field has been left once.
+  const vetEmailLooksWrong =
+    form.hasPets &&
+    vetEmailTouched &&
+    form.vetEmail.trim() !== "" &&
+    !isValidEmail(form.vetEmail);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -140,6 +175,7 @@ export function StartMove({ api, onStarted }: Props) {
           error={errors.origin}
           errorId={errorId("origin")}
           disabled={pending}
+          required
           inputRef={(el) => { fieldRefs.current.origin = el; }}
           onChange={(value) => setField("origin", value)}
         />
@@ -152,6 +188,7 @@ export function StartMove({ api, onStarted }: Props) {
           error={errors.destination}
           errorId={errorId("destination")}
           disabled={pending}
+          required
           inputRef={(el) => { fieldRefs.current.destination = el; }}
           onChange={(value) => setField("destination", value)}
         />
@@ -164,6 +201,7 @@ export function StartMove({ api, onStarted }: Props) {
           error={errors.moveDate}
           errorId={errorId("date")}
           disabled={pending}
+          required
           inputRef={(el) => { fieldRefs.current.moveDate = el; }}
           onChange={(value) => setField("moveDate", value)}
         />
@@ -178,8 +216,19 @@ export function StartMove({ api, onStarted }: Props) {
           error={errors.email}
           errorId={errorId("email")}
           disabled={pending}
+          required
           inputRef={(el) => { fieldRefs.current.email = el; }}
           onChange={(value) => setField("email", value)}
+        />
+        <TextField
+          id={fieldId("name")}
+          label="Your name"
+          name="user_name"
+          autoComplete="name"
+          placeholder="Optional"
+          value={form.userName}
+          disabled={pending}
+          onChange={(value) => setField("userName", value)}
         />
       </div>
 
@@ -200,6 +249,79 @@ export function StartMove({ api, onStarted }: Props) {
           ))}
         </div>
       </fieldset>
+
+      {/* Kids → the school-enrollment specialist. Nothing here is required and
+          nothing here is sent while the Kids box is unchecked. */}
+      <Reveal open={form.hasChildren}>
+        <fieldset className="sm-sub">
+          <legend className="sm-label">For the school agent</legend>
+          <p className="sm-sub-hint">{SUB_HINT}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
+            <TextField
+              id={fieldId("child-name")}
+              label="Child's name"
+              name="child_name"
+              placeholder="First name"
+              value={form.childName}
+              disabled={pending}
+              onChange={(value) => setField("childName", value)}
+            />
+            <TextField
+              id={fieldId("child-grade")}
+              label="Grade"
+              name="child_grade"
+              placeholder="4th"
+              value={form.childGrade}
+              disabled={pending}
+              onChange={(value) => setField("childGrade", value)}
+            />
+          </div>
+        </fieldset>
+      </Reveal>
+
+      {/* Pets → the vet-records specialist. Same rules. */}
+      <Reveal open={form.hasPets}>
+        <fieldset className="sm-sub">
+          <legend className="sm-label">For the vet agent</legend>
+          <p className="sm-sub-hint">{SUB_HINT}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
+            <TextField
+              id={fieldId("pet-name")}
+              label="Pet's name"
+              name="pet_name"
+              placeholder="Biscuit"
+              value={form.petName}
+              disabled={pending}
+              onChange={(value) => setField("petName", value)}
+            />
+            <TextField
+              id={fieldId("pet-species")}
+              label="Species"
+              name="pet_species"
+              placeholder="dog"
+              value={form.petSpecies}
+              disabled={pending}
+              onChange={(value) => setField("petSpecies", value)}
+            />
+            <TextField
+              id={fieldId("vet-email")}
+              label="Current vet's email"
+              name="vet_email"
+              type="email"
+              placeholder="clinic@example.com"
+              value={form.vetEmail}
+              warning={
+                vetEmailLooksWrong
+                  ? "That doesn't look like an email — it'll be dropped, everything else still goes."
+                  : undefined
+              }
+              disabled={pending}
+              onChange={(value) => setField("vetEmail", value)}
+              onBlur={() => setVetEmailTouched(true)}
+            />
+          </div>
+        </fieldset>
+      </Reveal>
 
       {/* Honeypot: offscreen (never display:none), unfocusable, no autofill.
           Humans leave it blank; the server rejects anything else. */}
@@ -257,6 +379,19 @@ export function StartMove({ api, onStarted }: Props) {
   );
 }
 
+/**
+ * Height-animated disclosure. The block stays mounted so its height can be
+ * transitioned (0fr → 1fr) instead of snapping the page, and is `inert` while
+ * closed so it takes no tab stops and no screen-reader attention.
+ */
+function Reveal({ open, children }: { open: boolean; children: ReactNode }) {
+  return (
+    <div className={`sm-reveal${open ? " sm-reveal--open" : ""}`} inert={!open}>
+      <div className="sm-reveal-inner">{children}</div>
+    </div>
+  );
+}
+
 function TextField({
   id,
   label,
@@ -267,9 +402,12 @@ function TextField({
   autoComplete,
   error,
   errorId,
+  warning,
   disabled,
+  required,
   inputRef,
   onChange,
+  onBlur,
 }: {
   id: string;
   label: string;
@@ -278,12 +416,19 @@ function TextField({
   value: string;
   placeholder?: string;
   autoComplete?: string;
+  /** Blocking: submit already stopped for this field. */
   error?: string;
-  errorId: string;
+  errorId?: string;
+  /** Advisory: shown, but the value is still submitted (server drops it). */
+  warning?: string;
   disabled: boolean;
-  inputRef: (el: HTMLInputElement | null) => void;
+  required?: boolean;
+  inputRef?: (el: HTMLInputElement | null) => void;
   onChange: (value: string) => void;
+  onBlur?: () => void;
 }) {
+  const warningId = `${id}-warning`;
+  const describedBy = error && errorId ? errorId : warning ? warningId : undefined;
   return (
     <div className="sm-field">
       <label htmlFor={id} className="sm-label">
@@ -299,14 +444,20 @@ function TextField({
         placeholder={placeholder}
         autoComplete={autoComplete}
         disabled={disabled}
-        required
+        required={required}
         aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : undefined}
+        aria-describedby={describedBy}
         onChange={(event) => onChange(event.target.value)}
+        onBlur={onBlur}
       />
-      {error && (
+      {error && errorId && (
         <span id={errorId} className="sm-error">
           {error}
+        </span>
+      )}
+      {!error && warning && (
+        <span id={warningId} className="sm-warn">
+          {warning}
         </span>
       )}
     </div>

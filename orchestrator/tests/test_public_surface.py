@@ -145,3 +145,28 @@ def test_public_move_snapshot_is_redacted(monkeypatch: pytest.MonkeyPatch) -> No
     assert "secret@person.com" not in dumped
     assert "+1415" not in dumped
     assert "uhaul" not in dumped  # raw blocker strings never leave the server
+
+
+def test_public_intake_accepts_optional_household_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(main.app)
+    monkeypatch.setattr(main.settings, "enable_public_intake", True)
+    monkeypatch.setattr(main, "fan_out", AsyncMock())
+    monkeypatch.setattr(main.ws_broker, "broadcast", AsyncMock())
+    resp = client.post("/api/public/start-move", json={
+        "origin_address": "742 Valencia St, San Francisco, CA 94110",
+        "destination_address": "1901 Barton Springs Rd, Austin, TX 78704",
+        "move_date": "2030-10-15", "user_email": "mover@test.invalid",
+        "has_pets": True, "has_children": True,
+        "child_name": "Sam", "child_grade": "3",
+        "pet_name": "Biscuit", "pet_species": "dog", "vet_email": "records@vet.invalid",
+        "user_name": "Jane Smith",
+        "vet_email_bogus": "ignored", "bank_name": "",
+        "website": "",
+    })
+    assert resp.status_code == 200
+    spec = state.events[resp.json()["event_id"]].spec
+    assert spec["child_name"] == "Sam" and spec["pet_species"] == "dog"
+    assert spec["vet_email"] == "records@vet.invalid"
+    assert "bank_name" not in spec  # empty strings are dropped, not stored

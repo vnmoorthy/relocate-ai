@@ -718,6 +718,25 @@ async def api_public_start_move(request: Request, payload: dict[str, Any]) -> di
     for flag in ("has_pets", "has_children", "has_car", "has_visa"):
         spec[flag] = bool(payload.get(flag, False))
 
+    # Optional household details. Supplying them unblocks the specialists that
+    # need them (school enrollment, vet records) exactly as the voice concierge
+    # does when the caller volunteers the same facts. Anything invalid is
+    # dropped rather than rejected — the move still dispatches.
+    for name in (
+        "user_name", "household_size", "child_name", "child_grade",
+        "pet_name", "pet_species", "vet_email", "bank_name",
+    ):
+        raw = payload.get(name)
+        if raw is None:
+            continue
+        value = str(raw).strip()[:120]
+        if not value:
+            continue
+        field = by_name(name)
+        if field is None or not field.validate(value):
+            continue
+        spec[name] = value
+
     event_id = state.new_event_id()
     call_id = f"web_{event_id[4:]}"
     state.events[event_id] = MarketplaceEvent(id=event_id, homeowner_call_id=call_id, spec=spec)

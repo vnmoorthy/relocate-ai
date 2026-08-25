@@ -1151,6 +1151,45 @@ main {
 }
 .sm-check input:focus-visible { outline: none; } /* ring drawn on the chip */
 
+/* Optional household detail, revealed by the Kids / Pets toggles. The height
+   is animated (0fr → 1fr) so the card grows instead of snapping; the block is
+   `inert` while closed, so it holds no tab stop and no screen-reader focus. */
+.sm-reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 0.3s ease, opacity 0.22s ease;
+}
+.sm-reveal--open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.sm-reveal-inner {
+  overflow: hidden; /* padding on .sm-sub keeps focus rings clear of the clip */
+  min-height: 0;
+}
+/* Subordinate to the required fields: inset behind a hairline. */
+.sm-sub {
+  margin-top: 1.25rem;
+  padding: 0.125rem 0.5rem 0.625rem 1rem;
+  border: 0;
+  border-left: 1px solid var(--border-default);
+  min-width: 0;
+}
+.sm-sub-hint {
+  margin: 0.4rem 0 1rem;
+  max-width: 44ch;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+/* Advisory, not blocking: the value is still submitted, the server drops it. */
+.sm-warn {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--amber);
+}
+
 .sm-status {
   min-height: 1.25rem;
   font-size: 12.5px;

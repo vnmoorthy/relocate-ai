@@ -115,6 +115,23 @@ export interface StartMoveInput {
   hasChildren: boolean;
   hasCar: boolean;
   hasVisa: boolean;
+  // ── Optional household detail ───────────────────────────────────────────
+  // Never required, never validated hard: each one is dropped from the wire
+  // payload when blank, and the server drops anything it doesn't like. They
+  // exist because a specialist can only file a real request when it has them
+  // (child name + grade → school enrollment, pet + vet email → vet records).
+  /** Who is moving. */
+  userName?: string;
+  /** Only sent when hasChildren. */
+  childName?: string;
+  /** Only sent when hasChildren. */
+  childGrade?: string;
+  /** Only sent when hasPets. */
+  petName?: string;
+  /** Only sent when hasPets. Free text ("dog"). */
+  petSpecies?: string;
+  /** Only sent when hasPets. */
+  vetEmail?: string;
 }
 
 export type StartMoveField = "origin" | "destination" | "moveDate" | "email";
@@ -132,7 +149,24 @@ export interface StartMovePayload {
   has_visa: boolean;
   /** Honeypot — a human submission always carries "". */
   website: string;
+  // Optional detail. A key is present only when it carries a non-empty value
+  // AND the matching household flag is on — an unchecked box never leaks the
+  // text someone typed before unchecking it.
+  user_name?: string;
+  child_name?: string;
+  child_grade?: string;
+  pet_name?: string;
+  pet_species?: string;
+  vet_email?: string;
 }
+
+type OptionalPayloadKey =
+  | "user_name"
+  | "child_name"
+  | "child_grade"
+  | "pet_name"
+  | "pet_species"
+  | "vet_email";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -169,7 +203,7 @@ export function validateStartMove(input: StartMoveInput): StartMoveErrors {
 }
 
 export function buildStartMovePayload(input: StartMoveInput, honeypot = ""): StartMovePayload {
-  return {
+  const payload: StartMovePayload = {
     origin_address: input.origin.trim(),
     destination_address: input.destination.trim(),
     move_date: input.moveDate.trim(),
@@ -180,6 +214,23 @@ export function buildStartMovePayload(input: StartMoveInput, honeypot = ""): Sta
     has_visa: input.hasVisa,
     website: honeypot,
   };
+  addOptional(payload, "user_name", input.userName);
+  if (input.hasChildren) {
+    addOptional(payload, "child_name", input.childName);
+    addOptional(payload, "child_grade", input.childGrade);
+  }
+  if (input.hasPets) {
+    addOptional(payload, "pet_name", input.petName);
+    addOptional(payload, "pet_species", input.petSpecies);
+    addOptional(payload, "vet_email", input.vetEmail);
+  }
+  return payload;
+}
+
+/** Add an optional field only when it carries something. Blank → key absent. */
+function addOptional(payload: StartMovePayload, key: OptionalPayloadKey, value: string | undefined): void {
+  const trimmed = value?.trim();
+  if (trimmed) payload[key] = trimmed;
 }
 
 /** Pull a human-readable `detail` out of an error body, if the server sent one. */
