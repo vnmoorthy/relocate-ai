@@ -729,3 +729,17 @@ def test_backstop_only_takes_a_date_tied_to_moving() -> None:
         "move_date": "2026-10-20",
     }
     assert backstop_fields("Relocating on 12/05/2026.", {}) == {"move_date": "2026-12-05"}
+
+
+def test_spoken_reply_strips_everything_written_only() -> None:
+    """Browser TTS speaks whatever comes back, so emoji and fences must go.
+
+    Observed live: the concierge answered "Cool. On it. 💨 ```js {json}" —
+    speech synthesis would have read the emoji name and the backticks aloud.
+    """
+    from app.main import _strip_machine_json
+
+    assert _strip_machine_json('Cool. On it. 💨\n\n```js\n{"has_pets": true}\n```') == "Cool. On it."
+    assert _strip_machine_json("SF to Austin — when's the move? 🗓️") == "SF to Austin — when's the move?"
+    # A reply that is nothing but a machine block still has to say something.
+    assert _strip_machine_json('{"user_email": "x@y.com"}') == "Got it."

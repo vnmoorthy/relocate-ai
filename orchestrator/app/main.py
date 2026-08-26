@@ -14,6 +14,7 @@ import json
 import logging
 import re
 import time
+import uuid
 from contextlib import asynccontextmanager, suppress
 from typing import Any, AsyncIterator
 
@@ -193,7 +194,16 @@ async def _process_agentphone_webhook(
         )
 
 
-async def _handle_buyer_turn(call_id: str, transcript: str, history: list[dict]) -> StreamingResponse:
+async def _run_buyer_turn(
+    call_id: str, transcript: str, history: list[dict],
+) -> dict[str, Any]:
+    """One concierge turn: route it, extract fields, dispatch when ready.
+
+    Channel-agnostic on purpose. AgentPhone drives this over a webhook and the
+    browser mic drives it over /api/public/concierge/turn — same prompt, same
+    extraction, same dispatch rules, so the product does not depend on a phone
+    number existing.
+    """
     from .integrations.supermemory import recall_user_profile
 
     ctx = state.buyer_contexts.get(call_id)
@@ -321,9 +331,24 @@ async def _handle_buyer_turn(call_id: str, transcript: str, history: list[dict])
         # its fields have merged now, so re-run the end-of-call logic.
         _finalize_buyer_call(ctx)
 
-    # Return spoken text only. The machine-readable JSON block must never reach TTS.
+    # Spoken text only — the machine-readable JSON block must never reach TTS.
+    return {
+        "text": voice_reply,
+        "event_id": ctx.event_id,
+        "collected": sorted(ctx.collected),
+        "dispatched": ctx.dispatched,
+        "turn": ctx.turn_count,
+    }
+
+
+async def _handle_buyer_turn(
+    call_id: str, transcript: str, history: list[dict],
+) -> StreamingResponse:
+    """AgentPhone's view of a concierge turn: NDJSON with the spoken text."""
+    result = await _run_buyer_turn(call_id, transcript, history)
+
     async def generate():
-        yield json.dumps({"text": voice_reply}) + "\n"
+        yield json.dumps({"text": result["text"]}) + "\n"
 
     return StreamingResponse(generate(), media_type="application/x-ndjson")
 
@@ -539,9 +564,28 @@ def _extract_and_merge_fields(text: str, ctx) -> dict:
     return changed
 
 
+# Anything that is written-only. Speech synthesis either reads these aloud
+# literally ("grinning face", "backtick backtick") or garbles them, and the
+# browser concierge speaks every reply.
+_EMOJI_RE = re.compile(
+    "[" "\U0001F300-\U0001FAFF" "\U00002600-\U000027BF"
+    "\U0001F1E6-\U0001F1FF" "\U0000FE00-\U0000FE0F" "\U00002190-\U000021FF"
+    "\U00002B00-\U00002BFF" "]+"
+)
+
+
 def _strip_machine_json(text: str) -> str:
-    """Remove flat machine JSON blocks from the text returned to voice TTS."""
-    spoken = re.sub(r"\{[^{}]+\}", "", text, flags=re.DOTALL)
+    """Reduce a model reply to what is safe to speak aloud.
+
+    Removes the machine JSON block, any code fence the model wrapped it in,
+    and emoji — all of which are meant for the orchestrator or the eye, never
+    for text-to-speech.
+    """
+    spoken = re.sub(r"```[\s\S]*?```", "", text)      # closed fences
+    spoken = re.sub(r"```\w*", "", spoken)             # an unterminated one
+    spoken = re.sub(r"\{[^{}]+\}", "", spoken, flags=re.DOTALL)
+    spoken = _EMOJI_RE.sub("", spoken)
+    spoken = re.sub(r"[ \t]{2,}", " ", spoken)
     spoken = re.sub(r"\n{3,}", "\n\n", spoken).strip()
     return spoken or "Got it."
 
@@ -1010,6 +1054,89 @@ async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str,
         "finalized": event.finalized_at is not None,
         "final_outcome": event.final_outcome,
         "ts": now,
+    }
+
+
+_CONCIERGE_PER_IP_MIN = 40
+_concierge_hits: dict[str, list[float]] = {}
+
+
+@app.post("/api/public/concierge/turn")
+async def api_concierge_turn(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
+    """One spoken turn with the concierge, from a browser microphone.
+
+    The product's promise is "brief it once and the swarm goes" — that should
+    not require owning a phone number. Speech-to-text happens in the browser;
+    what arrives here is the same transcript AgentPhone would have posted, and
+    it runs the same concierge core, so a browser session dispatches exactly
+    like a phone call does.
+    """
+    if not settings.enable_public_intake:
+        raise HTTPException(503, "public intake is not enabled on this deployment")
+    ip = _client_ip(request)
+    now = time.time()
+    _sweep_hits(_concierge_hits, now - 60)
+    hits = [ts for ts in _concierge_hits.get(ip, []) if ts > now - 60]
+    if len(hits) >= _CONCIERGE_PER_IP_MIN:
+        raise HTTPException(429, "slow down a moment")
+    hits.append(now)
+    _concierge_hits[ip] = hits
+
+    transcript = str(payload.get("transcript") or "").strip()[:600]
+    if not transcript:
+        raise HTTPException(400, "transcript is required")
+    call_id = str(payload.get("call_id") or "").strip()[:64]
+    if not call_id or not re.fullmatch(r"web_[A-Za-z0-9]{6,32}", call_id):
+        call_id = f"web_{uuid.uuid4().hex[:12]}"
+
+    history = payload.get("history")
+    turns = []
+    if isinstance(history, list):
+        for item in history[-6:]:
+            if isinstance(item, dict) and item.get("content"):
+                turns.append({
+                    "direction": "inbound" if item.get("role") == "user" else "outbound",
+                    "content": str(item["content"])[:600],
+                })
+
+    result = await _run_buyer_turn(call_id, transcript, turns)
+
+    # A move briefed through the gated workspace belongs to it.
+    event = state.events.get(result["event_id"])
+    if event is not None and event.origin_channel != "demo":
+        event.origin_channel = (
+            "demo" if valid_token(str(payload.get("demo_token") or "")) else "web"
+        )
+        state.save_event(event)
+    result["call_id"] = call_id
+    return result
+
+
+@app.post("/api/public/concierge/end")
+async def api_concierge_end(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
+    """Hang up: dispatch whatever is confirmed and send the follow-up.
+
+    Mirrors agent.call_ended so a browser session ends exactly the way a phone
+    call does — including dispatching a CORE-complete spec the caller never
+    finished answering household questions for.
+    """
+    if not settings.enable_public_intake:
+        raise HTTPException(503, "public intake is not enabled on this deployment")
+    call_id = str(payload.get("call_id") or "").strip()[:64]
+    ctx = state.buyer_contexts.get(call_id)
+    if ctx is None:
+        raise HTTPException(404, "unknown session")
+    ctx.call_ended = True
+    state.save_context(ctx)
+    await ws_broker.broadcast({
+        "type": "agent_state", "event_id": ctx.event_id, "agent_id": "buyer",
+        "state": "closed", "ts": time.time(),
+    })
+    _finalize_buyer_call(ctx)
+    return {
+        "event_id": ctx.event_id,
+        "dispatched": ctx.dispatched,
+        "collected": sorted(ctx.collected),
     }
 
 
