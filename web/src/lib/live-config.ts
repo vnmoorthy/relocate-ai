@@ -169,6 +169,12 @@ export interface StartMovePayload {
   has_visa: boolean;
   /** Honeypot — a human submission always carries "". */
   website: string;
+  /**
+   * Present only when the dispatch was started from the signed-in demo
+   * workspace (/app), so the backend can tag the move to it. The public
+   * homepage form never sends one.
+   */
+  demo_token?: string;
   // Optional detail. A key is present only when it carries a non-empty value
   // AND the matching household flag is on — an unchecked box never leaks the
   // text someone typed before unchecking it.
@@ -224,7 +230,16 @@ export function validateStartMove(input: StartMoveInput): StartMoveErrors {
   return errors;
 }
 
-export function buildStartMovePayload(input: StartMoveInput, honeypot = ""): StartMovePayload {
+/**
+ * Wire payload for the intake POST. `demoToken` is optional and blank-safe:
+ * an empty or whitespace-only token leaves the key off entirely, so a public
+ * submission is byte-identical to what it was before the workspace existed.
+ */
+export function buildStartMovePayload(
+  input: StartMoveInput,
+  honeypot = "",
+  demoToken = "",
+): StartMovePayload {
   const payload: StartMovePayload = {
     origin_address: input.origin.trim(),
     destination_address: input.destination.trim(),
@@ -236,6 +251,7 @@ export function buildStartMovePayload(input: StartMoveInput, honeypot = ""): Sta
     has_visa: input.hasVisa,
     website: honeypot,
   };
+  if (demoToken.trim()) payload.demo_token = demoToken.trim();
   addOptional(payload, "user_name", input.userName);
   addOptional(payload, "user_phone", input.userPhone);
   if (input.hasChildren) {

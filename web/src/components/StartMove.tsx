@@ -17,6 +17,14 @@ interface Props {
   api: string;
   /** Called with the dispatcher's event id once the move is accepted. */
   onStarted?: (eventId: string) => void;
+  /**
+   * Demo-workspace session token. When present the dispatch is tagged to the
+   * signed-in workspace so it joins that move list; the public homepage form
+   * passes nothing and behaves exactly as before.
+   */
+  demoToken?: string;
+  /** Overrides the opening line for surfaces where "below" isn't true. */
+  lead?: ReactNode;
 }
 
 // The shareable tracking page is a static route; the move id rides in the
@@ -81,7 +89,7 @@ const SUB_HINT = "Optional — supplying this lets that specialist actually file
  * (revealed by the Kids / Pets toggles) is what lets the school and vet
  * specialists file a real request instead of handing back to the human.
  */
-export function StartMove({ api, onStarted }: Props) {
+export function StartMove({ api, onStarted, demoToken, lead }: Props) {
   const uid = useId();
   const [form, setForm] = useState<FormState>(EMPTY);
   const [errors, setErrors] = useState<StartMoveErrors>({});
@@ -129,7 +137,9 @@ export function StartMove({ api, onStarted }: Props) {
       const res = await fetch(startMoveUrl(api), {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(buildStartMovePayload(form, honeypotRef.current?.value ?? "")),
+        body: JSON.stringify(
+          buildStartMovePayload(form, honeypotRef.current?.value ?? "", demoToken ?? ""),
+        ),
       });
       const body = await readJson(res);
       if (res.ok) {
@@ -163,8 +173,12 @@ export function StartMove({ api, onStarted }: Props) {
   return (
     <form className="start-move" onSubmit={onSubmit} noValidate>
       <p className="start-move-lead">
-        Brief the dispatcher by form instead of by phone. It fans out the same
-        swarm you see below.
+        {lead ?? (
+          <>
+            Brief the dispatcher by form instead of by phone. It fans out the same
+            swarm you see below.
+          </>
+        )}
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
