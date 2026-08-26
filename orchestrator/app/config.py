@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     # E.164 number this deployment answers on, e.g. +15125551234.
     twilio_phone_number: str = ""
 
+    # Supabase mirror. SQLite stays the source of truth; when these are set
+    # every move is written through to Postgres as well. Server-side only:
+    # RLS is on with no policies, so the public anon key reads nothing.
+    supabase_url: str = ""
+    supabase_service_key: str = ""
+
     # Client-IP source for rate limits and intake dedupe. True is correct
     # behind the cloudflared tunnel (every request would otherwise look like
     # 127.0.0.1 and one visitor would throttle everyone). Set false if the

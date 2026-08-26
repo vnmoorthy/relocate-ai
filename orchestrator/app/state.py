@@ -121,9 +121,19 @@ class AppState:
     # ── durability ───────────────────────────────────────────────────────
     def save_event(self, event: MarketplaceEvent) -> None:
         persistence.save_event(event.id, asdict(event))
+        # Write through to Supabase when configured. Never blocking, never
+        # able to fail a dispatch — see integrations/supabase_store.
+        from .integrations import supabase_store
+
+        if supabase_store.enabled():
+            supabase_store.schedule(supabase_store.mirror_event(event))
 
     def save_context(self, ctx: BuyerCallContext) -> None:
         persistence.save_buyer_context(ctx.call_id, asdict(ctx))
+        from .integrations import supabase_store
+
+        if supabase_store.enabled():
+            supabase_store.schedule(supabase_store.mirror_context(ctx))
 
     def load_from_persistence(self) -> tuple[int, int, int]:
         """Rebuild the working set from SQLite after a restart.
