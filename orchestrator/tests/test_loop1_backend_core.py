@@ -743,3 +743,28 @@ def test_spoken_reply_strips_everything_written_only() -> None:
     assert _strip_machine_json("SF to Austin — when's the move? 🗓️") == "SF to Austin — when's the move?"
     # A reply that is nothing but a machine block still has to say something.
     assert _strip_machine_json('{"user_email": "x@y.com"}') == "Got it."
+
+
+def test_backstop_resolves_the_uncued_end_by_elimination() -> None:
+    """"A to B" only ever cues B.
+
+    Observed live: the caller said "950 Howard Street... to 4700 Duval
+    Street...", the cue matched the destination, and origin_address was
+    left empty — so a complete brief failed to dispatch.
+    """
+    from app.transcript_extract import backstop_fields
+
+    both = backstop_fields(
+        "950 Howard Street, San Francisco, CA 94103 to "
+        "4700 Duval Street, Austin, TX 78751.", {},
+    )
+    assert both["origin_address"] == "950 Howard Street, San Francisco, CA 94103"
+    assert both["destination_address"] == "4700 Duval Street, Austin, TX 78751"
+
+    # A single cued address still resolves to that end only — elimination
+    # must not invent the other one.
+    one = backstop_fields("moving to 4700 Duval Street, Austin, TX 78751", {})
+    assert one == {"destination_address": "4700 Duval Street, Austin, TX 78751"}
+    assert backstop_fields(
+        "I have to move from 500 Oak Avenue, Denver, CO 80202.", {},
+    ) == {"origin_address": "500 Oak Avenue, Denver, CO 80202"}

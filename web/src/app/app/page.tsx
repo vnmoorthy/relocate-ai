@@ -8,6 +8,7 @@ import {
   type MoveConn,
 } from "@/components/MoveDetail";
 import { StartMove } from "@/components/StartMove";
+import { VoiceConcierge } from "@/components/VoiceConcierge";
 import { parseDashboardMessage, reconnectDelay, withJitter } from "@/lib/dashboard-state";
 import {
   DEMO_UNREACHABLE_MESSAGE,
@@ -513,18 +514,30 @@ export default function WorkspacePage() {
                   <p className="kicker mb-4">Start a move</p>
                   <h1 className="display-sub">New dispatch</h1>
                   <p className="mt-5 max-w-[560px] text-[15px] leading-[1.65] text-[var(--text-secondary)]">
-                    Brief the dispatcher once. Up to 28 specialists fan out, each one
-                    reporting a real terminal state — and everything they can&rsquo;t
-                    finish comes back to you as a task you own.
+                    Brief the concierge once — out loud. Up to 28 specialists fan
+                    out, each one reporting a real terminal state, and everything
+                    they can&rsquo;t finish comes back to you as a task you own.
                   </p>
                   <div className="mt-8 max-w-[640px]">
-                    <StartMove
+                    <VoiceConcierge
                       api={api}
                       demoToken={token}
-                      onStarted={onMoveStarted}
-                      lead="Brief the dispatcher by form instead of by phone. The move joins this workspace and opens as soon as the dispatcher accepts it."
+                      onDispatched={onMoveStarted}
                     />
                   </div>
+                  <details className="mt-10 max-w-[640px] vc-fallback">
+                    <summary className="tm-label text-[var(--text-tertiary)] cursor-pointer">
+                      Prefer a form?
+                    </summary>
+                    <div className="mt-6">
+                      <StartMove
+                        api={api}
+                        demoToken={token}
+                        onStarted={onMoveStarted}
+                        lead="Same dispatch, typed instead of spoken. The move joins this workspace and opens as soon as the dispatcher accepts it."
+                      />
+                    </div>
+                  </details>
                 </>
               ) : view === null || view.phase === "loading" ? (
                 <MoveDetailSkeleton />

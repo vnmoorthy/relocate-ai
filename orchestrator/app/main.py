@@ -1190,6 +1190,11 @@ async def api_demo_moves(request: Request) -> dict[str, Any]:
     for event in state.events.values():
         if event.origin_channel != "demo":
             continue
+        # A concierge session that was abandoned mid-brief created an event but
+        # never dispatched. Listing those as empty "Origin -> Destination"
+        # rows is noise, not history.
+        if not event.specialist_calls:
+            continue
         counts = {"submitted": 0, "action": 0, "failed": 0, "working": 0, "done": 0}
         for ctx in event.specialist_calls.values():
             if ctx.state == "submitted":

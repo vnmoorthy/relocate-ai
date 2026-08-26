@@ -1773,3 +1773,103 @@ a:focus-visible, button:focus-visible {
   background: var(--bg-elev-1);
   color: var(--text-primary);
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Voice concierge — the same agent the phone line runs, driven by the
+   browser mic. Same console register as the tracker: monochrome, state as
+   the only colour.
+   ────────────────────────────────────────────────────────────────────────── */
+.vc { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.vc-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border-default);
+  background: var(--bg-elev-1);
+}
+.vc-mic {
+  display: inline-flex; align-items: center; gap: 0.55rem;
+  padding: 0.55rem 0.95rem;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-geist-mono);
+  font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.vc-mic:hover:not(:disabled) { border-color: var(--text-secondary); }
+.vc-mic:disabled { opacity: 0.45; cursor: not-allowed; }
+.vc-mic--live { border-color: var(--red); color: var(--red); }
+.vc-mic--live svg { animation: vcPulse 1.4s ease-in-out infinite; }
+@keyframes vcPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .vc-mic--live svg { animation: none; } }
+.vc-ghost {
+  padding: 0.5rem 0.8rem;
+  border: 1px solid var(--border-default);
+  background: transparent; color: var(--text-secondary);
+  font-family: var(--font-geist-mono);
+  font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+  cursor: pointer;
+}
+.vc-ghost:hover:not(:disabled) { color: var(--text-primary); border-color: var(--border-strong); }
+.vc-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
+.vc-end { padding: 0.5rem 0.9rem; font-size: 10px; }
+.vc-privacy {
+  font-size: 12px; line-height: 1.6; color: var(--text-quaternary);
+  max-width: 60ch;
+}
+.vc-transcript {
+  display: flex; flex-direction: column; gap: 0.85rem;
+  max-height: 320px; overflow-y: auto;
+  padding: 1rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-base);
+}
+.vc-you, .vc-agent {
+  display: flex; flex-direction: column; gap: 0.3rem;
+  font-size: 14px; line-height: 1.55;
+}
+.vc-you { color: var(--text-secondary); }
+.vc-agent { color: var(--text-primary); }
+.vc-you .tm-label { color: var(--text-quaternary); }
+.vc-agent .tm-label { color: var(--brand); }
+.vc-interim { opacity: 0.55; font-style: italic; }
+.vc-notice {
+  font-size: 13px; line-height: 1.6; color: var(--amber);
+  border-left: 2px solid var(--amber); padding-left: 0.75rem;
+}
+.vc-type { display: flex; gap: 0.5rem; align-items: center; }
+.vc-type input {
+  flex: 1; min-width: 0;
+  padding: 0.6rem 0.2rem;
+  background: transparent; border: 0;
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-primary); font-size: 14px;
+}
+.vc-type input:focus { outline: none; border-bottom-color: var(--text-secondary); }
+.vc-hud {
+  display: flex; flex-direction: column; gap: 0.7rem;
+  padding: 1rem;
+  border: 1px solid var(--border-subtle);
+}
+.vc-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.vc-chip {
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border-default);
+  font-family: var(--font-geist-mono);
+  font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-quaternary);
+  transition: color 0.25s ease, border-color 0.25s ease;
+}
+.vc-chip-dot {
+  width: 5px; height: 5px; border-radius: 999px;
+  background: var(--text-quaternary);
+  transition: background 0.25s ease;
+}
+.vc-chip--on { color: var(--brand); border-color: rgba(0, 212, 154, 0.4); }
+.vc-chip--on .vc-chip-dot { background: var(--brand); }
+.vc-chip--core.vc-chip--on { color: var(--tier-haiku); border-color: rgba(96, 165, 250, 0.45); }
+.vc-chip--core.vc-chip--on .vc-chip-dot { background: var(--tier-haiku); }
+.vc-hud-note { font-size: 12px; line-height: 1.6; color: var(--text-quaternary); max-width: 60ch; }

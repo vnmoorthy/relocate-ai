@@ -168,6 +168,17 @@ def backstop_fields(transcript: str, collected: dict[str, Any]) -> dict[str, str
                 out["origin_address"] = explicit["origin"]
             if need_dest and "destination" in explicit:
                 out["destination_address"] = explicit["destination"]
+            # "A to B" cues only B — the caller does not say "from" out loud
+            # nearly as often as they say "to". With exactly two addresses in
+            # one breath, the uncued one is the other end by elimination.
+            if len(found) == 2:
+                claimed = set(explicit.values())
+                remaining = [addr for _start, addr in found if addr not in claimed]
+                if len(remaining) == 1:
+                    if need_origin and "origin_address" not in out and "destination" in explicit:
+                        out["origin_address"] = remaining[0]
+                    elif need_dest and "destination_address" not in out and "origin" in explicit:
+                        out["destination_address"] = remaining[0]
         elif len(found) >= 2:
             # No cues, but two addresses in one breath: "A ... B" is the
             # overwhelming spoken order (from, then to).

@@ -129,3 +129,32 @@ def test_login_is_rate_limited() -> None:
         for _ in range(main._DEMO_LOGIN_PER_IP_MIN + 1)
     ]
     assert codes[-1] == 429
+
+
+def test_abandoned_briefs_do_not_clutter_the_workspace() -> None:
+    """A concierge session left mid-brief creates an event with no specialists.
+
+    Those showed up as empty "Origin -> Destination · 0 TASKS" rows, which
+    reads as broken product rather than as an abandoned draft.
+    """
+    client = TestClient(main.app)
+    token = _login(client)
+
+    abandoned = MarketplaceEvent(
+        id="mkt_abandoned", homeowner_call_id="web_x", spec={}, origin_channel="demo",
+    )
+    dispatched = MarketplaceEvent(
+        id="mkt_real", homeowner_call_id="web_y",
+        spec={"origin_address": "1 A St, SF, CA 94103"}, origin_channel="demo",
+    )
+    dispatched.specialist_calls["mover_quote"] = SpecialistCallContext(
+        call_id="c", agent_id="mover_quote", event_id=dispatched.id, state="submitted",
+    )
+    state.events[abandoned.id] = abandoned
+    state.events[dispatched.id] = dispatched
+
+    body = client.get(
+        "/api/public/demo/moves", headers={"Authorization": f"Bearer {token}"},
+    ).json()
+
+    assert [m["event_id"] for m in body["moves"]] == ["mkt_real"]
