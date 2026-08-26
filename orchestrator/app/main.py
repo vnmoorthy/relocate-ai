@@ -20,7 +20,7 @@ from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import Response, StreamingResponse, JSONResponse
 from pythonjsonlogger import jsonlogger
 
 from .config import settings
@@ -1112,6 +1112,104 @@ async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str,
         "final_outcome": event.final_outcome,
         "ts": now,
     }
+
+
+@app.post("/webhook/twilio/voice", response_model=None)
+async def webhook_twilio_voice(request: Request) -> Response:
+    """One turn of a phone call, spoken through Twilio.
+
+    Twilio does the speech-to-text and the speaking; this endpoint only
+    translates. The transcript runs through the same concierge core an
+    AgentPhone call or a browser microphone uses, so the three rails cannot
+    drift apart.
+    """
+    from .integrations.twilio_voice import (
+        build_action_url,
+        gather_twiml,
+        verify_signature,
+    )
+
+    if not settings.twilio_auth_token:
+        raise HTTPException(503, "twilio rail is not configured")
+    form = await request.form()
+    params = {k: str(v) for k, v in form.items()}
+    action_url = build_action_url(settings.public_base_url)
+    if not verify_signature(
+        auth_token=settings.twilio_auth_token,
+        url=action_url,
+        params=params,
+        signature=request.headers.get("X-Twilio-Signature"),
+    ):
+        # Unsigned traffic is not Twilio and must never drive a call.
+        raise HTTPException(403, "invalid twilio signature")
+
+    call_sid = params.get("CallSid", "")
+    if not call_sid:
+        raise HTTPException(400, "CallSid is required")
+    call_id = f"twl_{call_sid}"
+    transcript = (params.get("SpeechResult") or "").strip()
+    caller = params.get("From", "")
+    if caller and call_id not in state.buyer_caller_phone:
+        state.buyer_caller_phone[call_id] = caller
+
+    if not transcript:
+        # First leg, or the caller said nothing — open the conversation.
+        ctx = state.buyer_contexts.get(call_id)
+        opening = (
+            "Relocate here. Where are you moving from, and where to?"
+            if ctx is None
+            else "Still there? Tell me a bit more about the move."
+        )
+        return Response(
+            content=gather_twiml(say=opening, action_url=action_url),
+            media_type="application/xml",
+        )
+
+    history = _twilio_history.setdefault(call_id, [])
+    result = await _run_buyer_turn(call_id, transcript, list(history))
+    history.append({"direction": "inbound", "content": transcript})
+    history.append({"direction": "outbound", "content": result["text"]})
+    del history[:-12]
+    return Response(
+        content=gather_twiml(say=result["text"], action_url=action_url),
+        media_type="application/xml",
+    )
+
+
+@app.post("/webhook/twilio/status", response_model=None)
+async def webhook_twilio_status(request: Request) -> dict[str, Any]:
+    """Call ended: dispatch what was confirmed, exactly like a hang-up."""
+    from .integrations.twilio_voice import build_action_url, verify_signature
+
+    if not settings.twilio_auth_token:
+        raise HTTPException(503, "twilio rail is not configured")
+    form = await request.form()
+    params = {k: str(v) for k, v in form.items()}
+    if not verify_signature(
+        auth_token=settings.twilio_auth_token,
+        url=build_action_url(settings.public_base_url).replace("/voice", "/status"),
+        params=params,
+        signature=request.headers.get("X-Twilio-Signature"),
+    ):
+        raise HTTPException(403, "invalid twilio signature")
+    call_id = f"twl_{params.get('CallSid', '')}"
+    ctx = state.buyer_contexts.get(call_id)
+    if ctx is None:
+        return {"ok": True, "unknown_call": True}
+    ctx.call_ended = True
+    state.save_context(ctx)
+    _twilio_history.pop(call_id, None)
+    await ws_broker.broadcast({
+        "type": "agent_state", "event_id": ctx.event_id, "agent_id": "buyer",
+        "state": "closed", "ts": time.time(),
+    })
+    _finalize_buyer_call(ctx)
+    return {"ok": True, "event_id": ctx.event_id, "dispatched": ctx.dispatched}
+
+
+# Per-call turn history for the Twilio rail. AgentPhone sends history with
+# each webhook; Twilio does not, so it is kept here for the call's lifetime.
+_twilio_history: dict[str, list[dict[str, str]]] = {}
 
 
 _CONCIERGE_PER_IP_MIN = 40

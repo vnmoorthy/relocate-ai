@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     # default test suite runs purely in memory.
     database_path: str = "data/relocate.db"
 
+    # Twilio as a second telephony rail. The auth token verifies that an
+    # inbound webhook genuinely came from Twilio; blank disables the rail.
+    twilio_auth_token: str = ""
+
     # Client-IP source for rate limits and intake dedupe. True is correct
     # behind the cloudflared tunnel (every request would otherwise look like
     # 127.0.0.1 and one visitor would throttle everyone). Set false if the
