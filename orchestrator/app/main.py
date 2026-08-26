@@ -24,7 +24,12 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from pythonjsonlogger import jsonlogger
 
 from .config import settings
-from .marketplace import fan_out, finalize_event, resume_ready_specialists
+from .marketplace import (
+    _SELF_DELIVERED_AGENTS,
+    fan_out,
+    finalize_event,
+    resume_ready_specialists,
+)
 from .pavo_client import pavo_chat
 from .persistence import persistence
 from .personas import by_id, buyer_persona
@@ -999,9 +1004,30 @@ async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str,
     event = state.events.get(event_id)
     if event is None:
         raise HTTPException(404, "unknown move")
+    def _did(ctx) -> str | None:  # noqa: ANN001
+        """What this specialist actually did, in the user's terms.
+
+        Deliberately blunt: a specialist that contacted nobody must not read
+        like one that did.
+        """
+        bid = ctx.bid if isinstance(ctx.bid, dict) else {}
+        if ctx.state == "needs-user-action":
+            return None
+        if bid.get("kind") == "prepared_section":
+            return "Prepared for you"
+        intended = bid.get("intended")
+        if isinstance(intended, int) and intended > 0:
+            if ctx.agent_id in _SELF_DELIVERED_AGENTS:
+                return "Sent to your inbox"
+            return f"Requested from {intended} provider" + ("s" if intended > 1 else "")
+        if bid.get("letter_id") or bid.get("tracking_number"):
+            return "Certified letter created"
+        return None
+
     specialists = [
         {
             "agent_id": agent_id,
+            "did": _did(ctx),
             "state": ctx.state,
             "terminal_outcome": ctx.terminal_outcome,
             "blocker_kind": ctx.blocker_kind,
@@ -1036,8 +1062,17 @@ async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str,
         }
         for r in event.replies
     ]
+    outbound = sum(
+        int((c.bid or {}).get("intended") or 0)
+        for c in event.specialist_calls.values()
+        if isinstance(c.bid, dict) and c.agent_id not in _SELF_DELIVERED_AGENTS
+    )
     return {
         "event_id": event.id,
+        # Headline proof of work: requests that left the building, and answers
+        # that came back.
+        "outbound_requests": outbound,
+        "replies_received": len(event.replies),
         # The live public feed emits this alias instead of the real id (which
         # is a capability — see public_feed.public_ref). A tracker page that
         # already holds the real id learns its alias here, and nowhere else.

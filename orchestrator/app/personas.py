@@ -353,19 +353,19 @@ PERSONAS: list[Persona] = [
     # ────────────────────────────────────────────────────────────────────
     Persona(
         agent_id="spectrum_austin",
-        name="Spectrum Austin install",
+        name="Destination internet",
         category="utility-internet-austin",
-        voice_mode="browser",
-        counterparty_url="https://www.spectrum.com/internet/order",
-        requires_browser_use=True,
+        voice_mode="email",
+        counterparty_email="orders@spectrum.com",
         body=(
-            "Browser-Use task: place a new-customer Spectrum Internet order at "
-            "{destination_address}. Select the 500 Mbps plan + WiFi router rental. "
-            "Choose the earliest install date on or after {move_date}, 4-hour "
-            "window. Customer name {user_name}, email {user_email}, phone "
-            "{user_phone}. On the order-confirmation page capture the order "
-            "number, work-order ID, install date, and install window. Return: "
-            "{'order_number': str, 'work_order': str, 'install_date': str, 'window': str}."
+            "Email-mode: request new residential internet service at the "
+            "destination. This is a NEW customer request, so it needs no "
+            "account number and no credentials — which is why it can actually "
+            "be sent rather than handed back. Asks for serviceability, install "
+            "dates on or after the move date, the out-the-door monthly price "
+            "including equipment, and the price after any promo ends. Ordering "
+            "still ends with the customer: we never accept terms or agree to a "
+            "contract on their behalf. Artifact: the AgentMail message_id."
         ),
     ),
     # ────────────────────────────────────────────────────────────────────

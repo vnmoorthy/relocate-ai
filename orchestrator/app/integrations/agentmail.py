@@ -175,6 +175,10 @@ async def _send_via_agentmail(
         )
 
     recipients = to if isinstance(to, list) else [to]
+    # How many counterparties this request was addressed to. Demo routing
+    # collapses the sends into one inbox, so the delivered count understates
+    # the work — the tracker reports what was actually requested.
+    intended_count = len(recipients)
     # Correlate replies: every outbound subject carries the move reference so
     # an emailed answer can be threaded back to its event (see replies.py).
     if event_id and "[ref:" not in subject:
@@ -255,7 +259,7 @@ async def _send_via_agentmail(
     from .replies import note_outbound
     for sent in sent_ids:
         note_outbound(str(sent.get("message_id") or ""), event_id)
-    return {"messages": sent_ids, "count": len(sent_ids)}
+    return {"messages": sent_ids, "count": len(sent_ids), "intended": intended_count}
 
 
 async def send_tracker_link(
@@ -348,6 +352,46 @@ async def send_flight_options(
     if result is not None:
         result["search_url"] = search_url
     return result
+
+
+async def request_internet_service(
+    *, event_id: str, spec: dict, user_email: str
+) -> dict | None:
+    """Agent #6 — destination internet. A real new-service request.
+
+    Deliberately a new-customer enquiry: no account number, no credentials,
+    nothing only the customer could supply — which is exactly why this one can
+    be sent on their behalf instead of handed back as homework. Ordering still
+    ends with them; we never accept terms or sign a contract.
+    """
+    dest = spec.get("destination_address", "(destination)")
+    move_date = spec.get("move_date", "(move date)")
+    name = spec.get("user_name", "")
+    body = (
+        f"Hi,\n\n"
+        f"I'm moving to the address below and would like to set up residential "
+        f"internet service.\n\n"
+        f"Service address: {dest}\n"
+        f"Needed from: {move_date}\n"
+        f"{'Customer: ' + name + chr(10) if name else ''}"
+        f"\nPlease reply with:\n"
+        f"1. Whether the address is serviceable, and which plans are available\n"
+        f"2. The earliest install dates on or after {move_date}, and the "
+        f"appointment windows\n"
+        f"3. The out-the-door monthly price including equipment and fees\n"
+        f"4. What that price becomes after any promotional period ends\n"
+        f"5. Whether self-install is available at this address\n\n"
+        f"Please do not activate service or enrol me in anything from this "
+        f"email — send the options and I'll confirm.\n\n"
+        f"Thanks,\nRelocate, on behalf of the customer\n"
+    )
+    return await _send_via_agentmail(
+        event_id=event_id,
+        agent_id="spectrum_austin",
+        to="orders@spectrum.com",
+        subject=f"New residential service request: {dest} from {move_date}",
+        body=body,
+    )
 
 
 async def request_mover_quotes(

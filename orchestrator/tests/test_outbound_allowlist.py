@@ -131,7 +131,11 @@ def test_demo_override_reroutes_to_owner_and_notes_intended(
         subject="Quote request", body="Hello",
     ))
     # Two institutional recipients collapse into ONE send to the owner.
-    assert result == {"count": 1, "messages": [{"message_id": "msg_demo"}]}
+    # Two institutional recipients collapse into ONE delivered send, but the
+    # tracker must still report that two providers were asked.
+    assert result == {
+        "count": 1, "messages": [{"message_id": "msg_demo"}], "intended": 2,
+    }
 
 
 def test_demo_override_must_itself_be_allowlisted(

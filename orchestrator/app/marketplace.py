@@ -95,7 +95,7 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
         "user_email", "usps_verify_card", "usps_verify_exp", "usps_verify_cvv",
     ),
     "spectrum_austin": (
-        "destination_address", "move_date", "user_name", "user_email", "user_phone",
+        "destination_address", "move_date", "user_email",
     ),
     "mover_quote": (
         "origin_address", "destination_address", "move_date", "user_email",
@@ -768,8 +768,16 @@ async def _run_email(
         return await am.request_gym_cancellation(event_id=event_id, spec=spec, user_email=user_email)
     if p.agent_id == "bank_notify":
         return await am.send_bank_script(event_id=event_id, spec=spec, user_email=user_email)
+    if p.agent_id == "spectrum_austin":
+        return await am.request_internet_service(
+            event_id=event_id, spec=spec, user_email=user_email,
+        )
     if p.agent_id == "flight_book":
         return await am.send_flight_options(event_id=event_id, spec=spec, user_email=user_email)
+    if p.agent_id == "spectrum_austin":
+        return await am.request_internet_service(
+            event_id=event_id, spec=spec, user_email=user_email,
+        )
 
     raise RuntimeError(f"no email handler for agent {p.agent_id}")
 
