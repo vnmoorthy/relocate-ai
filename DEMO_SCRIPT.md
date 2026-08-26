@@ -1,163 +1,103 @@
-# Relocate demo runbook
+# Relocate — 5-minute product demo
 
-This runbook keeps the demonstration aligned with what the repository proves.
-Choose one mode before presenting and state it plainly:
+**Before you hit record**
 
-- **Replay demo (recommended):** deterministic client-side events; no provider
-  calls or external side effects.
-- **Authorized live demo:** a provisioned AgentPhone account and explicitly
-  selected provider sandboxes/test accounts. Never improvise a live run against
-  real customer or institution accounts.
+1. `./demo-line.sh` running in its own terminal. Confirm `curl -s $(cat ~/.relocate/runtime/tunnel-url)/healthz` returns ok.
+2. Deployed `live.json` matches that tunnel URL. If the supervisor logged `ACTION NEEDED`, commit and push `web/public/live.json` and wait for Pages (~2 min).
+3. Open two tabs: `https://vnmoorthy.github.io/relocate-ai/` and `https://vnmoorthy.github.io/relocate-ai/app/`.
+4. Sign in at `/app` beforehand so recording starts past the login (or record the login — it's 8 seconds and it proves the gate).
+5. Have your own inbox open in a third tab. The emails are the payoff.
 
-Do not describe replay events, mocked tests, playbook emails, or provider
-submission IDs as completed relocation transactions.
+Total: 5:00. Timings are generous — cut, don't rush.
 
-## 90-second replay demo
+---
 
-### 0:00–0:15 — Problem and boundary
+## 0:00–0:30 · The problem, in one sentence
 
-> “Relocate is a relocation-orchestration platform in developer preview: it
-> turns one moving conversation into a set of parallel specialist workflows.
-> This screen is running a deterministic
-> simulation — you can see the SIMULATION tag on the panel, the same way SpaceX
-> stamps its renders; I’ll distinguish implemented code from live-provider
-> validation as we go.”
+> "Moving means about thirty separate errands with thirty different institutions, and every one of them wants the same eight facts about you. Nobody has built the thing that just does it."
 
-Point to the SIMULATION tag on the dashboard panel before the animation
-starts; in a live session it reads LIVE instead.
+On screen: the homepage hero.
 
-### 0:15–0:35 — Buyer and dispatch
+**Don't** explain the architecture yet. Say the problem, then show the product.
 
-> “The inbound buyer is the one voice persona. The backend incrementally
-> collects origin, destination, date, and email, then applies household flags.
-> Once the core fields and the household questions are answered, it chooses
-> the applicable specialists — and if the caller hangs up early, it dispatches
-> at call end with whatever was confirmed.”
+---
 
-Call out that the configured roster is one buyer plus 16 specialists, while an
-individual move dispatches 11–16 specialists.
+## 0:30–1:15 · Brief it once
 
-### 0:35–1:00 — Parallel workflows
+Go to `/app`, land on **New dispatch**.
 
-> “The specialists are browser, email, and postal-mail workflows—not 16 voice
-> calls. The orchestrator runs them concurrently and streams state, transcript,
-> routing, and artifact events to the dashboard. One failure is isolated from
-> the rest.”
+Fill the form while talking — don't narrate the fields, narrate the point:
 
-The simulation shows this honestly: one specialist fails mid-run while the
-others continue, three end as needs-user-action handoffs (USCIS signature,
-HIPAA consent, gym authorization), and the rest end as submissions. Point at
-the failed and paused cells when you say the line above.
+> "One brief. Where you're leaving, where you're going, when, and how to reach you. Pets, kids, car, visa — those four checkboxes decide which specialists are relevant to you."
 
-When an artifact appears, describe it precisely:
+Use a real-looking move (SF → Austin), tick **pets**, **kids**, **car**. Add a work address.
 
-- “replayed blocked-browser workflow,” not “PG&E was disconnected”;
-- “email request identifier,” not “the school enrolled the child”;
-- “letter submission identifier,” not “the provider accepted cancellation”;
-- “user-action handoff,” not “the government form was filed.”
+Hit **Start the dispatch**.
 
-### 1:00–1:20 — Routing and fallback
+---
 
-> “PAVO is an authenticated completion service. The open repository routes
-> deterministically among a local model, Gemini, and Anthropic using transparent
-> heuristics. If a provider tier fails, it tries another configured tier; if all
-> fail, the request errors rather than inventing a response.”
+## 1:15–2:30 · The swarm, live
 
-If the UI displays cost, explain that it is an estimate based on configured
-prices and provider usage, not an invoice. Do not present historical benchmark
-numbers unless the exact reproducible benchmark artifact is separately shown.
+The tracker opens on its own.
 
-### 1:20–1:30 — Honest close
+> "Twenty-eight specialists just fanned out in parallel. This is live — this is not a replay."
 
-> “What is built is the orchestration and demonstration layer. The next work is
-> durable jobs and state, secure customer intake and approvals, provider sandbox
-> certification, authenticated live UI, and production operations.”
+Point at three things, in this order:
 
-Open [STATUS.md](STATUS.md) for detailed questions.
+1. **The counts.** "Seventeen submitted, eleven waiting on me."
+2. **The honest line under them.** Read it out loud, verbatim:
+   > "Submitted means the provider accepted the request — the underlying service change is not confirmed complete."
+   Then: *"That sentence is the product. Every agent tool on the market will tell you it finished. This one tells you what actually happened."*
+3. **What you still own.** "Eleven things need me — and every one arrives with the exact script or letter already written."
 
-## Authorized live-demo checklist
+---
 
-Complete this checklist before placing a call or enabling any provider path:
+## 2:30–3:30 · The part nobody else does
 
-- [ ] The operator owns or is explicitly authorized to use every identity,
-  account, phone number, recipient, and address in the test.
-- [ ] `orchestrator/.env` contains only isolated development/sandbox keys.
-- [ ] Stripe test mode is on; Lob uses test mode; no live payment/mail key is
-  present.
-- [ ] The generated `agents.json` matches the provisioned AgentPhone buyer.
-- [ ] PAVO, orchestrator, and dashboard health checks pass.
-- [ ] Webhook signing has been verified against the current vendor contract.
-- [ ] The exact specialist subset is known; unapproved integrations are blank or
-  feature-disabled.
-- [ ] Any email recipient is allowlisted and controlled by the demo team, and
-  `AGENTMAIL_ALLOWED_RECIPIENTS` lists exactly those addresses (it is empty by
-  default, which blocks every outbound email).
-- [ ] Browser targets cannot mutate a real account or charge a real card without
-  a deliberate approval.
-- [ ] Expected cleanup, cancellation, mail suppression, and data deletion are
-  documented.
-- [ ] A replay-demo fallback is already open if the live path fails.
+Switch to your inbox. Show three emails:
 
-Run safe checks first:
+- **Your arrival pack** — "Twelve things prepared. Housing near the office. The commute checked at the hours I actually travel. What to buy the first night."
+- **What we prepared for you** — "Every blocked task, with the call script filled in from my move."
+- **Documents for your review** — open the **Comcast cancellation letter** and the **HIPAA release**. "Written from my details, ready to sign. Relocate never signs them. That's deliberate."
 
-```bash
-./verify-all-agents.sh
-bash orchestrator/tests/preflight.sh
+> "This is the difference between an agent that says 'I couldn't do that' and one that hands you the thing you need to finish it yourself."
 
-cd web
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm build
-```
+---
 
-Start locally with `./run.sh`. It prints a `http://127.0.0.1:3000/#ws-token=…`
-URL for the authenticated live view; open that URL (not the bare dashboard) if
-the demo should show live orchestrator events instead of the simulation.
+## 3:30–4:15 · The loop closes
 
-The published concierge number is served by the operator's supervised
-deployment: run `./demo-line.sh` before any window in which the number must
-answer. It keeps the machine awake, the local model warm, the stack and public
-tunnel up, and re-points the AgentPhone webhook automatically if the tunnel URL
-changes. The line is down whenever that machine is off or offline — take the
-number off the site (or park a voicemail greeting) before any extended
-offline period.
+Back to the tracker. Scroll to **Quotes**.
 
-## Live narration rules
+> "The movers replied. It parsed the quotes out of the emails — total, deposit, availability — and sorted them. Cheapest is tagged."
 
-Say:
+Read the footer line out loud:
+> "You choose — Relocate never books or signs anything without you."
 
-- “request submitted” when a provider accepted a request;
-- “needs user action” when a signature, MFA, payment, or final click remains;
-- “completed” only after final provider confirmation that meets a documented
-  evidence contract;
-- “policy blocked” when Browser Use, Lob, medical, pharmacy, or another unsafe
-  path requires a secure/user-approved workflow;
-- “failed” or “unavailable” when a provider errors.
+If you want the live version: send a reply with `[ref:<move-id>:mover_quote]` in the subject before recording, and let it land on camera — the poller picks it up within 45 seconds and the page updates with no reload.
 
-Never say:
+---
 
-- all 17 agents fired if conditional selection launched fewer;
-- every artifact is live during replay/mocked mode;
-- a letter ID proves delivery or cancellation;
-- an email ID proves the recipient acted;
-- a browser task ID proves the target transaction succeeded;
-- a prepared USCIS/DMV form was filed or accepted;
-- a routing benchmark, model parameter count, latency, energy, margin, or cost
-  is current without showing its reproducible source;
-- the system is production-secure, HIPAA compliant, legally authorized, or
-  fully autonomous.
+## 4:15–5:00 · Why it holds up
 
-## Failure plan
+Homepage → scroll to the router panel.
 
-If live connectivity or a provider fails:
+> "Most turns run on a two-billion-parameter model on this laptop. It only escalates to a frontier model when the turn is actually hard. That's the unit economics — a move costs cents, not dollars."
 
-1. state the failure without hiding or relabeling it;
-2. show the surfaced error/retry state if useful;
-3. switch to the simulation (the panel tag flips from LIVE to SIMULATION);
-4. explain which contract or infrastructure layer remains incomplete;
-5. do not rerun an irreversible provider action unless idempotency and cleanup
-   have been verified.
+Close on the honesty point, because it's the moat:
 
-The best demo is legible about the boundary between product vision, implemented
-workflow code, and externally verified completion.
+> "Twenty-nine agents, four execution modes, and zero fabricated successes. When something needs a signature, a credential, or a human decision, it says so and hands you a prepared next step. That's what makes it safe to point at someone's actual move."
+
+---
+
+## If a partner asks
+
+- **"Is this real or a demo?"** — Real emails, real provider receipts, live SQLite state. The phone line is down right now because the number was released by the carrier; the voice pipeline is unchanged and a new number re-points automatically.
+- **"What can't it do?"** — Anything requiring credentials or a signature: utility portals, USPS identity verification, prescriptions. Those are gated on purpose, and each one hands back a prepared artifact instead.
+- **"Why should you win?"** — The honesty layer is the hard part, not the fan-out. Everyone can call twelve APIs. Reporting truthfully when eleven of them didn't finish is what makes it usable for a real move.
+
+## Recording notes
+
+- 1440×900, browser zoom 100%. Hide bookmarks bar.
+- The swarm section is the money shot — let it breathe for 3-4 seconds before talking over it.
+- Don't demo the phone line until a number is attached.
+- If the tunnel rotates mid-record, the page shows Simulation. Stop, republish `live.json`, start again.
