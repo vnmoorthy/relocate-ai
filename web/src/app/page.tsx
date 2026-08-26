@@ -200,7 +200,7 @@ export default function Page() {
             <div className="lg:col-span-7 min-w-0">
               <p className="kicker mb-4">01 · The swarm</p>
               <h2 id="dashboard-heading" className="display-sub max-w-[900px]">
-                Seventeen agents.<br />One dispatcher.
+                Twenty-eight specialists.<br />One dispatcher.
               </h2>
               <p className="mt-5 max-w-[560px] text-[15px] leading-[1.65] text-[var(--text-secondary)]">
                 Watch a full move fan out — utilities, movers, schools, federal
@@ -322,7 +322,7 @@ export default function Page() {
           <div className="mt-16 sm:mt-24 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-10">
             <TimelineStep n="01" title="Call" body="One number. The concierge answers and asks where you're headed." />
             <TimelineStep n="02" title="Spec" body="A few turns capture origin, destination, date, household — and emit a structured dispatch." />
-            <TimelineStep n="03" title="Fan-out" body="Up to 16 specialists launch in parallel across browser, email, and postal rails." />
+            <TimelineStep n="03" title="Fan-out" body="Up to 28 specialists launch in parallel — email, postal and browser rails, plus the ones that prepare what only you can finish." />
             <TimelineStep n="04" title="Report" body="Each lands a real terminal state — submitted, needs your signature, or failed." />
           </div>
         </div>

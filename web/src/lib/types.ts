@@ -130,7 +130,8 @@ export interface FieldsCollectedEvent {
   ts: number;
 }
 
-// v2 roster — 17 agents (1 buyer + 16 specialists).
+// Roster — 29 agents: 1 buyer + 16 provider-facing specialists + 12 that
+// prepare what cannot be transacted for the customer (see prepared.py).
 //
 // Provider acceptance is represented as `submitted`, not `succeeded`.
 // Some agents (uscis_ar11, id_card_update, bank_notify) hand off the final

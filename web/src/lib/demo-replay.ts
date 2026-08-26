@@ -232,7 +232,7 @@ export function buildDemoTimeline(): Array<{ at_ms: number; event: WSEvent }> {
     { role: "user", text: "Moving SF to Austin May 31 — two adults, one kid, one dog, one car, and I need my AR-11 updated." },
     { role: "agent", text: "Got it — full roster: pets, kids, car, visa. What email should confirmations hit?", tier: "gemma-local" },
     { role: "user", text: DEMO_SPEC.user_email },
-    { role: "agent", text: "Dispatching all 16 specialists now. Hang up whenever — I'll keep working.", tier: "gemma-local" },
+    { role: "agent", text: "Dispatching the specialists now. Hang up whenever — I'll keep working.", tier: "gemma-local" },
   ];
   for (let i = 0; i < buyerTurns.length; i++) {
     const t = buyerTurns[i];

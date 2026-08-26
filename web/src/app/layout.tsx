@@ -22,7 +22,7 @@ const barlowCondensed = Barlow_Condensed({
 });
 
 const description =
-  "One call briefs seventeen AI agents that coordinate your relocation — requesting mover quotes, drafting utility shutoffs and USPS forwarding, and preparing USCIS and DMV forms for your signature.";
+  "One brief sets a swarm of AI specialists coordinating your relocation — requesting mover quotes, drafting utility shutoffs and USPS forwarding, preparing USCIS and DMV forms for your signature, and readying everything from your landlord notice to your first week on the ground.";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://vnmoorthy.github.io/relocate-ai/"),
