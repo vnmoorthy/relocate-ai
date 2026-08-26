@@ -304,3 +304,35 @@ export function demoCountChips(counts: MoveTaskCounts): DemoCountChip[] {
     value: counts[spec.key],
   }));
 }
+
+// ── Access links ──────────────────────────────────────────────────────────
+// A link of the form …/app/?k=KEY signs a reviewer straight in, so the
+// password never has to be printed on a public page. The key is redeemed
+// once and removed from the URL immediately: a key sitting in the address
+// bar survives screen-shares, screenshots and the back button.
+
+const ACCESS_KEY_PARAM = "k";
+
+/** True when this page load carries a non-empty access key. */
+export function hasAccessKey(search?: string): boolean {
+  const query = search ?? (typeof window === "undefined" ? "" : window.location.search);
+  return (new URLSearchParams(query).get(ACCESS_KEY_PARAM) ?? "").trim().length > 0;
+}
+
+/**
+ * Read the access key and strip it from the visible URL and history.
+ * Returns null when there is none.
+ */
+export function takeAccessKey(): string | null {
+  if (typeof window === "undefined") return null;
+  const url = new URL(window.location.href);
+  const key = url.searchParams.get(ACCESS_KEY_PARAM);
+  if (!key) return null;
+  url.searchParams.delete(ACCESS_KEY_PARAM);
+  try {
+    window.history.replaceState(null, "", url.toString());
+  } catch {
+    // A blocked history API is not a reason to refuse the sign-in.
+  }
+  return key.trim() || null;
+}

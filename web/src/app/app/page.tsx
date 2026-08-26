@@ -17,6 +17,8 @@ import {
   demoCountChips,
   demoLoginErrorMessage,
   demoLoginUrl,
+  hasAccessKey,
+  takeAccessKey,
   demoMovesUrl,
   demoSessionStore,
   isSessionActive,
@@ -609,6 +611,46 @@ function LoginWall({
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // An access link (…/app/?k=KEY) signs a reviewer in without the password
+  // ever appearing on a public page. Redeemed once, then stripped from the
+  // URL and from history so it does not linger in a shared screen or a
+  // back-button trail.
+  const [redeeming, setRedeeming] = useState(() => hasAccessKey());
+
+  useEffect(() => {
+    if (!api) return;
+    const key = takeAccessKey();
+    // No key means `redeeming` was never set, so there is nothing to clear.
+    if (!key) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(demoLoginUrl(api), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ access_key: key }),
+        });
+        const body = await readJson(res);
+        if (cancelled) return;
+        if (res.ok) {
+          const next = parseDemoLogin(body);
+          if (next && isSessionActive(next, nowSeconds())) {
+            saveDemoSession(demoSessionStore(), next);
+            onSignedIn(next);
+            return;
+          }
+        }
+        setError("That access link isn't valid any more. Ask for a new one, or sign in below.");
+      } catch {
+        if (!cancelled) setError(DEMO_UNREACHABLE_MESSAGE);
+      } finally {
+        if (!cancelled) setRedeeming(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [api, onSignedIn]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -650,6 +692,18 @@ function LoginWall({
     } finally {
       setPending(false);
     }
+  }
+
+  if (redeeming) {
+    return (
+      <div className="max-w-[460px] mx-auto" aria-busy="true">
+        <p className="kicker mb-4">Demo workspace</p>
+        <h1 className="display-sub">Opening<br />your workspace</h1>
+        <p className="mt-5 text-[15px] leading-[1.65] text-[var(--text-secondary)]">
+          Signing you in from your access link…
+        </p>
+      </div>
+    );
   }
 
   return (
@@ -725,10 +779,11 @@ function LoginWall({
         )}
 
         <p className="wk-disclosure">
-          This is a shared demo workspace, not per-user authentication. The
-          credentials are published with the demo, so everyone who signs in
-          lands in the same workspace and sees the same moves — including
-          yours. Treat anything you start here as public.
+          A shared review workspace, not per-user authentication: everyone
+          who signs in lands in the same one and sees the same moves. Treat
+          anything you start here as visible to other reviewers. Access is by
+          invitation — if you don&rsquo;t have credentials or an access link,
+          ask for one.
         </p>
       </form>
 

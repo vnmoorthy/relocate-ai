@@ -171,11 +171,6 @@ export default function Page() {
               </>
             )}
           </div>
-          <p className="mt-4 text-[13px] leading-[1.6] text-[var(--text-secondary)]">
-            Sign in with <code className="cred">demo</code> /{" "}
-            <code className="cred">onlyfordemopurposes</code> — a shared demo
-            workspace, open to anyone reading this.
-          </p>
           <p className="mt-4 text-[12px] tracking-[0.08em] uppercase text-[var(--text-tertiary)]">
             {PHONE_LIVE
               ? "Live concierge demo line · US · talk to the swarm yourself"

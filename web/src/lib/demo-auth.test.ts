@@ -20,6 +20,7 @@ import {
   validateDemoLogin,
   type DemoSession,
   type SessionStore,
+  hasAccessKey,
 } from "./demo-auth.ts";
 import { buildStartMovePayload, type StartMoveInput } from "./live-config.ts";
 import type { MoveTaskCounts } from "./move-page.ts";
@@ -280,4 +281,14 @@ test("a signed-in dispatch carries the demo token; a public one does not", () =>
   assert.equal(buildStartMovePayload(INTAKE, "", "tok").demo_token, "tok");
   // The token rides alongside the intake fields, it does not replace any.
   assert.equal(buildStartMovePayload(INTAKE, "", "tok").user_email, "mover@example.com");
+});
+
+test("hasAccessKey: detects the access-link parameter", () => {
+  assert.equal(hasAccessKey("?k=abc123"), true);
+  assert.equal(hasAccessKey("?other=1"), false);
+  assert.equal(hasAccessKey(""), false);
+  // An empty ?k= is not a key: treating it as one would strand the page on
+  // the "opening your workspace" screen with nothing to redeem.
+  assert.equal(hasAccessKey("?k="), false);
+  assert.equal(hasAccessKey("?k=%20"), false);
 });

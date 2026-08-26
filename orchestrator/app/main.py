@@ -33,7 +33,13 @@ from .marketplace import (
 from .pavo_client import pavo_chat
 from .persistence import persistence
 from .personas import by_id, buyer_persona
-from .demo_auth import enabled as demo_enabled, issue_token, valid_token, verify_credentials
+from .demo_auth import (
+    enabled as demo_enabled,
+    issue_token,
+    valid_token,
+    verify_access_key,
+    verify_credentials,
+)
 from .public_feed import public_ref, redact_public_event
 from .security import (
     complete_agentphone_webhook,
@@ -1317,9 +1323,12 @@ async def api_demo_login(request: Request, payload: dict[str, Any]) -> dict[str,
     hits.append(now)
     _demo_login_hits[ip] = hits
 
+    # A private access link is an alternative to typing credentials, not a
+    # weaker one: same rate limit, same signed session, same workspace.
+    access_key = str(payload.get("access_key") or "")
     username = str(payload.get("username") or "")
     password = str(payload.get("password") or "")
-    if not verify_credentials(username, password):
+    if not (verify_access_key(access_key) or verify_credentials(username, password)):
         raise HTTPException(401, "invalid credentials")
     token, expires_at = issue_token(now)
     log.info("demo workspace login: ip=%s", ip)

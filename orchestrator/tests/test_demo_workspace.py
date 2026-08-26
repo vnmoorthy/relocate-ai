@@ -158,3 +158,34 @@ def test_abandoned_briefs_do_not_clutter_the_workspace() -> None:
     ).json()
 
     assert [m["event_id"] for m in body["moves"]] == ["mkt_real"]
+
+
+def test_private_access_link_signs_in_without_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reviewer opens a link; the password never appears on a public page."""
+    monkeypatch.setattr(settings, "demo_access_key", "link-key-abc123")
+    client = TestClient(main.app)
+
+    ok = client.post("/api/public/demo-login", json={"access_key": "link-key-abc123"})
+    assert ok.status_code == 200
+    assert demo_auth.valid_token(ok.json()["token"])
+
+    for bad in ({"access_key": "wrong-key"}, {"access_key": ""}, {}):
+        assert client.post("/api/public/demo-login", json=bad).status_code == 401
+
+
+def test_access_link_is_off_when_no_key_is_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unset key must not become a key that matches the empty string."""
+    monkeypatch.setattr(settings, "demo_access_key", "")
+    client = TestClient(main.app)
+    assert client.post(
+        "/api/public/demo-login", json={"access_key": ""},
+    ).status_code == 401
+    # Credentials still work while link access is disabled.
+    assert client.post(
+        "/api/public/demo-login",
+        json={"username": "demo", "password": "onlyfordemopurposes"},
+    ).status_code == 200

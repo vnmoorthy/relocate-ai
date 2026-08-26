@@ -33,6 +33,18 @@ def enabled() -> bool:
     return bool(settings.demo_password.strip())
 
 
+def verify_access_key(key: str) -> bool:
+    """Constant-time check of a private access-link key.
+
+    Lets the workspace be opened from a link shared privately with a
+    reviewer, so the password never has to appear on a public page.
+    """
+    configured = settings.demo_access_key.strip()
+    if not enabled() or not configured or not key:
+        return False
+    return hmac.compare_digest(key.strip(), configured)
+
+
 def verify_credentials(username: str, password: str) -> bool:
     """Constant-time credential check. False whenever the gate is disabled."""
     if not enabled():

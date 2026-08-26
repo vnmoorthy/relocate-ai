@@ -77,6 +77,10 @@ class Settings(BaseSettings):
     # Gated product surface (/app). Credentials live here, never in the web
     # bundle: the static page posts them and the server verifies. Blank
     # password disables the endpoint entirely.
+    # A private access link (…/app/?k=KEY) signs a reviewer straight in, so
+    # the credentials never have to be printed on a public page. Blank
+    # disables link access and leaves only username/password.
+    demo_access_key: str = ""
     demo_username: str = "demo"
     demo_password: str = ""
     demo_session_hours: int = 12
