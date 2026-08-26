@@ -179,10 +179,13 @@ main {
   transition: background 0.3s ease, border-color 0.3s ease, backdrop-filter 0.3s ease;
 }
 .site-nav--scrolled {
-  background: rgba(6, 6, 7, 0.72);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom-color: var(--border-subtle);
+  /* Near-opaque on purpose: the swarm stage scrolls beneath this bar, and at
+     0.72 the agent cards ghosted through the nav links and read as a layout
+     bug. The blur still keeps it from looking like a flat slab. */
+  background: rgba(6, 6, 7, 0.94);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom-color: var(--border-default);
 }
 .nav-wordmark {
   font-family: var(--font-display), var(--font-geist-sans), ui-sans-serif;
@@ -584,6 +587,25 @@ main {
   overflow: hidden;
 }
 
+/* Height envelope. The swarm is capped to a single viewport minus the fixed
+   site nav (plus the stage chrome above it), so the whole composition can be
+   read in one screen and no console node ever has to be scrolled under the
+   header to see the rest of it. The cap applies to the stage box itself — not
+   just the orbital branch — so the layout solver always measures the same box
+   it will render into. */
+@media (min-width: 1152px) {
+  .swarm-stage {
+    height: clamp(520px, calc(100svh - var(--nav-h) - 100px), 820px);
+  }
+  /* Fallback grid inside the capped box scrolls internally rather than
+     bleeding out of the frame. */
+  .swarm-scroll {
+    max-height: 100%;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+}
+
 /* Ambient ground: center telemetry glow + faint top sheen */
 .swarm-bg {
   background:
@@ -594,11 +616,17 @@ main {
 }
 
 /* ── Router core ─────────────────────────────────────────────────────── */
-.swarm-core { pointer-events: none; }
+/* Core dimensions all derive from --core-size (set inline by SwarmStage), so
+   the router can contract when 29 nodes need the radius and expand back to
+   full size pre-call, without a second set of hand-tuned pixel values. */
+.swarm-core {
+  --core-size: 320px;
+  pointer-events: none;
+}
 
 .swarm-core-glow {
   position: absolute;
-  inset: -70px;
+  inset: calc(var(--core-size) * -0.22);
   border-radius: 999px;
   background: radial-gradient(
     circle,
@@ -614,9 +642,9 @@ main {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 300px;
-  height: 300px;
-  margin: -150px 0 0 -150px;
+  width: calc(var(--core-size) * 0.9375);
+  height: calc(var(--core-size) * 0.9375);
+  margin: calc(var(--core-size) * -0.46875) 0 0 calc(var(--core-size) * -0.46875);
   border-radius: 999px;
   background: conic-gradient(
     from 0deg,
@@ -644,19 +672,19 @@ main {
   border-radius: 999px;
 }
 .swarm-core-ring-outer {
-  width: 300px;
-  height: 300px;
+  width: calc(var(--core-size) * 0.9375);
+  height: calc(var(--core-size) * 0.9375);
   border: 1px solid rgba(255, 255, 255, 0.10);
 }
 .swarm-core-ring-mid {
-  width: 216px;
-  height: 216px;
+  width: calc(var(--core-size) * 0.675);
+  height: calc(var(--core-size) * 0.675);
   border: 1px dashed rgba(255, 255, 255, 0.14);
   animation: spinSlow 40s linear infinite;
 }
 .swarm-core-ring-inner {
-  width: 140px;
-  height: 140px;
+  width: calc(var(--core-size) * 0.4375);
+  height: calc(var(--core-size) * 0.4375);
   border: 1px solid rgba(255, 255, 255, 0.28);
   box-shadow:
     0 0 36px 2px rgba(255, 255, 255, 0.10),
@@ -668,9 +696,9 @@ main {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 196px;
-  height: 196px;
-  margin: -98px 0 0 -98px;
+  width: calc(var(--core-size) * 0.6125);
+  height: calc(var(--core-size) * 0.6125);
+  margin: calc(var(--core-size) * -0.30625) 0 0 calc(var(--core-size) * -0.30625);
   border-radius: 999px;
   background: radial-gradient(
     circle,
@@ -685,14 +713,26 @@ main {
   left: 50%;
   transform: translate(-50%, -50%);
   text-align: center;
-  width: 250px;
+  width: min(250px, calc(var(--core-size) * 0.88));
 }
-/* Commanding tabular numeral — Geist display, brand-green telemetry */
+
+/* The core contracts as the swarm spawns; ease it instead of snapping. */
+.swarm-core-glow,
+.swarm-sweep,
+.swarm-core-ring,
+.swarm-core-disc {
+  transition:
+    inset 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    margin 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* Commanding tabular numeral — Geist display, scaled with the core */
 .core-numeral {
   font-family: var(--font-geist-sans);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  font-size: 56px;
+  font-size: clamp(34px, calc(var(--core-size, 320px) * 0.175), 56px);
   line-height: 1;
   letter-spacing: -0.03em;
   color: var(--text-primary);
@@ -744,6 +784,50 @@ main {
 .hud-corner--bl { bottom: 8px; left: 8px; border-bottom-width: 1px; border-left-width: 1px; }
 .hud-corner--br { bottom: 8px; right: 8px; border-bottom-width: 1px; border-right-width: 1px; }
 
+/* ── Compact-view core motif ──────────────────────────────────────────────
+   Narrow screens drop the orbit, but not the identity: the count still sits
+   inside a swept router ring above the stacked node grid. */
+.swarm-mini-core {
+  --core-size: 196px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 92px;
+  height: 92px;
+}
+.swarm-mini-core .core-numeral {
+  position: relative;
+  z-index: 1;
+  line-height: 1;
+}
+.swarm-mini-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow:
+    0 0 26px 1px rgba(255, 255, 255, 0.08),
+    inset 0 0 18px 1px rgba(255, 255, 255, 0.05);
+}
+.swarm-mini-sweep {
+  position: absolute;
+  inset: -12px;
+  border-radius: 999px;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 292deg,
+    rgba(255, 255, 255, 0.03) 310deg,
+    rgba(255, 255, 255, 0.12) 352deg,
+    rgba(255, 255, 255, 0.26) 359deg,
+    transparent 360deg
+  );
+  -webkit-mask-image: radial-gradient(circle, transparent 52%, #000 60%, #000 92%, transparent 100%);
+  mask-image: radial-gradient(circle, transparent 52%, #000 60%, #000 92%, transparent 100%);
+  animation: sweepSpin 28s linear infinite;
+}
+
 /* ── Console nodes ────────────────────────────────────────────────────── */
 .node-console {
   position: relative;
@@ -758,9 +842,19 @@ main {
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
-/* Concierge keeps a quiet indigo signature unless a hotter state overrides */
+/* Concierge keeps a quiet indigo signature unless a hotter state overrides.
+   It is the dispatcher, not a specialist: brighter frame, indigo glyph, and a
+   soft halo that separates it from the ring of console nodes around it. */
 .swarm-cell-buyer .node-console:not(.node-console--live):not(.node-console--failed):not(.node-console--action) {
-  border-color: rgba(129, 140, 248, 0.35);
+  border-color: rgba(129, 140, 248, 0.45);
+  box-shadow: 0 0 24px -6px rgba(129, 140, 248, 0.55);
+  background: rgba(12, 13, 20, 0.82);
+}
+.swarm-cell-buyer
+  .node-console:not(.node-console--live):not(.node-console--failed):not(.node-console--action)
+  .node-glyph {
+  color: var(--cyan);
+  opacity: 0.85;
 }
 .node-console--live {
   border-color: rgba(248, 113, 113, 0.45);
@@ -1483,7 +1577,7 @@ a:focus-visible, button:focus-visible {
     transition-duration: 0.001s !important;
   }
   .live-dot, .swarm-core-ring-mid, .swarm-core-ring-inner, .swarm-sweep,
-  .swarm-spoke, .node-console--live, .node-flash, .voice-eq span,
+  .swarm-mini-sweep, .swarm-spoke, .node-console--live, .node-flash, .voice-eq span,
   .cursor-blink::after, .hero-stars, .hero-stars--far, .scroll-cue svg {
     animation: none !important;
   }
@@ -1665,4 +1759,15 @@ a:focus-visible, button:focus-visible {
   font-size: 13px;
   line-height: 1.6;
   color: var(--text-secondary);
+}
+
+/* Inline credential chips in the hero — the demo workspace is public, so the
+   credentials belong on the page rather than buried in a README. */
+.cred {
+  font-family: var(--font-geist-mono);
+  font-size: 12px;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border-default);
+  background: var(--bg-elev-1);
+  color: var(--text-primary);
 }

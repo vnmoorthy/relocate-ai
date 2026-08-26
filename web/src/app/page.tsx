@@ -162,19 +162,20 @@ export default function Page() {
             {PHONE_LIVE ? (
               <>
                 <a href={`tel:${PHONE_E164}`} className="btn-solid">Call {PHONE_DISPLAY}</a>
-                <a href={liveApi ? "#start-move" : "#dashboard"} className="btn-outline">
-                  {liveApi ? "Start your move" : "Watch the swarm"}
-                </a>
+                <a href={`${BASE_PATH}/app/`} className="btn-outline">Open the product</a>
               </>
             ) : (
               <>
-                <a href={liveApi ? "#start-move" : "#dashboard"} className="btn-solid">
-                  {liveApi ? "Start your move" : "Watch the swarm"}
-                </a>
+                <a href={`${BASE_PATH}/app/`} className="btn-solid">Open the product</a>
                 <a href="#dashboard" className="btn-outline">See the swarm</a>
               </>
             )}
           </div>
+          <p className="mt-4 text-[13px] leading-[1.6] text-[var(--text-secondary)]">
+            Sign in with <code className="cred">demo</code> /{" "}
+            <code className="cred">onlyfordemopurposes</code> — a shared demo
+            workspace, open to anyone reading this.
+          </p>
           <p className="mt-4 text-[12px] tracking-[0.08em] uppercase text-[var(--text-tertiary)]">
             {PHONE_LIVE
               ? "Live concierge demo line · US · talk to the swarm yourself"
