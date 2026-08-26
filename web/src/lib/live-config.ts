@@ -91,10 +91,11 @@ async function isHealthy(api: string): Promise<boolean> {
 /**
  * Where the current API endpoint is published, most-fresh first.
  *
- * The backend runs behind a tunnel whose URL rotates. The bundled copy only
- * refreshes when Pages finishes a rebuild (minutes), while raw.githubusercontent
- * serves the same file seconds after a push — so a rotation stops taking the
- * site down for the length of a deploy.
+ * The backend runs behind a tunnel whose URL rotates. Neither source is
+ * instant — Pages has to rebuild, and raw.githubusercontent sets
+ * cache-control: max-age=300 — so this is redundancy, not speed: whichever
+ * source has already caught up wins, because a stale endpoint fails the
+ * healthz probe below and falls through to the next one.
  */
 const DISCOVERY_SOURCES = [
   "https://raw.githubusercontent.com/vnmoorthy/relocate-ai/main/web/public/live.json",

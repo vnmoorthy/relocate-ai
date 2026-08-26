@@ -107,10 +107,11 @@ PYEOF
       printf "%s" "$TUNNEL_URL" >"$URL_STATE"
       note "webhook now -> $TUNNEL_URL/webhook/agent/buyer"
       # Self-heal: publish the new endpoint so the deployed site reconnects
-      # on its own. The site reads raw.githubusercontent first, which serves
-      # the pushed file within seconds instead of waiting for a Pages build.
+      # without anyone noticing. Propagation takes a few minutes (Pages
+      # rebuild, or raw's 300s cache), and the site re-probes every 60s, so
+      # it comes back on its own.
       if "$REPO_ROOT/scripts/republish-endpoint.sh" >>"$LOG" 2>&1; then
-        note "endpoint republished — public site will reconnect within ~30s"
+        note "endpoint republished — public site reconnects on its own within a few minutes"
       else
         note "ACTION NEEDED: could not republish automatically — run ./scripts/republish-endpoint.sh"
       fi
