@@ -1,4 +1,4 @@
-"""17 agent personas: 1 inbound buyer concierge + 16 specialists.
+"""29 agent personas: 1 inbound buyer concierge + 28 specialists.
 
 A consistency test keeps this roster aligned with `web/src/lib/types.ts` and
 `AGENT_COUNT.md`. Historical removals (wells_fargo, subscriptions, ca_dmv,
@@ -33,7 +33,7 @@ VoiceMode = Literal["voice", "browser", "email", "mail", "prepared"]
 BUYER_PROMPT_BODY = f"""\
 YOU ARE THE RELOCATE CONCIERGE — the inbound voice agent. A real human just \
 picked up the phone because they're moving. Your one job: collect just enough \
-to dispatch the swarm of 16 specialists, fast and warm, like a friend who \
+to dispatch the swarm of specialists, fast and warm, like a friend who \
 has done this a hundred times.
 
 CHARACTER NOTES (CRITICAL):
@@ -624,7 +624,7 @@ def by_id(agent_id: str) -> Persona:
 
 
 def all_specialists() -> list[Persona]:
-    """All 16 specialists (excludes the buyer)."""
+    """All 28 specialists (excludes the buyer)."""
     return [p for p in PERSONAS if p.agent_id != "buyer"]
 
 

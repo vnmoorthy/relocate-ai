@@ -1,5 +1,5 @@
 """Marketplace fan-out: when the buyer dispatches, run the chosen specialists
-(11–16 of the 16 configured, depending on household flags) in parallel.
+(20–28 of the 28 configured, depending on household flags) in parallel.
 
 Each persona declares its `voice_mode`:
   - "browser" → Browser Use task against a real web form (runtime-blocked
@@ -160,7 +160,7 @@ def _public_artifact_summary(p: Persona, artifact: dict[str, Any]) -> str:
 
 
 def pick_specialists(spec: dict[str, Any]) -> list[Persona]:
-    """Choose which of the 16 specialists to dispatch for this move spec.
+    """Choose which of the 28 specialists to dispatch for this move spec.
 
     Conditional rules (from persona.requires_*):
       - requires_pets    AND not has_pets    → skip

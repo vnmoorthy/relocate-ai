@@ -47,8 +47,12 @@ cp orchestrator/.env.example orchestrator/.env
 
 Replace the PAVO and dashboard token placeholders with different random values.
 Configure an admin token only when deliberately enabling the development
-trigger. The checked-in `live` profile includes inbound voice, so it also
-requires an AgentPhone key and a provisioned registry. Add specialist-provider
+trigger. Set `DEMO_PASSWORD` (with `PUBLIC_REF_SECRET`) only if this
+deployment should serve the gated product surface at `/app`; blank keeps that
+login shut, and the credential is shared — see
+[SECURITY.md](SECURITY.md#the-gated-product-surface-app). The checked-in
+`live` profile includes inbound voice, so it also requires an AgentPhone key
+and a provisioned registry. Add specialist-provider
 keys only for authorized sandbox/test accounts. Keep:
 
 ```dotenv

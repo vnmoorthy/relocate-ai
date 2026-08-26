@@ -23,12 +23,15 @@ flowchart LR
     api --> memory["Supermemory / Moss"]
 
     api -->|"authenticated WebSocket"| dashboard["Next.js dashboard"]
+    api -->|"redacted feed + demo-token API"| product["Static site · /move tracker · gated /app"]
     replay["Client-side demo replay"] --> dashboard
 ```
 
 Only the `buyer` persona is an inbound voice agent in the current roster.
-Specialists run as browser, email, or postal-mail workflows from the
-orchestrator; they are not 16 concurrent voice calls.
+The 28 specialists run as browser, email, postal-mail, or prepared-artifact
+workflows from the orchestrator; they are not 28 concurrent voice calls.
+Prepared-mode specialists call no provider at all — they render a section of
+the arrival-pack email in-process.
 
 ## Component responsibilities
 
@@ -48,7 +51,23 @@ lifecycle. Its responsibilities include:
 
 `orchestrator/app/marketplace.py` selects specialists and invokes the
 mode-specific adapters. Each specialist catches its own error so one failure
-does not stop the rest of the wave.
+does not stop the rest of the wave. It also owns the two batch sends that
+close a wave: the playbook digest for blocked specialists, and the
+arrival-pack email carrying every prepared section.
+
+`orchestrator/app/prepared.py` (with `prepared_sections.py` and
+`personas_extra.py`) is the prepared-artifact path: a registry of
+`agent_id → (title, body template)` rendered against the move spec by a
+`string.Formatter` whose missing keys become explicit `<placeholders>`. There
+is no model call and no provider call, so the only failure modes are a
+missing registration (raised) and a blocked or unreceipted arrival-pack send
+(logged; the event is not marked sent).
+
+`orchestrator/app/demo_auth.py` gates the product surface at `/app`: a
+constant-time check of one shared credential pair, then an HMAC-signed,
+expiring bearer token keyed by `PUBLIC_REF_SECRET`. The static page never
+holds the password, and the workspace's move list is filtered to
+`origin_channel == "demo"`.
 
 `orchestrator/app/state.py` is the current event store: an in-memory working
 set mirrored to single-node SQLite (`persistence.py`). Restarts recover
@@ -85,7 +104,7 @@ and move.
 
 ### Provider adapters
 
-The orchestrator contains adapters for four main specialist substrates:
+The orchestrator contains adapters for four external specialist substrates:
 
 | Substrate | Current contract |
 |---|---|
@@ -93,6 +112,10 @@ The orchestrator contains adapters for four main specialist substrates:
 | AgentMail | Send one or more messages and capture message identifiers. |
 | Lob | Letter builders retained; current policy blocks purchase pending customer review/signature. |
 | AgentPhone | Deliver inbound transcript/lifecycle webhooks and accept streamed replies. |
+
+A fifth specialist mode, `prepared`, has no external substrate: it renders a
+personalized section in-process, and the wave's sections leave as one
+AgentMail arrival pack.
 
 Supermemory and Moss provide optional memory/runbook context. Stripe and Sponge
 are present as experimental sponsor adapters but are not a complete customer
@@ -118,17 +141,21 @@ sequenceDiagram
     O-->>P: NDJSON voice response
 
     alt core fields complete and not dispatched
-        O->>O: Select 11–16 specialists
+        O->>O: Select 20–28 specialists
         par each selected specialist
             O->>O: Check fields and execution policy
             alt currently permitted AgentMail path
                 O->>Q: Email request
                 Q-->>O: Submission receipt or error
                 O->>W: submitted or failed event
+            else prepared-artifact specialist
+                O->>O: Render section from spec (no provider)
+                O->>W: prepared_for_user
             else disabled/unsafe/incomplete path
                 O->>W: needs-user-action + blockers
             end
         end
+        O->>Q: One arrival-pack email with every prepared section
     end
 ```
 
@@ -184,6 +211,7 @@ displayed as `succeeded` without final provider confirmation.
 | Orchestrator → providers | Provider API keys from environment | Workload identity/secret manager, least privilege, egress controls, typed contracts, audit and reconciliation |
 | Sensitive customer fields | Prompt rules avoid collecting some fields by voice | Authenticated encrypted intake, field policy, consent, retention/deletion, redacted logs, tenant isolation |
 | Static dashboard | No server secret is required for replay | Never embed long-lived live credentials; strict CSP and artifact URL policy |
+| `/app` → orchestrator | Shared workspace credential verified server-side; HMAC-signed expiring token; move list scoped to the workspace channel | Per-user accounts, move-scoped authorization, revocable server-side sessions |
 
 ## Failure behavior
 

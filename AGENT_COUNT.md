@@ -1,11 +1,14 @@
 # Agent roster
 
-The configured roster contains **17 personas: one inbound buyer plus 16
-specialists**. This is a code/configuration count, not evidence that 17 external
-transactions have been completed.
+The configured roster contains **29 personas: one inbound buyer plus 28
+specialists** — 16 provider-facing (7 browser, 7 email, 2 postal mail) and 12
+prepared-artifact. This is a code/configuration count, not evidence that 29
+external transactions have been completed; the 12 prepared specialists contact
+no counterparty at all, by design.
 
-`orchestrator/app/personas.py` is the runtime source. A test requires its IDs to
-match this numbered table and `web/src/lib/types.ts`. When a generated,
+`orchestrator/app/personas.py` (extended by `personas_extra.py`) is the runtime
+source. A test requires its IDs to match this numbered table and
+`web/src/lib/types.ts`, and asserts the 29/12 totals. When a generated,
 gitignored `orchestrator/agents.json` exists, the test also checks that registry.
 
 ## Configured roster
@@ -59,22 +62,35 @@ outcome is `prepared_for_user`, never `submitted`.
 
 ## Conditional dispatch
 
-`marketplace.pick_specialists` starts with 11 unconditional specialists:
+`marketplace.pick_specialists` starts with 20 unconditional specialists.
 
-`pge_shutoff`, `comcast_cancel`, `usps_coa`, `spectrum_austin`, `mover_quote`,
-`pcp_transfer`, `gym_cancel`, `pharmacy`, `flight_book`, `water_board`, and
-`bank_notify`.
+Eleven provider-facing: `pge_shutoff`, `comcast_cancel`, `usps_coa`,
+`spectrum_austin`, `mover_quote`, `pcp_transfer`, `gym_cancel`, `pharmacy`,
+`flight_book`, `water_board`, `bank_notify`.
+
+Nine prepared: `housing_search`, `arrival_transport`, `mobile_carrier`,
+`gov_address_update`, `landlord_notice`, `contacts_notify`, `grocery_setup`,
+`commute_route`, `furniture_setup`.
 
 It then adds:
 
 - `vet_transfer` when `has_pets=true`;
 - `school_district` when `has_children=true`;
 - `geico_address` and `id_card_update` when `has_car=true`;
-- `uscis_ar11` when `has_visa=true`.
+- `uscis_ar11`, `visa_support`, `intl_banking`, and `fx_planning` when
+  `has_visa=true`.
 
-Therefore a move launches 11–16 specialists (12–17 personas including the
-buyer). A pet-owning parent with a car but no visa launches 15 specialists; the
-same move with `has_visa=true` launches all 16.
+`has_car` defaults to true when the flag is absent; `has_pets`, `has_children`,
+and `has_visa` default to false.
+
+Therefore a move launches 20–28 specialists (21–29 personas including the
+buyer). A pet-owning parent with a car but no visa launches 24 specialists; the
+same move with `has_visa=true` launches all 28.
+
+Selection is not the same as execution. A dispatched specialist whose required
+fields are missing lands on `needs-user-action` with its blockers named — see
+`REQUIRED_FIELDS` in `marketplace.py` (extended by `EXTRA_REQUIRED_FIELDS` in
+`personas_extra.py`).
 
 ## Capability versus availability
 
@@ -83,7 +99,9 @@ availability depends on:
 
 - `AGENTPHONE_API_KEY` and a provisioned `agents.json` for inbound voice;
 - `PAVO_API_KEY` plus at least one reachable completion provider;
-- `AGENTMAIL_API_KEY` for email specialists and emailed playbooks;
+- `AGENTMAIL_API_KEY` for email specialists, emailed playbooks, and the
+  arrival-pack email that carries every prepared section (the sections
+  themselves are built in-process and need no provider);
 - `BROWSERUSE_API_KEY` is not sufficient to enable execution: the retained v1
   adapter is policy-blocked pending a protected-secrets v2 migration;
 - `LOB_API_KEY` is not sufficient to enable execution: both postal-mail paths

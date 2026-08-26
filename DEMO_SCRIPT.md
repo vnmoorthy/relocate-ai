@@ -40,15 +40,17 @@ Hit **Start the dispatch**.
 
 The tracker opens on its own.
 
-> "Twenty-eight specialists just fanned out in parallel. This is live — this is not a replay."
+> "Twenty-four specialists just fanned out in parallel. This is live — this is not a replay."
+
+(Twenty-eight is the full roster; the four visa-only specialists sat out because you didn't tick visa. If you tick it, say twenty-eight.)
 
 Point at three things, in this order:
 
-1. **The counts.** "Seventeen submitted, eleven waiting on me."
+1. **The counts.** Read the chips off the screen — they move with the flags you ticked and with which providers are configured. Something like: "Fourteen submitted, ten waiting on me."
 2. **The honest line under them.** Read it out loud, verbatim:
    > "Submitted means the provider accepted the request — the underlying service change is not confirmed complete."
    Then: *"That sentence is the product. Every agent tool on the market will tell you it finished. This one tells you what actually happened."*
-3. **What you still own.** "Eleven things need me — and every one arrives with the exact script or letter already written."
+3. **What you still own.** "The rest need me — and every one arrives with the exact script or letter already written." A prepared specialist sits in the submitted column but its line reads "Prepared for you — the final step is yours." Read that line, not the column.
 
 ---
 
@@ -56,7 +58,7 @@ Point at three things, in this order:
 
 Switch to your inbox. Show three emails:
 
-- **Your arrival pack** — "Twelve things prepared. Housing near the office. The commute checked at the hours I actually travel. What to buy the first night."
+- **Your arrival pack** — "Nine things prepared. Housing near the office. The commute checked at the hours I actually travel. What to buy the first night." (Twelve sections on a visa move: banking, currency, and the counsel briefing pack join.) Say **prepared**, never "handled" — nothing in that email was sent to anyone but you.
 - **What we prepared for you** — "Every blocked task, with the call script filled in from my move."
 - **Documents for your review** — open the **Comcast cancellation letter** and the **HIPAA release**. "Written from my details, ready to sign. Relocate never signs them. That's deliberate."
 

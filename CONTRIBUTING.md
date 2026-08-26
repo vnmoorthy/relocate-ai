@@ -87,12 +87,21 @@ and must not rely on a developer's `.env`.
 
 When adding a persona or mode:
 
-1. update `orchestrator/app/personas.py`;
-2. add/modify the dispatcher and provider adapter;
+1. update `orchestrator/app/personas.py` (or `personas_extra.py` for a
+   prepared-artifact specialist, plus its section in `prepared_sections.py`);
+2. add/modify the dispatcher and provider adapter, and any required fields in
+   `marketplace.REQUIRED_FIELDS` / `EXTRA_REQUIRED_FIELDS`;
 3. update `web/src/lib/types.ts`;
-4. update the numbered roster in `AGENT_COUNT.md`;
+4. update the numbered roster **and the mode totals and dispatch math** in
+   `AGENT_COUNT.md` — `tests/test_roster_consistency.py` asserts the count;
 5. add full and conditional mocked coverage;
-6. update `STATUS.md` without claiming live success.
+6. update `STATUS.md` and `README.md` without claiming live success.
+
+A prepared-artifact specialist may never transact: it renders one section of
+the arrival pack from the move spec, unknown values stay visible
+`<placeholders>`, its terminal outcome is `prepared_for_user`, and any figure,
+deadline, or rule in its content must name the source the customer confirms it
+against rather than asserting it.
 
 ### Provider acceptance
 

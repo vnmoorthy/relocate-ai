@@ -2,7 +2,7 @@
 
 # Relocate
 
-**One phone call. A swarm of 17 AI agents coordinates your entire move.**
+**One conversation. A swarm of 29 AI agents coordinates your entire move.**
 
 [![CI](https://github.com/vnmoorthy/relocate-ai/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/vnmoorthy/relocate-ai/actions/workflows/ci.yml)
 [![Pages deploy](https://img.shields.io/github/actions/workflow/status/vnmoorthy/relocate-ai/deploy-pages.yml?branch=main&label=pages%20deploy)](https://github.com/vnmoorthy/relocate-ai/actions/workflows/deploy-pages.yml)
@@ -12,21 +12,27 @@
 
 [**Live site**](https://vnmoorthy.github.io/relocate-ai/) · [Architecture](ARCHITECTURE.md) · [Status](STATUS.md) · [Security](SECURITY.md) · [Demo runbook](DEMO_SCRIPT.md)
 
-<img src="docs/swarm.png" alt="Relocate swarm dashboard — 17 agents dispatching in real time" width="100%" />
+<img src="docs/swarm.png" alt="Relocate swarm dashboard — specialist agents dispatching in real time" width="100%" />
 
 </div>
 
 ---
 
-Call the concierge number for your deployment and a voice concierge
-collects your move in about ninety seconds — origin, destination, date,
-household. Or skip the phone: the website's **Start your move** form briefs
-the same dispatcher. Either way the orchestrator fans out **16 specialist
-agents in parallel**: the email-mode agents send real email (three mover
-quote requests, a school pre-enrollment inquiry, a vet records request, a
-bank call script, a personalized flight search), a 45-second poller ingests
-the replies and threads them back onto your move, and every event streams to
-a live dashboard plus a shareable per-move tracker page.
+Brief the dispatcher once — the product page at
+[`/app`](https://vnmoorthy.github.io/relocate-ai/app/) (behind a login) or the
+website's **Start your move** form, and by phone once a number is attached,
+where a voice concierge collects the move in about ninety seconds: origin,
+destination, date, household. Any of those routes reaches the same
+dispatcher, and the orchestrator fans out **up to 28
+specialist agents in parallel**. Sixteen of them work provider rails: the
+email-mode agents send real email (three mover quote requests, a school
+pre-enrollment inquiry, a vet records request, a bank call script, a
+personalized flight search), a 45-second poller ingests the replies and
+threads them back onto your move. The other twelve prepare the things nobody
+should transact on your behalf — a notice to vacate, a carrier port-out
+sequence, a commute checked at your real departure time — and arrive as one
+"arrival pack" email. Every event streams to a live dashboard plus a
+shareable per-move tracker page.
 
 > **Voice line status:** the previously published demo number was released by the carrier, so no number is attached to the buyer agent right now and the site does not advertise one. The voice pipeline itself is unchanged — attach a number to the `move-buyer` agent in AgentPhone, set `PHONE_LIVE = true` in `web/src/app/page.tsx`, and `demo-line.sh` re-points the webhook on its next pass. Web intake is live and needs no number.
 
@@ -85,13 +91,14 @@ flowchart LR
     orch --> browser["7 browser agents<br/><i>policy-blocked → playbooks</i>"]
     orch --> email["7 email agents<br/><i>allowlist-gated real email</i>"]
     orch --> mail["2 postal agents<br/><i>policy-blocked → drafted letters</i>"]
+    orch --> prep["12 prepared agents<br/><i>no counterparty → one arrival pack</i>"]
     email <-->|"[ref:] tagged replies<br/>45s poller"| inbox["AgentMail inbox"]
     orch -->|"authenticated WS"| dash["Live dashboard"]
     orch -->|"redacted /ws/public"| site["Public site + /move tracker"]
 ```
 
-One concierge plus 16 specialists are defined in code; a real move dispatches
-11–16 of them depending on pets, children, car, and visa status. The full
+One concierge plus 28 specialists are defined in code; a real move dispatches
+20–28 of them depending on pets, children, car, and visa status. The full
 roster and conditional rules live in [AGENT_COUNT.md](AGENT_COUNT.md).
 
 **The reply loop closes.** Every outbound subject carries
@@ -101,6 +108,29 @@ every 45 seconds, matches replies to their move, parses quote facts
 to the customer's own inbox (echo-guarded), threads it onto the specialist
 that solicited it, and pushes a live update. Seen message ids live in a
 SQLite mail ledger, so a restart never re-announces old replies.
+
+**Twelve specialists prepare instead of transact.** A real customer said the
+bureaucracy was not what he worried about first — housing, getting there,
+staying reachable, telling people, the first week on the ground were. None of
+those can be transacted for him: nobody should sign his notice to vacate,
+port his phone number, or open his bank account. So those twelve specialists
+(`housing_search`, `arrival_transport`, `mobile_carrier`,
+`gov_address_update`, `visa_support`, `landlord_notice`, `intl_banking`,
+`fx_planning`, `contacts_notify`, `grocery_setup`, `commute_route`,
+`furniture_setup`) each return one personalized section, built
+deterministically from the move spec — no LLM, and every unknown value
+renders as a visible `<placeholder>` rather than an invented one. The
+sections batch into a single arrival-pack email instead of a dozen sends, and
+their honest terminal outcome is `prepared_for_user`, never `submitted`,
+because no counterparty received anything.
+
+Their content was authored per specialist and then adversarially
+fact-checked twice. The first pass raised 146 problems — claims stated as
+universal that actually vary by lease, bank, carrier, or country; numbers
+with no instruction to verify them; drift toward legal or financial advice —
+and the rule that came out of it holds in the shipped copy: state no fee,
+deadline, rate, or eligibility rule as fact, name the source the customer
+should confirm it against, and never recommend a vendor.
 
 **Blocked never means empty-handed.** Each user-blocked specialist prepares
 a personalized playbook (16 deterministic templates — call scripts,
@@ -118,10 +148,19 @@ dashboard socket. It gets its own hardened surface instead:
 
 | Surface | What it is |
 |---|---|
-| `POST /api/public/start-move` | Web intake for a real dispatch. Off by default (`ENABLE_PUBLIC_INTAKE`); honeypot field, per-IP and global rate limits, and a 10-minute idempotency window so a retry returns the original tracker instead of double-dispatching. Optional household fields (name, phone, child, pet, vet email) unblock the specialists that need them. |
+| `POST /api/public/start-move` | Web intake for a real dispatch. Off by default (`ENABLE_PUBLIC_INTAKE`); honeypot field, per-IP and global rate limits, and a 10-minute idempotency window so a retry returns the original tracker instead of double-dispatching. Optional fields (name, phone, work address, household size, child, pet, vet email, bank) unblock the specialists that need them — `work_address` is what `housing_search` and `commute_route` build against, and stays a visible placeholder when it is absent. |
 | `WS /ws/public` | Unauthenticated live feed — a server-side redacted projection of dashboard events (states, tiers, costs; every free-text and identifier field blanked). Capacity-capped, replayed on subscribe, per-send timeouts. |
 | `GET /api/public/move/{id}` | Redacted snapshot behind an unguessable move id: route, honest per-task states, playbook titles, reply domains/timestamps, extracted quote displays — never emails, bodies, transcripts, or PII. |
 | `/move/#<id>` | The shareable tracker page, with live quote comparison as mover replies land. The post-call and post-dispatch emails link here. |
+| `/app` | The product itself, behind a login wall: brief the dispatcher, then watch that workspace's moves. Reachable from **Product** in the site nav. |
+| `POST /api/public/demo-login` | Verifies the shared demo-workspace credentials **server-side** and returns a signed, expiring bearer token — so the password never ships in the static bundle. 8 attempts/min per IP. A blank `DEMO_PASSWORD` disables the login (503) entirely. |
+| `GET /api/public/demo/moves` | The workspace's own move list, newest 50, token required. Scoped to `origin_channel == "demo"`: the credentials are published to reviewers, so a real caller's move can never appear there. |
+
+The product page at `/app` is a static export like the rest of the site — it
+holds no secret. It posts the credentials to the orchestrator, keeps only the
+returned token (tab-scoped `sessionStorage`, expiry enforced server-side), and
+a move started from that page is tagged to the workspace so the published
+credential shows only what the workspace itself created.
 
 ## Quick start
 
@@ -136,6 +175,8 @@ cd relocate-ai
 cp orchestrator/.env.example orchestrator/.env
 # Replace every REPLACE_* placeholder (openssl rand -hex 32 per token).
 # Leave provider keys blank — everything runs with honest blocked states.
+# Set DEMO_PASSWORD (and PUBLIC_REF_SECRET) to open the gated /app workspace;
+# leave DEMO_PASSWORD blank and that login stays shut.
 
 cd orchestrator && uv sync --locked --all-groups && cd ..
 cd web && pnpm install --frozen-lockfile && cd ..
@@ -150,9 +191,10 @@ and the dashboard on `:3000` — and prints an authenticated **Live view** URL
 it never appears in a query string or the client bundle). Without a live
 backend the dashboard plays a deterministic simulation, stamped `SIMULATION`
 the way SpaceX stamps its renders; the tag flips to `LIVE` when a real session
-connects. Stop with `./run.sh stop`.
+connects. The replay animates the 16 provider-facing specialists only — the
+prepared twelve show up on live runs, not in the canned one. Stop with `./run.sh stop`.
 
-To run the always-on phone line, use the supervisor:
+To run the phone line (once a number is attached to the `move-buyer` agent), use the supervisor:
 
 ```bash
 ./demo-line.sh
@@ -187,9 +229,12 @@ inventory:
 - ✅ Inbound voice line with incremental field extraction, web intake,
   conditional fan-out, real allowlist-gated email dispatch, closed-loop
   reply ingestion with quote parsing, playbooks + rendered signature
-  documents, durable single-node SQLite state with honest crash recovery,
-  authenticated dashboard, redacted public feed and tracker, HMAC webhook
-  security, CI, containers — built and tested.
+  documents, 12 prepared-artifact specialists batched into one arrival-pack
+  email, durable single-node SQLite state with honest crash recovery,
+  authenticated dashboard, redacted public feed and tracker, the gated `/app`
+  workspace, HMAC webhook security, CI, containers — built and tested.
+- ✅ The voice pipeline is code-complete but currently has **no phone number
+  attached** (see the status note above); web intake and `/app` need none.
 - 🟡 Email submissions run only when their prerequisites *and* the recipient
   allowlist (or the demo override) are satisfied; anything else lands as an
   honest `needs-user-action` with a prepared playbook.
@@ -211,15 +256,16 @@ code.
 .
 ├── orchestrator/       FastAPI service · personas · playbooks · integrations · tests
 ├── pavo_server/        deterministic router + model-provider adapters
-├── web/                Next.js site · dashboard · /move tracker · live WS client
+├── web/                Next.js site · dashboard · /move tracker · gated /app · live WS client
 ├── deploy/             Dockerfiles + nginx static hosting
 ├── compose.yaml        local three-service scaffold
 ├── run.sh              local stack launcher (PAVO + orchestrator + dashboard)
-├── demo-line.sh        always-on phone-line supervisor (tunnel + webhook repoint)
+├── demo-line.sh        phone-line supervisor (tunnel + webhook repoint; no number attached today)
+├── AGENT_COUNT.md      the numbered 29-persona roster + dispatch rules
 ├── ARCHITECTURE.md     components, data flow, trust boundaries
 ├── STATUS.md           built / partial / missing — the capability contract
 ├── SECURITY.md         current controls, public-surface threat model, known gaps
-└── DEMO_SCRIPT.md      honest demo narration rules
+└── DEMO_SCRIPT.md      5-minute product demo runbook + narration rules
 ```
 
 ## Contributing

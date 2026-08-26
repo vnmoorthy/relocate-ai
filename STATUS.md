@@ -5,14 +5,17 @@ Last audited: 2026-08-25
 ## Executive assessment
 
 Relocate is in developer preview. The repository ships a working voice intake
-line, a gated public web intake, a complete 17-persona roster, real
+line, a gated public web intake, a complete 29-persona roster (one buyer, 16
+provider-facing specialists, 12 prepared-artifact specialists), real
 allowlist-gated email dispatch with closed-loop reply ingestion, prepared
 playbooks and rendered signature documents for everything the system refuses
-to do unsafely, durable single-node persistence, an interactive dashboard, a
-redacted public live feed with a shareable per-move tracker, a heuristic
-routing service, and a side-effect-free mocked test path. Those pieces
-support the full demo flow end to end today: call → collect → fan-out →
-real emails → replies threaded back → tracker updates live.
+to do unsafely, a gated product surface at `/app`, durable single-node
+persistence, an interactive dashboard, a redacted public live feed with a
+shareable per-move tracker, a heuristic routing service, and a
+side-effect-free mocked test path. Those pieces support the full flow end to
+end today — brief (web form or `/app`; by phone once a number is attached) →
+collect → fan-out → real emails and one arrival pack → replies threaded back →
+tracker updates live.
 
 It is not yet ready to handle real customers at scale. The remaining work is
 durable background job execution, multi-replica state, authenticated data
@@ -27,19 +30,25 @@ everywhere.
 Be precise about this, because it is the biggest gap between "works" and
 "production":
 
+- **The phone line is currently down.** The previously published demo number
+  was released by the carrier, so no number is attached to the `move-buyer`
+  AgentPhone agent and the site advertises none. The voice pipeline is
+  otherwise unchanged: attach a number, flip `PHONE_LIVE` in
+  `web/src/app/page.tsx`, and the supervisor re-points the webhook on its next
+  pass. Web intake and the `/app` workspace need no number.
 - The orchestrator, PAVO, and dashboard run on a single laptop via
-  `./run.sh`; `./demo-line.sh` supervises the always-on phone line
-  (+1 618 414-9537): it keeps the Mac awake, keeps Ollama warm, keeps the
-  stack up, and maintains a **cloudflared quick tunnel** whose URL rotates
-  whenever the tunnel restarts.
+  `./run.sh`; `./demo-line.sh` supervises the phone line when a number is
+  attached: it keeps the Mac awake, keeps Ollama warm, keeps the stack up, and
+  maintains a **cloudflared quick tunnel** whose URL rotates whenever the
+  tunnel restarts.
 - On rotation the supervisor re-points the AgentPhone webhook automatically
   and rewrites `web/public/live.json` locally. The deployed GitHub Pages
   site discovers the API through that file, so **the site reconnects only
   after `live.json` is committed and the Pages deploy republishes** — a
   deliberate manual step, flagged loudly in the supervisor log.
-- The phone line and the live site therefore die when the laptop sleeps, is
-  offline, or the supervisor stops. That is acceptable for a supervised
-  developer preview and nothing more.
+- The live site (and the phone line, when a number is attached) therefore
+  dies when the laptop sleeps, is offline, or the supervisor stops. That is
+  acceptable for a supervised developer preview and nothing more.
 - The production step is a **named tunnel or a cloud host** (stable HTTPS
   origin, no discovery-file republish churn), then the platform work in
   Phase 6.
@@ -55,21 +64,23 @@ Status labels used below:
 
 | Subsystem | Status | What exists | What is still required |
 |---|---|---|---|
-| Persona roster | **Built** | `orchestrator/app/personas.py`, the web roster, and `AGENT_COUNT.md` describe one buyer plus 16 specialists (7 browser, 7 email, 2 postal). A consistency test detects drift. | Replace dated provider details in prompts with configuration; version persona changes; review every target and claim with counsel/provider terms. |
+| Persona roster | **Built** | `orchestrator/app/personas.py` plus `personas_extra.py`, the web roster, and `AGENT_COUNT.md` describe one buyer plus 28 specialists (7 browser, 7 email, 2 postal, 12 prepared). A consistency test detects drift. | Replace dated provider details in prompts with configuration; version persona changes; review every target and claim with counsel/provider terms. |
 | Buyer schema and collection | **Built (preview)** | Incremental JSON extraction, per-turn field validation, an anti-regurgitation guard (example-copied values are detected and dropped; core-field copies are dropped on a single match), core-field dispatch readiness, conditional flags, a follow-up-email path, and call-end dispatch: a core-complete call that ends before the household questions still fans out with what was confirmed. A turn still in flight at hang-up re-runs the end-of-call dispatch after its fields merge. | Use structured model output instead of regex JSON extraction; add locale/date normalization; store consent and provenance for every field. |
-| Inbound voice | **Partial** | A live demo line: AgentPhone provisioning scripts, a buyer webhook, streaming NDJSON replies, call lifecycle handling, per-agent webhook secrets, and the `demo-line.sh` supervisor that keeps the chain alive over a rotating quick tunnel. | A stable hosted webhook (named tunnel or cloud host), contract tests against the exact current AgentPhone webhook/signature format, vendor sandbox tests, and a human escalation path. A local `agents.json` is generated deployment state, not source. |
-| Public web intake | **Built (gated)** | `POST /api/public/start-move`, off by default (`ENABLE_PUBLIC_INTAKE`). Honeypot field, per-IP (12/min, 40/hr) and global (200/hr) rate limits, a 10-minute idempotency window keyed on route+date+email, strict field validation, and optional household fields (name, phone, child, pet, vet email) that unblock the matching specialists. Dispatch emails the tracker link. | Rate-limit state is in-process (resets on restart, per-instance); move it behind shared infrastructure. Email-ownership verification before dispatching on someone's behalf. Abuse monitoring. |
-| Conditional specialist selection | **Built** | Pets, children, car, and visa flags select 11–16 specialists. Mocked tests cover full and reduced rosters. | Express prerequisites as data rather than scattered conditionals; surface why each agent was skipped or blocked. |
+| Inbound voice | **Partial (no number attached)** | The pipeline, minus a phone number: AgentPhone provisioning scripts, a buyer webhook, streaming NDJSON replies, call lifecycle handling, per-agent webhook secrets, and the `demo-line.sh` supervisor that keeps the chain alive over a rotating quick tunnel. The published number was released by the carrier, so nothing is answering today. | A number attached to the `move-buyer` agent, a stable hosted webhook (named tunnel or cloud host), contract tests against the exact current AgentPhone webhook/signature format, vendor sandbox tests, and a human escalation path. A local `agents.json` is generated deployment state, not source. |
+| Public web intake | **Built (gated)** | `POST /api/public/start-move`, off by default (`ENABLE_PUBLIC_INTAKE`). Honeypot field, per-IP (12/min, 40/hr) and global (200/hr) rate limits, a 10-minute idempotency window keyed on route+date+email, strict field validation, and optional fields (name, phone, work address, household size, child, pet, vet email, bank) that unblock the matching specialists — `work_address` feeds `housing_search` and `commute_route`. A request carrying a valid demo token is tagged `origin_channel="demo"` so it belongs to the `/app` workspace; everything else stays out of that list. Dispatch emails the tracker link. | Rate-limit state is in-process (resets on restart, per-instance); move it behind shared infrastructure. Email-ownership verification before dispatching on someone's behalf. Abuse monitoring. |
+| Conditional specialist selection | **Built** | Pets, children, car, and visa flags select 20–28 specialists (20 unconditional; visa alone adds four). Mocked tests cover full and reduced rosters. | Express prerequisites as data rather than scattered conditionals; surface why each agent was skipped or blocked. |
 | Concurrent fan-out | **Built (single process)** | Async mode dispatch, state broadcasts, isolated specialist errors, artifact capture, and resume: late/corrected fields re-run only the specialists whose prerequisites are now complete. | Move work to a durable queue; add leases, retry policy, timeouts, cancellation, per-provider concurrency/rate controls. |
-| AgentMail paths | **Partial** | Seven specialist email adapters. Six can submit at runtime once prerequisites and the recipient allowlist are satisfied: mover quotes (×3 recipients), school enrollment, vet records, gym cancellation, bank call script, flight-search deeplink email. PCP records transmission is policy-blocked pending secure consent. Every outbound subject carries `[ref:event_id:agent_id]`; replies default back to the agent inbox (no Reply-To to the customer). A runtime destination allowlist (`AGENTMAIL_ALLOWED_RECIPIENTS`, empty by default) blocks every unlisted send; `AGENTMAIL_DEMO_RECIPIENT_OVERRIDE` reroutes all outbound to one operator-controlled address labeled with the true recipient. | Secure regulated-data transport, authorized institutional intake addresses (the hardcoded targets are unverified), bounce/complaint handling, and full conversation threading. |
+| AgentMail paths | **Partial** | Seven specialist email adapters, plus two batch sends (the playbook digest and the prepared specialists' arrival pack). Six can submit at runtime once prerequisites and the recipient allowlist are satisfied: mover quotes (×3 recipients), school enrollment, vet records, gym cancellation, bank call script, flight-search deeplink email. PCP records transmission is policy-blocked pending secure consent. Every outbound subject carries `[ref:event_id:agent_id]`; replies default back to the agent inbox (no Reply-To to the customer). A runtime destination allowlist (`AGENTMAIL_ALLOWED_RECIPIENTS`, empty by default) blocks every unlisted send; `AGENTMAIL_DEMO_RECIPIENT_OVERRIDE` reroutes all outbound to one operator-controlled address labeled with the true recipient. | Secure regulated-data transport, authorized institutional intake addresses (the hardcoded targets are unverified), bounce/complaint handling, and full conversation threading. |
 | Reply ingestion | **Built (polling)** | A 45s background poller reads the AgentMail inbox, correlates replies via the `[ref:]` tag, parses quote facts (total/deposit/availability) with deterministic regex only, forwards the full reply to the customer's inbox (echo-guarded), threads it onto the soliciting specialist, and broadcasts live. Dedupe is durable via the SQLite mail ledger; a restart never re-announces old replies. A reply never flips a specialist to "completed". | Webhook-driven ingestion instead of polling; sender verification (any inbound mail bearing a valid ref is attached — see SECURITY.md); spam/abuse filtering; attachment handling. |
-| Playbooks / prepared documents | **Built** | Every user-blocked specialist prepares a personalized artifact from 16 deterministic templates in `orchestrator/app/playbooks.py` (call scripts, ready-to-sign letters, filing walkthroughs — no LLM, no invented facts; unknowns are explicit placeholders). One digest email delivers them when the wave settles. The signature-gated trio additionally emails real rendered documents: the Comcast cancellation letter, the CA DMV DL-13A letter, and an unsigned-draft HIPAA release PDF. | Keep templates legally reviewed and dated; per-jurisdiction variants; user-visible versioning. |
+| Playbooks / prepared documents | **Built** | Every user-blocked specialist prepares a personalized artifact from 16 deterministic templates in `orchestrator/app/playbooks.py` (call scripts, ready-to-sign letters, filing walkthroughs — no LLM, no invented facts; unknowns are explicit placeholders). One digest email delivers them when the wave settles (separate from the prepared specialists' arrival pack). The signature-gated trio additionally emails real rendered documents: the Comcast cancellation letter, the CA DMV DL-13A letter, and an unsigned-draft HIPAA release PDF. | Keep templates legally reviewed and dated; per-jurisdiction variants; user-visible versioning. |
+| Prepared-artifact specialists | **Built** | Twelve specialists (`prepared.py`, `prepared_sections.py`, `personas_extra.py`) that cover what customers raise before the bureaucracy: housing, arrival transport, mobile carrier, government records, visa-counsel briefing, landlord notice, international banking, currency transfer, address announcements, groceries, commute, furnishing. Each builds a titled section deterministically from the move spec (no LLM); unknown values render as explicit `<placeholders>`; all sections batch into ONE arrival-pack email; the terminal outcome is `prepared_for_user`, never `submitted`. Content was authored per specialist and adversarially fact-checked twice — the first pass raised 146 issues (universal claims that vary by lease/bank/carrier/country, unverifiable numbers, drift into legal or financial advice). | Date and re-review the content on a schedule; per-jurisdiction variants; user-visible versioning; measure whether customers actually complete the prepared steps. |
+| Gated product surface (`/app`) | **Built (shared credential)** | A login wall in front of the product page: `POST /api/public/demo-login` verifies one shared workspace credential pair server-side (constant-time compare, 8 attempts/min per IP) and returns an HMAC-signed, expiring bearer token, so the password never ships in the static bundle. `GET /api/public/demo/moves` lists only moves whose `origin_channel == "demo"` — a published credential therefore cannot expose a real caller's move. Blank `DEMO_PASSWORD` disables the login (503). Token signing uses `PUBLIC_REF_SECRET`; blank falls back to a per-process key, so a restart signs everyone out. | Real per-user accounts and move-scoped authorization; server-side session revocation; the workspace list still shows the routes of every demo move to anyone holding the shared credential. |
 | Browser Use paths | **Partial, disabled** | Eight legacy v1 task builders (seven browser-mode specialists plus a retained flight-search builder) and polling/result validators remain in source. Runtime specialist dispatch fails safe to `needs-user-action` (with a playbook) before calling them. | Migrate to a protected-secrets-capable v2 contract; add delegated credentials, site-specific sandbox/recorded tests, approval before mutations/charges, MFA/CAPTCHA handling, reconciliation, and security review before re-enabling. |
 | Lob postal-mail paths | **Partial, disabled** | Comcast and DL-13A letter builders remain in source and now render the customer-facing review copies. Runtime policy blocks purchase before adapter invocation. | Customer signature/authorization ceremony, address validation, Lob test-mode contract coverage, idempotent purchase approval, delivery/return tracking before re-enabling. |
 | Memory/runbook integrations | **Partial** | Supermemory recall/persist (including settlement-time persistence of partial outcomes) and Moss retrieval adapters are called from orchestration. | Define retention/deletion rules, tenant isolation, data minimization, redaction, authorization, provider DPAs, failure policy, and contract tests. |
 | Stripe/Sponge | **Partial/unused product path** | Sponsor adapter functions and dashboard events exist. | Define the actual payment/escrow product contract or remove it from the shipping surface. |
 | PAVO service | **Built (heuristic)** | Authenticated FastAPI API, request validation, deterministic routing, local/Gemini/Anthropic adapters (each tier's model is env-configured), fallback behavior, cost configuration, health endpoints, and tests. | Market this component as a heuristic router unless licensed weights/training/evaluation artifacts and reproducible benchmarks ship. Add provider rate limiting and production telemetry. |
-| Dashboard and public site | **Built (local live + public redacted)** | Static Next.js site with a labeled deterministic simulation, flipping to `LIVE` on a real session. The authenticated local live view hands its token over via URL hash → sessionStorage → WebSocket subprotocol offer (no query-string tokens; nothing baked into the build). The public site discovers a live backend via `web/public/live.json` (validated as untrusted input: https-only, health-checked) and then uses only the token-less redacted `/ws/public` feed, the start-move form, and the `/move/#<id>` tracker with live quote comparison. | Customer accounts, per-move authorization, short-lived session-bound WebSocket credentials, accessible state/error UX, audit history, end-to-end live tests. |
+| Dashboard and public site | **Built (local live + public redacted + gated `/app`)** | Static Next.js site with a labeled deterministic simulation (`web/src/lib/demo-replay.ts`, which scripts the 16 provider-facing specialists only — the prepared twelve appear on live runs), flipping to `LIVE` on a real session. The authenticated local live view hands its token over via URL hash → sessionStorage → WebSocket subprotocol offer (no query-string tokens; nothing baked into the build). The public site discovers a live backend via `web/public/live.json` (validated as untrusted input: https-only, health-checked) and then uses only the token-less redacted `/ws/public` feed, the start-move form, the `/move/#<id>` tracker with live quote comparison, and the credential-gated `/app` workspace (see its own row). | Customer accounts, per-move authorization, short-lived session-bound WebSocket credentials, accessible state/error UX, audit history, end-to-end live tests. |
 | Webhook security | **Partial** | Fail-closed secret lookup, timestamp-bound HMAC comparison, header validation, and three-state delivery idempotency (completed duplicates acknowledged; a retry racing an in-flight delivery gets 409; interrupted deliveries stay retryable). Completed-delivery records persist to SQLite across restarts. | Verify the signature construction against the vendor contract, rotate secrets, rate-limit endpoints, redact payload logs, and protect a multi-replica deployment. |
 | Admin/dev trigger | **Partial** | Configuration supports disabling the synthetic trigger and separating admin/dashboard tokens; it 404s in production env. | Real identity-aware admin auth, short-lived credentials, audit logs. |
 | Persistence | **Built (single-node SQLite)** | Events, buyer contexts, webhook dedupe records, and the mail ledger are mirrored to SQLite (WAL) and reload on startup; specialists that were in flight during a crash recover as honest `needs-user-action` with an explicit restart blocker, never silently resumed and never fabricated complete. | PostgreSQL schema/migrations for multi-replica deployments, encrypted sensitive fields, transactions, tenant/user ownership, retention/deletion jobs, backups, and restore drills. |
@@ -107,6 +118,7 @@ reroutes every send to the operator's own inbox.
 | `spectrum_austin` | Browser v1 builder retained; runtime-blocked → setup-checklist playbook | Mocked policy test | Price disclosure, explicit order approval, v2 migration |
 | `water_board` | Browser v1 builder retained; runtime-blocked → stop-service script playbook | Mocked policy test | V2 migration, regional provider configuration, final-bill handling |
 | `uscis_ar11` | Browser v1 builder retained; runtime-blocked → AR-11 online-filing walkthrough playbook | Mocked policy test | V2 migration, legal review, signed/accepted evidence |
+| `housing_search`, `arrival_transport`, `mobile_carrier`, `gov_address_update`, `visa_support`, `landlord_notice`, `intl_banking`, `fx_planning`, `contacts_notify`, `grocery_setup`, `commute_route`, `furniture_setup` | Prepared mode: a deterministic personalized section per specialist, batched into one arrival-pack email. No counterparty is contacted, nothing is signed, filed, booked, ported, or paid; outcome is `prepared_for_user` | Mocked content/placeholder/one-email tests; two adversarial fact-check passes over the authored content | Scheduled content re-review with dates, jurisdiction variants, and evidence that the customer completed the step — a prepared section is a starting point, not an outcome |
 
 ## What the automated tests establish
 
@@ -114,8 +126,15 @@ The default backend suite is deliberately side-effect free. It establishes:
 
 - the roster agrees across Python, TypeScript, and documentation;
 - routing heuristics select the expected tier for representative turns;
-- all-condition fan-out creates all 16 specialist contexts; conditional
+- all-condition fan-out creates all 28 specialist contexts; conditional
   fan-out omits inapplicable specialists;
+- every prepared specialist has registered content, renders unknown spec
+  values as visible placeholders, never reports provider acceptance, and its
+  sections batch into exactly one idempotent arrival-pack email that is not
+  marked sent without a provider receipt;
+- the gated `/app` workspace rejects bad credentials, refuses tampered or
+  expired tokens, stays closed when no password is configured, and lists only
+  moves created through that workspace;
 - permitted mocked provider artifacts reach `submitted`, never implicit
   success; policy-blocked and prerequisite-blocked paths reach
   `needs-user-action` with a playbook, never a fabricated fallback;
@@ -174,7 +193,8 @@ tunnel rotation with zero manual steps.
 2. Specify prerequisites, sensitive fields, side effects, approval rules,
    idempotency keys, and evidence requirements for every specialist as data.
 3. Decide which agents merely prepare or notify and which are allowed to
-   submit or purchase.
+   submit or purchase. (Partly settled: prepared mode is that decision made
+   explicit in code for twelve specialists — they can never transact.)
 
 Exit criteria: every state and artifact shown in the dashboard has an
 unambiguous server-side meaning and test.
@@ -188,7 +208,7 @@ unambiguous server-side meaning and test.
 3. Transactional outbox/inbox patterns and provider idempotency.
 4. Stateless API instances with proven restart/replay recovery.
 
-Exit criteria: killing an API or worker during a 16-specialist run neither
+Exit criteria: killing an API or worker during a 28-specialist run neither
 loses work nor duplicates an irreversible side effect.
 
 ### Phase 4 — identity, consent, and secure intake
@@ -208,7 +228,7 @@ bundles.
 
 ### Phase 5 — harden one narrow provider wedge
 
-Do not productionize all 16 specialists at once. The email wedge (quotes,
+Do not productionize all 28 specialists at once. The email wedge (quotes,
 inquiries, notifications) is furthest along; harden it first.
 
 1. Verified institutional recipient addresses with documented intake

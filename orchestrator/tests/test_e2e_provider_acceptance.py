@@ -42,8 +42,11 @@ pytestmark = [
     ),
 ]
 
+# Email agents that contact a real counterparty and must land a provider
+# receipt. bank_notify and flight_book deliberately email the CUSTOMER
+# instead (marketplace._SELF_DELIVERED_AGENTS), so they are asserted below
+# as prepared_for_user rather than as a provider submission.
 _SUBMITTED_EMAIL_AGENTS = {
-    "bank_notify",
     "gym_cancel",
     "mover_quote",
     "school_district",
@@ -133,11 +136,21 @@ async def test_enabled_email_submissions_and_policy_blocks(monkeypatch: pytest.M
     try:
         await marketplace.fan_out(event_id, spec)
         expected = {persona.agent_id for persona in all_specialists()}
-        assert len(expected) == 16
+        assert len(expected) == 28  # 16 provider-facing + 12 prepared
         assert set(event.specialist_calls) == expected
 
         for agent_id, context in event.specialist_calls.items():
-            if agent_id in _SUBMITTED_EMAIL_AGENTS:
+            persona = by_id(agent_id)
+            # Prepared specialists and the two self-delivered email agents
+            # produce an artifact for the CUSTOMER. They reach submitted, but
+            # the outcome must never claim a counterparty accepted anything.
+            if persona.voice_mode == "prepared" or agent_id in marketplace._SELF_DELIVERED_AGENTS:
+                assert context.state == "submitted", f"{agent_id} did not complete"
+                assert context.terminal_outcome == "prepared_for_user", (
+                    f"{agent_id} claimed provider acceptance for a self-delivered artifact"
+                )
+                assert context.bid, f"{agent_id} produced no artifact"
+            elif agent_id in _SUBMITTED_EMAIL_AGENTS:
                 assert by_id(agent_id).voice_mode == "email"
                 assert context.state == "submitted", f"{agent_id} did not reach submitted"
                 assert context.terminal_outcome == "submitted"

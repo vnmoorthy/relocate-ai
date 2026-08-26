@@ -87,7 +87,7 @@ def _event(event_id: str, spec: dict | None = None) -> MarketplaceEvent:
 
 
 @pytest.mark.asyncio
-async def test_all_sixteen_specialists_report_honest_terminal_state(
+async def test_every_specialist_reports_an_honest_terminal_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     event_id = "mkt_mocked_all"

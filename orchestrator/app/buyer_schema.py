@@ -1,6 +1,6 @@
 """Buyer field schema — the single source of truth for what the concierge collects.
 
-Every field the 16 specialists need from `spec` is declared here, classified by:
+Every field the 28 specialists need from `spec` is declared here, classified by:
   - tier: CORE (gates dispatch) | CONDITIONAL (gates which agents fire) |
           OPTIONAL (collect on call if natural) | PII (always follow-up email)
   - voice_safe: True if it's OK to say out loud over the phone

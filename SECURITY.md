@@ -61,6 +61,11 @@ rotate exposed credentials, and coordinate disclosure after a fix is available.
   public surface described below, and discovers a live backend via
   `web/public/live.json`, which it treats as untrusted input (https-only URL,
   no credentials/query/hash, 3-second health check) before connecting.
+- The gated product surface at `/app` keeps its password on the server: the
+  static page posts credentials to `POST /api/public/demo-login`, which
+  compares them in constant time and returns a signed, expiring token. The
+  browser stores only that token, and the workspace sees only its own moves
+  (see [The gated product surface](#the-gated-product-surface-app) below).
 - Missing completion providers return an error; the PAVO service does not
   fabricate a response after all providers fail.
 
@@ -93,7 +98,8 @@ quote, so a customer forwarding our own message back cannot manufacture a
 competing bid on their tracker.
 
 Three endpoints are deliberately reachable without credentials so the public
-website can be a real product surface. Their design assumption is that every
+website can be a real product surface (a fourth pair sits behind the shared
+`/app` credential, documented after them). Their design assumption is that every
 caller is hostile; the useful data never leaves the server.
 
 ### `WS /ws/public` — redacted live feed
@@ -147,6 +153,42 @@ caller is hostile; the useful data never leaves the server.
   display strings. Never emails, phone numbers, names, transcripts, playbook
   bodies, raw blocker strings, or provider artifacts.
 
+### The gated product surface (`/app`)
+
+The product page is a static export, so it cannot hold a secret. The gate is
+therefore server-side and the browser only ever holds a token.
+
+- **Credentials.** One *shared* workspace pair (`DEMO_USERNAME`,
+  `DEMO_PASSWORD`) — deliberately not per-user authentication. Blank
+  `DEMO_PASSWORD` disables login and the moves endpoint entirely (503), which
+  is the default. `verify_credentials` compares both halves with
+  `hmac.compare_digest` and runs both comparisons every time, so there is no
+  early return to time against.
+- **Tokens.** `issue_token` returns `v1.<expiry>.<hmac-sha256 truncated to 32
+  hex>` signed with `PUBLIC_REF_SECRET`; `valid_token` re-derives the
+  signature and rejects a wrong version, an unparsable or past expiry, or a
+  bad signature. Lifetime is `DEMO_SESSION_HOURS` (default 12). A blank
+  `PUBLIC_REF_SECRET` falls back to a per-process key: every restart
+  invalidates outstanding sessions, which is safe (people sign in again) and
+  never weaker.
+- **Rate limit.** 8 login attempts per minute per client address, keyed the
+  same way as the other public limits (in-process — it resets on restart and
+  does not coordinate across replicas).
+- **Scoping is the real control.** These credentials are *published to
+  reviewers*, so they must not unlock anyone else's data.
+  `GET /api/public/demo/moves` returns only events whose `origin_channel` is
+  `"demo"` — the channel a move gets when it was started from `/app` with a
+  valid token. A phone or plain-web move can never appear in that list.
+- **What a credential holder can do, stated plainly:** sign in, start moves
+  that dispatch the real (allowlist-gated) fan-out, and see the route,
+  date, task counts, and tracker link of every move started through the
+  workspace — including ones other reviewers started. That is a shared demo
+  workspace, not a tenant boundary. Do not put a real move through it.
+- **Residual risks accepted for the preview:** no server-side session
+  revocation (a leaked token is valid until it expires or the process
+  restarts), no per-user attribution in the workspace, and the shared
+  password is only as fresh as the last operator rotation.
+
 ### The `[ref:]` tag — reply-correlation threat model
 
 Every outbound specialist email carries `[ref:<event_id>:<agent_id>]` in its
@@ -182,7 +224,9 @@ by the poller's 50-message page — abuse filtering is listed in
 ### Authentication and authorization
 
 - There is no end-user identity system, tenant model, or move-scoped access
-  policy beyond the unguessable move id.
+  policy beyond the unguessable move id. The `/app` gate is one shared
+  credential over a channel-scoped list — a demo workspace, not
+  authentication.
 - Long-lived bearer tokens are only appropriate for private local
   development. The dashboard WebSocket does not accept query-string tokens
   (they leak through history, logs, screenshots); the local live view hands
@@ -220,6 +264,11 @@ by the poller's 50-message page — abuse filtering is listed in
   legal/compliance requirements have not been established by this repository.
 - PII-safe logging/redaction is not comprehensive, and external
   model/provider requests can create additional data copies.
+- The arrival-pack email assembles the customer's own addresses, work address,
+  and date into one message. It is deterministic (no model sees it) and passes
+  through the same recipient allowlist/override as every other send, but it is
+  still a single email containing the move's route — treat the customer inbox
+  as part of the data boundary.
 
 ### Workflow safety
 
@@ -255,7 +304,9 @@ by the poller's 50-message page — abuse filtering is listed in
 2. Use different random values for PAVO, admin, dashboard, and webhook secrets.
 3. Use provider test/sandbox keys and isolated accounts for acceptance.
 4. Never put a long-lived secret in `NEXT_PUBLIC_*`, a static bundle, a URL,
-   source code, a screenshot, test fixture, prompt, or issue.
+   source code, a screenshot, test fixture, prompt, or issue. `DEMO_PASSWORD`
+   is the one credential meant to be handed out — it still lives only in the
+   server environment, never in `web/`, and it is rotated like any other.
 5. Do not copy production secrets into CI. CI's normal suite must pass with
    provider keys blank.
 6. Do not put customer identifiers or credentials in `agents.json`; it should
@@ -274,6 +325,9 @@ by the poller's 50-message page — abuse filtering is listed in
 - Keep `ENABLE_DEV_TRIGGER=false` unless actively testing it on a private host.
 - Keep `ENABLE_PUBLIC_INTAKE=false` except on a supervised demo deployment
   with the allowlist/override configured first.
+- Leave `DEMO_PASSWORD` blank unless you intend to publish a workspace
+  credential; set `PUBLIC_REF_SECRET` at the same time so sessions survive a
+  restart, and never start a real customer's move from that workspace.
 - Use the empty WebSocket URL/default demo mode for a public static dashboard.
 - Use local/private HTTP only for loopback or container-private PAVO traffic;
   remote PAVO endpoints require TLS/private networking.

@@ -262,12 +262,18 @@ test("demo timeline is sorted, conditional, finalized, and uses honest terminal 
   const agentIds = new Set(
     events.flatMap((event) => ("agent_id" in event ? [event.agent_id] : [])),
   );
-  // YC demo roster: full household flags → all 16 specialists + buyer.
+  // The replay covers the whole roster: 28 specialists + buyer, with the
+  // conditional ones present because DEMO_SPEC sets every household flag.
   assert.ok(agentIds.has("school_district"));
   assert.ok(agentIds.has("uscis_ar11"));
   assert.ok(agentIds.has("vet_transfer"));
   assert.ok(agentIds.has("geico_address"));
-  assert.equal(agentIds.size, 17);
+  // Prepared specialists animate too, or the stage would sit half idle while
+  // the copy claims 28 dispatch.
+  assert.ok(agentIds.has("housing_search"));
+  assert.ok(agentIds.has("landlord_notice"));
+  assert.ok(agentIds.has("fx_planning"));
+  assert.equal(agentIds.size, 29);
   assert.ok(
     events.some(
       (event) => event.type === "agent_state" && event.agent_id === "buyer" && event.state === "closed",
@@ -285,14 +291,15 @@ test("demo timeline is sorted, conditional, finalized, and uses honest terminal 
       terminal.set(event.agent_id, event.state);
     }
   }
-  assert.equal(terminal.size, 16);
+  assert.equal(terminal.size, 28);
   assert.equal(terminal.get("spectrum_austin"), "failed");
   assert.equal(terminal.get("uscis_ar11"), "needs-user-action");
   assert.equal(terminal.get("pcp_transfer"), "needs-user-action");
   assert.equal(terminal.get("gym_cancel"), "needs-user-action");
   const terminalCounts = { submitted: 0, "needs-user-action": 0, failed: 0 } as Record<string, number>;
   for (const state of terminal.values()) terminalCounts[state] += 1;
-  assert.equal(terminalCounts.submitted, 12);
+  // 12 provider-facing submitted + 12 prepared, 3 handoffs, 1 failure.
+  assert.equal(terminalCounts.submitted, 24);
   assert.equal(terminalCounts["needs-user-action"], 3);
   assert.equal(terminalCounts.failed, 1);
 
@@ -308,7 +315,7 @@ test("demo timeline is sorted, conditional, finalized, and uses honest terminal 
   const finalized = events.find((event) => event.type === "event_finalized");
   assert.ok(finalized && finalized.type === "event_finalized");
   assert.equal(finalized.outcome, "partial_failure");
-  assert.equal(finalized.summary?.submitted_count, 12);
+  assert.equal(finalized.summary?.submitted_count, 24);
   assert.equal(finalized.summary?.failed_count, 1);
 });
 

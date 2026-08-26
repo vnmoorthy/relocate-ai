@@ -116,7 +116,7 @@ PYEOF
   fi
 }
 
-note "=== demo-line supervisor started (phone: +1 618 414 9537) ==="
+note "=== demo-line supervisor started (no number attached to the buyer agent) ==="
 cd "$REPO_ROOT"
 while true; do
   ensure_ollama

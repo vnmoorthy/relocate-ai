@@ -7,7 +7,7 @@ Output: orchestrator/agents.json with entries like:
   {"agent_id": "pge_shutoff", "agentphone_id": "agt_xxx", "number_id": "num_xxx",
    "phone_e164": "+15551234567", "webhook_secret": "whsec_xxx"}
 
-Only ``buyer`` is a voice-mode persona. The 16 specialists run in-process via
+Only ``buyer`` is a voice-mode persona. The 28 specialists run in-process via
 browser, email, or mail providers and must not consume AgentPhone agents or
 phone numbers.
 """

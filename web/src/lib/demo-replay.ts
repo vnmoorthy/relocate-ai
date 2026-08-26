@@ -41,6 +41,58 @@ const DEMO_SPEC = {
 type Step = { role: "counterparty" | "agent"; text: string; tier?: "gemma-local" | "gemini-flash" | "claude-opus" };
 
 const SCRIPTS: Record<string, Step[]> = {
+  // ── Prepared specialists ────────────────────────────────────────────────
+  // They contact nobody: each builds the customer's next step from the spec,
+  // and all of them batch into one arrival-pack email. Two beats is honest —
+  // there is no counterparty turn to script.
+  housing_search: [
+    { role: "agent", text: "Scoping neighbourhoods against the 500 W 2nd St commute.", tier: "gemma-local" },
+    { role: "agent", text: "Housing brief ready — landing stay first, deposit-scam checks before any money moves.", tier: "gemma-local" },
+  ],
+  commute_route: [
+    { role: "agent", text: "Checking both legs at real departure times, not off-peak.", tier: "gemma-local" },
+    { role: "agent", text: "Route prepared — home to work and back, with a fallback.", tier: "gemma-local" },
+  ],
+  landlord_notice: [
+    { role: "agent", text: "Drafting the notice to vacate from the move details.", tier: "gemma-local" },
+    { role: "agent", text: "Notice ready to sign — the lease sets the notice period, so it says to read it.", tier: "gemini-flash" },
+  ],
+  mobile_carrier: [
+    { role: "agent", text: "Sequencing the port: account number and transfer PIN before anything is cancelled.", tier: "gemma-local" },
+    { role: "agent", text: "Carrier steps prepared — never cancel the old line first.", tier: "gemma-local" },
+  ],
+  arrival_transport: [
+    { role: "agent", text: "Working out airport-to-door options for arrival day.", tier: "gemma-local" },
+    { role: "agent", text: "Arrival plan prepared — you book it, we never do.", tier: "gemma-local" },
+  ],
+  gov_address_update: [
+    { role: "agent", text: "Listing the records USPS forwarding and the DMV do not touch.", tier: "gemma-local" },
+    { role: "agent", text: "Government checklist prepared, deadlines flagged to verify officially.", tier: "gemini-flash" },
+  ],
+  contacts_notify: [
+    { role: "agent", text: "Splitting who needs the address from who just wants to know.", tier: "gemma-local" },
+    { role: "agent", text: "Announcement drafted — yours to send.", tier: "gemma-local" },
+  ],
+  grocery_setup: [
+    { role: "agent", text: "Building the first-night box that travels with you, not on the truck.", tier: "gemma-local" },
+    { role: "agent", text: "First-week essentials prepared.", tier: "gemma-local" },
+  ],
+  furniture_setup: [
+    { role: "agent", text: "Measuring what has to clear the door before anything is ordered.", tier: "gemma-local" },
+    { role: "agent", text: "Furniture sequence prepared — lead times mean order before arrival.", tier: "gemma-local" },
+  ],
+  visa_support: [
+    { role: "agent", text: "Assembling the brief for immigration counsel.", tier: "gemini-flash" },
+    { role: "agent", text: "Prepared — coordination only, never legal advice.", tier: "gemini-flash" },
+  ],
+  intl_banking: [
+    { role: "agent", text: "Working the account-opening order for the destination country.", tier: "gemini-flash" },
+    { role: "agent", text: "Banking sequence prepared — requirements vary by bank, so it says what to ask.", tier: "gemini-flash" },
+  ],
+  fx_planning: [
+    { role: "agent", text: "Framing how to compare true transfer cost — spread plus fee.", tier: "gemini-flash" },
+    { role: "agent", text: "Prepared, with the fraud check: verify wire instructions by phone.", tier: "gemini-flash" },
+  ],
   pge_shutoff: [
     { role: "counterparty", text: "pge.com Stop Service portal loaded." },
     { role: "agent", text: "Filling account 5512-4419-08, disconnect date May 31.", tier: "gemma-local" },
@@ -170,6 +222,18 @@ const TURN_GAPS_MS: Record<string, number> = {
   uscis_ar11: 8800,
   id_card_update: 7600,
   bank_notify: 8300,
+  housing_search: 5200,
+  commute_route: 5600,
+  landlord_notice: 6000,
+  mobile_carrier: 5400,
+  arrival_transport: 5800,
+  gov_address_update: 6400,
+  contacts_notify: 5000,
+  grocery_setup: 4800,
+  furniture_setup: 6100,
+  visa_support: 6900,
+  intl_banking: 7100,
+  fx_planning: 6700,
 };
 
 // Sponsor/artifact fires spread across the run (not front-loaded) so the
@@ -324,6 +388,9 @@ export function buildDemoTimeline(): Array<{ at_ms: number; event: WSEvent }> {
   const SPECIALIST_IDS = Object.keys(SCRIPTS).filter((agentId) => {
     if (agentId === "school_district") return DEMO_SPEC.has_children;
     if (agentId === "uscis_ar11") return DEMO_SPEC.has_visa;
+    if (agentId === "visa_support" || agentId === "intl_banking" || agentId === "fx_planning") {
+      return DEMO_SPEC.has_visa;
+    }
     if (agentId === "geico_address" || agentId === "id_card_update") return DEMO_SPEC.has_car;
     if (agentId === "vet_transfer") return DEMO_SPEC.has_pets;
     return true;

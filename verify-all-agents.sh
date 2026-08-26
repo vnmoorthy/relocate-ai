@@ -3,8 +3,8 @@
 #
 # What it does:
 #   1. Runs the deterministic PAVO policy tests.
-#   2. Verifies the 17-agent roster across backend, frontend, and docs.
-#   3. Exercises all 16 specialist dispatch paths with provider boundaries mocked.
+#   2. Verifies the 29-agent roster across backend, frontend, and docs.
+#   3. Exercises all 28 specialist dispatch paths with provider boundaries mocked.
 #
 # It never loads real credentials, starts a public server, sends mail, submits a
 # form, or creates a payment. Live-provider acceptance is separately gated and
