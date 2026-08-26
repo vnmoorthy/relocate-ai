@@ -751,6 +751,12 @@ function LoginWall({
               type="password"
               className="sm-input"
               autoComplete="current-password"
+              // Without these a phone keyboard capitalises the first letter
+              // and the sign-in fails on a credential the user typed
+              // correctly. The username field already carries them.
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               value={password}
               disabled={pending}
               aria-invalid={error ? true : undefined}

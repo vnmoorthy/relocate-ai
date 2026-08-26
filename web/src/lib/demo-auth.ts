@@ -183,7 +183,10 @@ export const DEMO_UNREACHABLE_MESSAGE =
  */
 export function demoLoginErrorMessage(status: number, body: unknown): string {
   if (status === 401) {
-    return "Those credentials weren't accepted. Check them and try again.";
+    // Name the most common cause. A phone keyboard capitalises the first
+    // letter, and "check them and try again" sends the user round the same
+    // loop without telling them what to look at.
+    return "Those credentials weren't accepted — they're case-sensitive, and all lowercase.";
   }
   if (status === 429) {
     return "Too many sign-in attempts from this connection. Give it a minute and try again.";
