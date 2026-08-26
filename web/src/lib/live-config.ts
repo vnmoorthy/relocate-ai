@@ -167,6 +167,14 @@ export interface StartMoveInput {
   /** Who is moving. */
   userName?: string;
   userPhone?: string;
+  // ── Act-on-my-behalf ────────────────────────────────────────────────────
+  // One authorization, given once, is what lets the email-rail specialists
+  // send stop-service and cancellation notices without handing each task
+  // back. Account numbers identify the accounts; no passwords, ever.
+  authorizeProviders?: boolean;
+  pgeAccountNumber?: string;
+  comcastAccountNumber?: string;
+  gymMemberId?: string;
   /** Only sent when hasChildren. */
   childName?: string;
   /** Only sent when hasChildren. */
@@ -192,6 +200,7 @@ export interface StartMovePayload {
   has_children: boolean;
   has_car: boolean;
   has_visa: boolean;
+  authorize_providers?: boolean;
   /** Honeypot — a human submission always carries "". */
   website: string;
   /**
@@ -210,6 +219,9 @@ export interface StartMovePayload {
   pet_name?: string;
   pet_species?: string;
   vet_email?: string;
+  pge_account_number?: string;
+  comcast_account_number?: string;
+  equinox_member_id?: string;
 }
 
 type OptionalPayloadKey =
@@ -219,7 +231,10 @@ type OptionalPayloadKey =
   | "child_grade"
   | "pet_name"
   | "pet_species"
-  | "vet_email";
+  | "vet_email"
+  | "pge_account_number"
+  | "comcast_account_number"
+  | "equinox_member_id";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -279,6 +294,14 @@ export function buildStartMovePayload(
   if (demoToken.trim()) payload.demo_token = demoToken.trim();
   addOptional(payload, "user_name", input.userName);
   addOptional(payload, "user_phone", input.userPhone);
+  // Account numbers are only useful with the authorization, and the
+  // authorization is only meaningful when the customer actually granted it.
+  if (input.authorizeProviders) {
+    payload.authorize_providers = true;
+    addOptional(payload, "pge_account_number", input.pgeAccountNumber);
+    addOptional(payload, "comcast_account_number", input.comcastAccountNumber);
+    addOptional(payload, "equinox_member_id", input.gymMemberId);
+  }
   if (input.hasChildren) {
     addOptional(payload, "child_name", input.childName);
     addOptional(payload, "child_grade", input.childGrade);

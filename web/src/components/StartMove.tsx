@@ -45,7 +45,10 @@ type HouseholdField =
   | "childGrade"
   | "petName"
   | "petSpecies"
-  | "vetEmail";
+  | "vetEmail"
+  | "pgeAccountNumber"
+  | "comcastAccountNumber"
+  | "gymMemberId";
 
 type FormState = StartMoveInput & Record<HouseholdField, string>;
 
@@ -65,6 +68,9 @@ const EMPTY: FormState = {
   petName: "",
   petSpecies: "",
   vetEmail: "",
+  pgeAccountNumber: "",
+  comcastAccountNumber: "",
+  gymMemberId: "",
 };
 
 const TOGGLES: Array<{ key: "hasPets" | "hasChildren" | "hasCar" | "hasVisa"; label: string }> = [
@@ -349,6 +355,64 @@ export function StartMove({ api, onStarted, demoToken, lead }: Props) {
           </div>
         </fieldset>
       </Reveal>
+
+      {/* ── Act on my behalf ────────────────────────────────────────────
+          The difference between a swarm that works and a to-do list. Without
+          this, every provider task comes back to the customer; with it, the
+          specialists send the stop-service and cancellation notices
+          themselves. Opt-in, never pre-ticked, and account numbers only —
+          passwords are never collected here. */}
+      <fieldset className="start-move-auth" disabled={pending}>
+        <legend className="sm-label">Act on my behalf</legend>
+        <label className="sm-auth-row">
+          <input
+            type="checkbox"
+            name="authorize_providers"
+            checked={form.authorizeProviders ?? false}
+            onChange={(e) => setField("authorizeProviders", e.target.checked)}
+          />
+          <span>
+            Authorize Relocate to send stop-service and cancellation notices to
+            my providers on my behalf.
+            <span className="sm-auth-note">
+              Without this, those tasks come back to you as drafts to send
+              yourself. Never asks for passwords — account numbers only, and
+              anything needing your signature still comes to you.
+            </span>
+          </span>
+        </label>
+        <Reveal open={form.authorizeProviders ?? false}>
+          <div className="sm-sub grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-5">
+            <TextField
+              id={fieldId("pge-account")}
+              label="PG&E account no."
+              name="pge_account_number"
+              placeholder="On any bill"
+              value={form.pgeAccountNumber}
+              disabled={pending}
+              onChange={(value) => setField("pgeAccountNumber", value)}
+            />
+            <TextField
+              id={fieldId("comcast-account")}
+              label="Comcast account no."
+              name="comcast_account_number"
+              placeholder="On your bill or app"
+              value={form.comcastAccountNumber}
+              disabled={pending}
+              onChange={(value) => setField("comcastAccountNumber", value)}
+            />
+            <TextField
+              id={fieldId("gym-member")}
+              label="Gym member ID"
+              name="equinox_member_id"
+              placeholder="On your membership app"
+              value={form.gymMemberId}
+              disabled={pending}
+              onChange={(value) => setField("gymMemberId", value)}
+            />
+          </div>
+        </Reveal>
+      </fieldset>
 
       {/* Honeypot: offscreen (never display:none), unfocusable, no autofill.
           Humans leave it blank; the server rejects anything else. */}

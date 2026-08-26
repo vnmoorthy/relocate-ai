@@ -1888,3 +1888,37 @@ a:focus-visible, button:focus-visible {
   font-family: var(--font-geist-mono);
   font-variant-numeric: tabular-nums;
 }
+
+/* Act-on-my-behalf: the authorization that decides whether the swarm sends
+   provider notices itself or hands them back as drafts. Opt-in, never
+   pre-ticked, and visually weightier than the household toggles because it
+   is the consequential choice on this form. */
+.start-move-auth {
+  border: 1px solid var(--border-default);
+  padding: 1rem 1.1rem 1.15rem;
+  margin-top: 0.5rem;
+  min-inline-size: 0;
+}
+.sm-auth-row {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.sm-auth-row input[type="checkbox"] {
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+  accent-color: var(--brand);
+  width: 15px;
+  height: 15px;
+}
+.sm-auth-note {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-quaternary);
+}
