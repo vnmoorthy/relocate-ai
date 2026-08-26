@@ -307,3 +307,72 @@ def test_intake_dedupe_does_not_hand_a_tracker_to_another_client(
 
     assert attacker["event_id"] != victim["event_id"]
     assert attacker.get("deduplicated") is not True
+
+
+def test_details_endpoint_unblocks_specialists(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A spoken call never asks for account numbers, so they arrive later.
+
+    Supplying them must actually start the work, not just store the value —
+    otherwise the customer typed them for nothing.
+    """
+    from app.config import settings
+    from app.state import MarketplaceEvent, SpecialistCallContext
+
+    monkeypatch.setattr(settings, "enable_public_intake", True)
+    resumed: list[str] = []
+
+    async def fake_resume(event_id: str) -> None:
+        resumed.append(event_id)
+
+    monkeypatch.setattr(main, "resume_ready_specialists", fake_resume)
+    client = TestClient(main.app)
+    main._unlock_hits.clear()
+
+    event = MarketplaceEvent(
+        id="mkt_unlock1", homeowner_call_id="web_x",
+        spec={"origin_address": "1 A St, SF, CA 94103", "move_date": "2030-01-01"},
+    )
+    event.specialist_calls["pge_shutoff"] = SpecialistCallContext(
+        call_id="pending", agent_id="pge_shutoff", event_id=event.id,
+        state="needs-user-action", blocker_kind="missing_fields",
+    )
+    state.events[event.id] = event
+
+    res = client.post(
+        "/api/public/move/mkt_unlock1/details",
+        json={"pge_account_number": "1234567890", "authorize_providers": True},
+    )
+
+    assert res.status_code == 200
+    assert set(res.json()["accepted"]) == {
+        "pge_account_number", "service_authorization_signed",
+    }
+    assert event.spec["pge_account_number"] == "1234567890"
+    assert event.spec["service_authorization_signed"] is True
+    assert resumed == ["mkt_unlock1"]
+    # The values never come back out on a public surface.
+    assert "1234567890" not in str(client.get("/api/public/move/mkt_unlock1").json())
+
+
+def test_details_endpoint_rejects_junk_and_unknown_moves(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "enable_public_intake", True)
+    client = TestClient(main.app)
+    main._unlock_hits.clear()
+
+    assert client.post(
+        "/api/public/move/mkt_nope/details", json={"pge_account_number": "1"},
+    ).status_code == 404
+
+    from app.state import MarketplaceEvent
+
+    state.events["mkt_empty"] = MarketplaceEvent(
+        id="mkt_empty", homeowner_call_id="w", spec={},
+    )
+    # A password is never an accepted field, so this supplies nothing usable.
+    assert client.post(
+        "/api/public/move/mkt_empty/details", json={"geico_password": "hunter2"},
+    ).status_code == 400

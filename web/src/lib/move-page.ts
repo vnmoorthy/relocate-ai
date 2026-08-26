@@ -20,6 +20,63 @@ export function moveIdFromHash(hash: string): string | null {
 }
 
 /** Snapshot endpoint for one move. */
+/** Endpoint for supplying the details a blocked specialist is waiting on. */
+export function moveDetailsUrl(api: string, eventId: string): string {
+  return `${api}/api/public/move/${encodeURIComponent(eventId)}/details`;
+}
+
+/**
+ * Specialists that a customer could unblock right now by typing an account
+ * number — the ones a spoken call deliberately never asks for.
+ *
+ * Only tasks blocked on missing fields qualify: a signature or a portal login
+ * is not something a text box can fix, and offering it would be a lie.
+ */
+/**
+ * Fields a customer can reasonably type to unblock work. Passwords, payment
+ * cards and signature flags are deliberately absent: a text box cannot stand
+ * in for a portal login or a signature, and offering one would promise work
+ * the swarm still could not do.
+ */
+export const ASKABLE_FIELDS: Record<string, { label: string; hint: string }> = {
+  pge_account_number: { label: "PG&E account number", hint: "Top of any PG&E bill" },
+  comcast_account_number: {
+    label: "Comcast account number",
+    hint: "On your bill or in the Xfinity app",
+  },
+  equinox_member_id: { label: "Gym member ID", hint: "On your membership card or app" },
+  user_name: { label: "Your full name", hint: "As it appears on the account" },
+  user_phone: { label: "Your phone", hint: "For provider callbacks" },
+  work_address: { label: "Work address", hint: "For the commute and housing briefs" },
+  vet_email: { label: "Your vet's email", hint: "Where records should be requested" },
+  child_name: { label: "Child's name", hint: "For the school enrolment inquiry" },
+  child_grade: { label: "Child's grade", hint: "Entering grade at the new school" },
+};
+
+/** Tasks whose every missing field is something we can honestly ask for. */
+export function unlockableTasks(tasks: MoveTaskView[]): MoveTaskView[] {
+  return tasks.filter(
+    (task) =>
+      task.state === "needs-user-action" &&
+      task.blockerKind === "missing_fields" &&
+      task.missingFields.length > 0 &&
+      task.missingFields.every(
+        (field) => field in ASKABLE_FIELDS || field === "service_authorization_signed",
+      ),
+  );
+}
+
+/** The distinct inputs to render for a set of unlockable tasks. */
+export function askableFieldsFor(tasks: MoveTaskView[]): string[] {
+  const seen = new Set<string>();
+  for (const task of tasks) {
+    for (const field of task.missingFields) {
+      if (field in ASKABLE_FIELDS) seen.add(field);
+    }
+  }
+  return [...seen];
+}
+
 export function moveSnapshotUrl(api: string, eventId: string): string {
   return `${api}/api/public/move/${encodeURIComponent(eventId)}`;
 }
@@ -91,6 +148,8 @@ export interface MoveSpecialistSnapshot {
   did: string | null;
   /** Public page where the user finishes this task themselves. */
   actionUrl: string | null;
+  /** Field NAMES this specialist is waiting on (never values). */
+  missingFields: string[];
   /** Title of a prepared script/letter/checklist already emailed to the user. */
   playbookTitle: string | null;
   /** True only once the digest email actually returned a provider receipt. */
@@ -190,6 +249,9 @@ export function parseMoveSnapshot(raw: unknown): MoveSnapshot | null {
           typeof item.closed_at === "number" && Number.isFinite(item.closed_at)
             ? item.closed_at
             : null,
+        missingFields: Array.isArray(item.missing_fields)
+          ? item.missing_fields.filter((f): f is string => typeof f === "string")
+          : [],
         did: asNonEmptyStringOrNull(item.did),
         actionUrl: asHttpsUrlOrNull(item.action_url),
         playbookTitle: asNonEmptyStringOrNull(item.playbook_title),
@@ -333,6 +395,8 @@ export interface MoveTaskView {
   did: string | null;
   /** Public page where the user finishes this task themselves. */
   actionUrl: string | null;
+  /** Field names this task is waiting on (never values). */
+  missingFields: string[];
   line: string;
 }
 
@@ -366,6 +430,7 @@ export function mergeMoveTasks(
       terminalOutcome: string | null;
       did: string | null;
       actionUrl: string | null;
+      missingFields: string[];
     }
   >();
   for (const specialist of specialists) {
@@ -378,6 +443,7 @@ export function mergeMoveTasks(
       terminalOutcome: specialist.terminal_outcome,
       did: specialist.did,
       actionUrl: specialist.actionUrl,
+      missingFields: specialist.missingFields,
     });
   }
   for (const [agentId, live] of Object.entries(overlay)) {
@@ -392,6 +458,7 @@ export function mergeMoveTasks(
       terminalOutcome: stateHolds ? base.terminalOutcome : null,
       did: stateHolds ? base.did : null,
       actionUrl: stateHolds ? base.actionUrl : null,
+      missingFields: stateHolds ? base.missingFields : [],
     });
   }
 
@@ -408,6 +475,7 @@ export function mergeMoveTasks(
       terminalOutcome: task.terminalOutcome,
       did: task.did,
       actionUrl: task.actionUrl,
+      missingFields: task.missingFields,
       line: taskLine(
         task.state,
         task.blockerKind,

@@ -64,6 +64,9 @@ export default function MovePage() {
   // undefined = hash not read yet; null = read but missing/invalid.
   const [moveId, setMoveId] = useState<string | null | undefined>(undefined);
   const [rawView, setRawView] = useState<LiveView | null>(null);
+  // Bumped after the unlock card is accepted, so the newly-running
+  // specialists appear without waiting for the next live event.
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   // The id lives in the hash; react to hashchange so a pasted new link works
   // without a reload.
@@ -209,7 +212,7 @@ export default function MovePage() {
       socket = null;
       ws?.close();
     };
-  }, [moveId]);
+  }, [moveId, refreshNonce]);
 
   const view = rawView && rawView.forId === moveId ? rawView : null;
   const phase: Phase =
@@ -277,6 +280,8 @@ export default function MovePage() {
             overlay={overlay}
             conn={conn}
             finalizedLive={finalizedLive}
+            api={phase.api}
+            onUnlocked={() => setRefreshNonce((n) => n + 1)}
           />
         )}
       </main>

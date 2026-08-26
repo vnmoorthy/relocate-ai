@@ -1060,6 +1060,14 @@ async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str,
             # only says "needs you" is a dead end; the door is public
             # information, so hand it over.
             "action_url": _portal_url(ctx),
+            # Field NAMES only — never values. Lets the tracker ask for
+            # exactly what a blocked specialist is waiting on instead of
+            # guessing, which left tasks blocked on a name nobody asked for.
+            "missing_fields": (
+                [str(f) for f in ctx.bid.get("missing_fields", [])]
+                if ctx.blocker_kind == "missing_fields" and isinstance(ctx.bid, dict)
+                else []
+            ),
             # Static per-agent title only — playbook BODIES carry the user's
             # own details and travel by email, never through this endpoint.
             "playbook_title": (ctx.playbook or {}).get("title"),
@@ -1386,6 +1394,84 @@ async def api_demo_moves(request: Request) -> dict[str, Any]:
         })
     moves.sort(key=lambda m: float(m["started_at"]), reverse=True)  # type: ignore[arg-type]
     return {"moves": moves[:50]}
+
+
+_UNLOCK_PER_IP_MIN = 12
+_unlock_hits: dict[str, list[float]] = {}
+
+# Account identifiers a customer can supply after the fact to let blocked
+# specialists run. Passwords are deliberately absent: a portal login is not
+# something this product asks for, and a specialist that needs one stays
+# blocked rather than pretending otherwise.
+_UNLOCKABLE_FIELDS = (
+    "pge_account_number",
+    "comcast_account_number",
+    "equinox_member_id",
+    "user_name",
+    "user_phone",
+    "work_address",
+    "vet_email",
+    "child_name",
+    "child_grade",
+)
+
+
+@app.post("/api/public/move/{event_id}/details")
+async def api_move_add_details(
+    event_id: str, request: Request, payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Add the details a blocked specialist was waiting on, and let it run.
+
+    A spoken call never asks for account numbers — reading a long identifier
+    aloud is error-prone, and the concierge is designed not to. This is where
+    they land afterwards, typed and exact, so the work the swarm could not do
+    during the call happens without the customer doing it themselves.
+    """
+    if not settings.enable_public_intake:
+        raise HTTPException(503, "public move pages are not enabled on this deployment")
+    ip = _client_ip(request)
+    now = time.time()
+    _sweep_hits(_unlock_hits, now - 60)
+    hits = [ts for ts in _unlock_hits.get(ip, []) if ts > now - 60]
+    if len(hits) >= _UNLOCK_PER_IP_MIN:
+        raise HTTPException(429, "too many requests")
+    hits.append(now)
+    _unlock_hits[ip] = hits
+
+    event = state.events.get(event_id)
+    if event is None:
+        raise HTTPException(404, "unknown move")
+    if event.finalized_at is not None:
+        raise HTTPException(409, "this move is already finalized")
+
+    from .buyer_schema import by_name
+
+    added: list[str] = []
+    for name in _UNLOCKABLE_FIELDS:
+        raw = payload.get(name)
+        if raw is None:
+            continue
+        value = str(raw).strip()[:120]
+        if not value:
+            continue
+        field = by_name(name)
+        if field is None or not field.validate(value):
+            continue
+        event.spec[name] = value
+        added.append(name)
+
+    if payload.get("authorize_providers") is True:
+        event.spec["service_authorization_signed"] = True
+        added.append("service_authorization_signed")
+
+    if not added:
+        raise HTTPException(400, "nothing usable was supplied")
+
+    state.save_event(event)
+    log.info("move details added: event=%s fields=%s", event_id, sorted(added))
+    # Whatever is now unblocked runs on its own.
+    asyncio.create_task(resume_ready_specialists(event_id))
+    return {"event_id": event_id, "accepted": sorted(added)}
 
 
 def _require_dev_trigger_access(request: Request) -> None:

@@ -771,3 +771,25 @@ def test_backstop_resolves_the_uncued_end_by_elimination() -> None:
     assert backstop_fields(
         "I have to move from 500 Oak Avenue, Denver, CO 80202.", {},
     ) == {"origin_address": "500 Oak Avenue, Denver, CO 80202"}
+
+
+def test_backstop_reads_addresses_spoken_without_a_state() -> None:
+    """People say "950 Howard Street, San Francisco" out loud.
+
+    Requiring the two-letter state silently dropped the origin of most
+    spoken moves — the caller had said it, and the swarm still asked again.
+    """
+    from app.transcript_extract import backstop_fields, extract_addresses
+
+    spoken = "950 Howard Street, San Francisco to 4700 Duval Street, Austin, TX 78751."
+    assert backstop_fields(spoken, {}) == {
+        "origin_address": "950 Howard Street, San Francisco",
+        "destination_address": "4700 Duval Street, Austin, TX 78751",
+    }
+    # Multi-word city names survive intact rather than truncating.
+    both = extract_addresses("from 12 King Street, New York City to 8 Beach Road, Santa Monica")
+    assert [addr for _start, addr in both] == [
+        "12 King Street, New York City", "8 Beach Road, Santa Monica",
+    ]
+    # A lowercase word after the comma is not a city, so this is not an address.
+    assert extract_addresses("123 Main Street, please help me move") == []

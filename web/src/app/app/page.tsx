@@ -113,6 +113,8 @@ export default function WorkspacePage() {
   // ── Workspace ───────────────────────────────────────────────────────────
   const [moves, setMoves] = useState<MovesView>(NO_MOVES);
   const [movesNonce, setMovesNonce] = useState(0);
+  // Bumped when the unlock card is accepted so the detail pane re-reads.
+  const [detailNonce, setDetailNonce] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<DetailView | null>(null);
   const [conn, setConn] = useState<MoveConn>("connecting");
@@ -277,7 +279,7 @@ export default function WorkspacePage() {
       reloadDetailRef.current = () => {};
       publicRefRef.current = "";
     };
-  }, [api, selectedId]);
+  }, [api, selectedId, detailNonce]);
 
   // ── Public live feed ────────────────────────────────────────────────────
   // One socket for the whole session; events are matched against the selected
@@ -549,6 +551,8 @@ export default function WorkspacePage() {
                   overlay={view.overlay}
                   conn={headerConn}
                   finalizedLive={view.finalizedLive}
+                  api={api}
+                  onUnlocked={() => setDetailNonce((n) => n + 1)}
                 />
               ) : view.phase === "not-found" ? (
                 <PaneNotice

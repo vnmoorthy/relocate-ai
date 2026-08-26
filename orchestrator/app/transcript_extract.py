@@ -54,12 +54,19 @@ _STREET_SUFFIX = (
     r"(?:Street|St|Avenue|Ave|Boulevard|Blvd|Road|Rd|Drive|Dr|Lane|Ln|Way|"
     r"Court|Ct|Place|Pl|Terrace|Ter|Circle|Cir|Parkway|Pkwy|Highway|Hwy)"
 )
+# The state is optional on purpose: people say "950 Howard Street, San
+# Francisco" out loud far more often than they recite the state, and
+# requiring it silently dropped the origin of most spoken moves. The city
+# segment must be capitalised, which keeps "123 Main Street, please" from
+# reading as an address.
 _ADDRESS_RE = re.compile(
     r"\b(\d{1,6}(?:\s+[A-Za-z0-9'.]+){1,5}\s+" + _STREET_SUFFIX + r"\.?"
-    r"(?:\s*,\s*[A-Za-z .'-]{2,40})"
-    r"(?:\s*,\s*[A-Z]{2})"
-    r"(?:\s+\d{5}(?:-\d{4})?)?)",
-    re.IGNORECASE,
+    # City as 1-3 capitalised words: greedy enough for "San Francisco",
+    # and it cannot run on through the lowercase "to" that follows it in
+    # "…, San Francisco to 4700 Duval Street".
+    r"(?:\s*,\s*[A-Z][a-zA-Z.'-]+(?:\s+[A-Z][a-zA-Z.'-]+){0,2})"
+    r"(?:\s*,\s*[A-Z]{2})?"
+    r"(?:\s+\d{5}(?:-\d{4})?)?)(?=[\s,.;!?]|$)",
 )
 
 

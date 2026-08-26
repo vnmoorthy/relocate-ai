@@ -89,6 +89,9 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
   const [typed, setTyped] = useState("");
   const [ending, setEnding] = useState(false);
 
+  const [connectedAt, setConnectedAt] = useState<number | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+
   const callId = useRef("");
   const history = useRef<ChatTurn[]>([]);
   const recognition = useRef<SpeechRecognitionLike | null>(null);
@@ -100,6 +103,16 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
     const id = lineId.current;
     setLines((prev) => [...prev, { role, text, id }]);
   }, []);
+
+  // Call timer. Ticks only while a call is up, and is derived from a
+  // timestamp so a backgrounded tab cannot drift.
+  useEffect(() => {
+    if (connectedAt === null) return;
+    const id = window.setInterval(() => {
+      setElapsed(Math.floor((Date.now() - connectedAt) / 1000));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [connectedAt]);
 
   // ── speech out ──────────────────────────────────────────────────────────
   const speak = useCallback((text: string, onDone: () => void) => {
@@ -264,15 +277,63 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
     } finally {
       setEnding(false);
       setPhase("idle");
+      setConnectedAt(null);
     }
   }, [api, onDispatched, stopListening]);
 
-  const started = lines.length > 0;
+  const started = lines.length > 0 || connectedAt !== null;
   const busy = phase === "thinking" || ending;
+  const clock = `${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${String(elapsed % 60).padStart(2, "0")}`;
+
+  const beginCall = useCallback(() => {
+    setConnectedAt(Date.now());
+    setElapsed(0);
+    const greeting = "Relocate here. Where are you moving from, and where to?";
+    pushLine("assistant", greeting);
+    history.current = appendTurn(history.current, { role: "assistant", content: greeting });
+    setPhase("speaking");
+    speak(greeting, () => {
+      // Hands-free from the first second: the concierge opens, then listens.
+      if (support.recognition) startListening();
+      else setPhase("idle");
+    });
+  }, [pushLine, speak, startListening, support.recognition]);
+
+  if (!started) {
+    return (
+      <div className="vc vc-precall">
+        <div className="vc-dial">
+          <span className="tm-label text-[var(--text-quaternary)]">Relocate concierge</span>
+          <p className="vc-dial-num">Talk it through</p>
+          <p className="vc-dial-sub">
+            Tell it where you&rsquo;re going the way you&rsquo;d tell a person.
+            It asks what it still needs, then dispatches the swarm when you
+            hang up.
+          </p>
+          <button type="button" className="vc-call-btn" onClick={beginCall}>
+            <MicGlyph />
+            Start the call
+          </button>
+          <p className="vc-privacy">
+            {support.recognition
+              ? "Runs in this browser — speech-to-text is your browser's, and only the text reaches Relocate. Same concierge the phone line uses, different microphone."
+              : "This browser has no speech recognition (Chrome and Edge do). You can hold the same conversation by typing — the concierge behaves identically."}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="vc">
-      {/* ── Mic + status ───────────────────────────────────────────── */}
+      {/* ── In-call bar ────────────────────────────────────────────── */}
+      <div className="vc-bar vc-bar--live">
+        <span className="vc-oncall">
+          <span className="vc-oncall-dot" aria-hidden="true" />
+          <span className="tm-label">On call</span>
+          <span className="vc-clock" aria-label={`Call duration ${clock}`}>{clock}</span>
+        </span>
+      </div>
       <div className="vc-bar">
         <div className="flex items-center gap-3 min-w-0">
           {support.recognition ? (
@@ -304,7 +365,7 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
           )}
           {started && (
             <button type="button" className="btn-solid vc-end" onClick={() => void endSession()} disabled={ending}>
-              {ending ? "Dispatching…" : "End & dispatch"}
+              {ending ? "Dispatching…" : "Hang up & dispatch"}
             </button>
           )}
         </div>

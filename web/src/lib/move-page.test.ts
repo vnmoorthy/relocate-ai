@@ -17,6 +17,9 @@ import {
   taskLine,
   type MoveReply,
   type MoveSpecialistSnapshot,
+  unlockableTasks,
+  type MoveTaskView,
+  askableFieldsFor,
 } from "./move-page.ts";
 
 function specialist(overrides: Partial<MoveSpecialistSnapshot>): MoveSpecialistSnapshot {
@@ -28,6 +31,7 @@ function specialist(overrides: Partial<MoveSpecialistSnapshot>): MoveSpecialistS
     closed_at: null,
     did: null,
     actionUrl: null,
+    missingFields: [],
     playbookTitle: null,
     playbookDelivered: false,
     ...overrides,
@@ -552,4 +556,47 @@ test("parseMoveSnapshot: proof-of-work counters default to zero", () => {
   assert.ok(bare);
   assert.equal(bare.outboundRequests, 0);
   assert.equal(bare.repliesReceived, 0);
+});
+
+test("unlockableTasks: only tasks a typed account number can actually start", () => {
+  const task = (over: Partial<MoveTaskView>): MoveTaskView => ({
+    agentId: "pge_shutoff",
+    name: "PG&E",
+    category: "electric",
+    state: "needs-user-action",
+    blockerKind: "missing_fields",
+    playbookTitle: null,
+    playbookDelivered: false,
+    terminalOutcome: null,
+    did: null,
+    actionUrl: null,
+    missingFields: ["pge_account_number"],
+    line: "",
+    ...over,
+  });
+
+  const offered = unlockableTasks([
+    task({ missingFields: ["pge_account_number", "service_authorization_signed"] }),
+    // Comcast also wants a name — a spoken call often never captured one.
+    task({
+      agentId: "comcast_cancel",
+      missingFields: ["comcast_account_number", "user_name"],
+    }),
+    // A portal login is not something a text box can stand in for.
+    task({ agentId: "geico_address", missingFields: ["geico_email", "geico_password"] }),
+    // A signature is legally the customer's to give.
+    task({
+      agentId: "id_card_update",
+      blockerKind: "secure_user_workflow_required",
+      missingFields: [],
+    }),
+    // Already running.
+    task({ agentId: "gym_cancel", state: "submitted", blockerKind: null, missingFields: [] }),
+  ]);
+
+  assert.deepEqual(offered.map((t) => t.agentId), ["pge_shutoff", "comcast_cancel"]);
+  // The inputs rendered are exactly what those two are waiting on.
+  assert.deepEqual(askableFieldsFor(offered), [
+    "pge_account_number", "comcast_account_number", "user_name",
+  ]);
 });

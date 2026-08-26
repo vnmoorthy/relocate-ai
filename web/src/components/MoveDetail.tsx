@@ -1,8 +1,10 @@
 "use client";
 
+import { UnlockTasks } from "@/components/UnlockTasks";
 import { useMemo } from "react";
 import { AgentGlyph } from "@/components/AgentGlyph";
 import {
+  unlockableTasks,
   cityFromAddress,
   formatMoveDate,
   mergeMoveTasks,
@@ -48,6 +50,10 @@ export interface MoveDetailProps {
   conn: MoveConn;
   /** True once an event_finalized arrived live, ahead of the next snapshot. */
   finalizedLive?: boolean;
+  /** Reachable API origin — enables the "let the swarm finish these" card. */
+  api?: string;
+  /** Refresh the snapshot after details are accepted. */
+  onUnlocked?: () => void;
 }
 
 /**
@@ -59,7 +65,14 @@ export interface MoveDetailProps {
  * taskLine / replyLine) so the public /move page and the signed-in workspace
  * are the same screen driven by the same logic — never two copies drifting.
  */
-export function MoveDetail({ snapshot, overlay, conn, finalizedLive = false }: MoveDetailProps) {
+export function MoveDetail({
+  snapshot,
+  overlay,
+  conn,
+  finalizedLive = false,
+  api,
+  onUnlocked,
+}: MoveDetailProps) {
   const tasks = useMemo(
     () => mergeMoveTasks(snapshot.specialists, overlay),
     [snapshot, overlay],
@@ -254,6 +267,16 @@ export function MoveDetail({ snapshot, overlay, conn, finalizedLive = false }: M
             })}
           </ul>
         </section>
+      )}
+
+      {/* ── Let the swarm finish these ──────────────────────────── */}
+      {api && onUnlocked && (
+        <UnlockTasks
+          api={api}
+          eventId={snapshot.event_id}
+          tasks={unlockableTasks(tasks)}
+          onUnlocked={onUnlocked}
+        />
       )}
 
       {/* ── What you still own ─────────────────────────────────── */}

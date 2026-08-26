@@ -1945,3 +1945,115 @@ a:focus-visible, button:focus-visible {
   border-color: var(--amber);
   background: rgba(251, 191, 36, 0.08);
 }
+
+/* Call experience. The product's promise is "one call", and it should feel
+   like placing one — a call screen, a live timer, a hang-up that dispatches.
+   It runs in the browser and says so; nothing here implies a carrier. */
+.vc-precall { align-items: stretch; }
+.vc-dial {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  align-items: flex-start;
+  padding: 2rem 1.75rem;
+  border: 1px solid var(--border-default);
+  background: var(--bg-elev-1);
+}
+.vc-dial-num {
+  font-family: var(--font-display), var(--font-geist-sans), ui-sans-serif;
+  text-transform: uppercase;
+  font-weight: 600;
+  font-size: clamp(1.9rem, 4vw, 2.6rem);
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--text-primary);
+}
+.vc-dial-sub {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  max-width: 46ch;
+}
+.vc-call-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.35rem;
+  padding: 0.85rem 1.4rem;
+  border: 0;
+  background: var(--brand);
+  color: #04120d;
+  font-family: var(--font-geist-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+.vc-call-btn:hover { filter: brightness(1.08); }
+.vc-bar--live {
+  border-bottom: 0;
+  padding-bottom: 0.6rem;
+  background: transparent;
+  border-color: transparent;
+}
+.vc-oncall {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--brand);
+}
+.vc-oncall-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--brand);
+  animation: vcPulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) { .vc-oncall-dot { animation: none; } }
+.vc-clock {
+  font-family: var(--font-geist-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+/* "Let the swarm finish these": the account numbers a spoken call never
+   asks for, so the work happens without the customer doing it. */
+.mv-unlock {
+  margin-top: 0.9rem;
+  padding: 1.25rem;
+  border: 1px solid rgba(0, 212, 154, 0.28);
+  background: rgba(0, 212, 154, 0.035);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.mv-unlock-lead {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  max-width: 62ch;
+}
+.mv-unlock-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+@media (min-width: 640px) {
+  .mv-unlock-grid { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+}
+.mv-unlock-field { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.mv-unlock-field input {
+  width: 100%;
+  padding: 0.55rem 0.2rem;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+.mv-unlock-field input:focus { outline: none; border-bottom-color: var(--brand); }
+.mv-unlock-go { align-self: flex-start; }
+.mv-unlock-error { font-size: 13px; color: var(--amber); }
