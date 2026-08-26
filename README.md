@@ -10,7 +10,7 @@
 [![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB.svg)](orchestrator/pyproject.toml)
 [![Next.js 16](https://img.shields.io/badge/next.js-16-black.svg)](web/package.json)
 
-[**Live site**](https://vnmoorthy.github.io/relocate-ai/) · [Architecture](ARCHITECTURE.md) · [Status](STATUS.md) · [Security](SECURITY.md) · [Demo runbook](DEMO_SCRIPT.md)
+[**Live site**](https://vnmoorthy.github.io/relocate-ai/) · [Architecture](ARCHITECTURE.md) · [Status](STATUS.md) · [Security](SECURITY.md)
 
 <img src="docs/swarm.png" alt="Relocate swarm dashboard — specialist agents dispatching in real time" width="100%" />
 
@@ -264,8 +264,7 @@ code.
 ├── AGENT_COUNT.md      the numbered 29-persona roster + dispatch rules
 ├── ARCHITECTURE.md     components, data flow, trust boundaries
 ├── STATUS.md           built / partial / missing — the capability contract
-├── SECURITY.md         current controls, public-surface threat model, known gaps
-└── DEMO_SCRIPT.md      5-minute product demo runbook + narration rules
+└── SECURITY.md         current controls, public-surface threat model, known gaps
 ```
 
 ## Contributing
