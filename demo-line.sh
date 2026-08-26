@@ -106,6 +106,10 @@ PYEOF
     if (cd "$ORCH_ROOT" && uv run python scripts/update_webhooks.py >>"$LOG" 2>&1); then
       printf "%s" "$TUNNEL_URL" >"$URL_STATE"
       note "webhook now -> $TUNNEL_URL/webhook/agent/buyer"
+      # The Twilio rail keeps calling whatever URL it was last told about, so
+      # a rotation would silently send callers to a dead host. No-ops when the
+      # rail is not configured.
+      (cd "$ORCH_ROOT" && uv run python scripts/update_twilio_webhook.py >>"$LOG" 2>&1)
       # Self-heal: publish the new endpoint so the deployed site reconnects
       # without anyone noticing. Propagation takes a few minutes (Pages
       # rebuild, or raw's 300s cache), and the site re-probes every 60s, so

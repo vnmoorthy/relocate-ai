@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     # Twilio as a second telephony rail. The auth token verifies that an
     # inbound webhook genuinely came from Twilio; blank disables the rail.
     twilio_auth_token: str = ""
+    twilio_account_sid: str = ""
+    # E.164 number this deployment answers on, e.g. +15125551234.
+    twilio_phone_number: str = ""
 
     # Client-IP source for rate limits and intake dedupe. True is correct
     # behind the cloudflared tunnel (every request would otherwise look like
