@@ -158,6 +158,21 @@ export function MoveDetail({ snapshot, overlay, conn, finalizedLive = false }: M
                 />
               )}
             </div>
+            {/* What actually left the building. Without this the page reads
+                as a to-do list and hides the work the swarm really did. */}
+            <p className="mv-work">
+              <strong>{snapshot.outboundRequests}</strong>{" "}
+              {snapshot.outboundRequests === 1 ? "request" : "requests"} sent to real
+              providers
+              {snapshot.repliesReceived > 0 && (
+                <>
+                  {" · "}
+                  <strong>{snapshot.repliesReceived}</strong>{" "}
+                  {snapshot.repliesReceived === 1 ? "reply" : "replies"} back
+                </>
+              )}
+              . Everything else was prepared for you or needs something only you have.
+            </p>
             <p className="mv-honest">
               Submitted means the provider accepted the request — the underlying service
               change is not confirmed complete.

@@ -26,6 +26,7 @@ function specialist(overrides: Partial<MoveSpecialistSnapshot>): MoveSpecialistS
     terminal_outcome: null,
     blocker_kind: null,
     closed_at: null,
+    did: null,
     playbookTitle: null,
     playbookDelivered: false,
     ...overrides,
@@ -515,4 +516,39 @@ test("parseMoveSnapshot reads playbook_delivered strictly", () => {
   assert.ok(snap);
   assert.equal(snap.specialists[0].playbookDelivered, true);
   assert.equal(snap.specialists[1].playbookDelivered, false);
+});
+
+test("taskLine: a submitted specialist says who it actually asked", () => {
+  // "Request submitted" reads identically whether one provider was emailed
+  // or twelve; the server's own account is more honest and more useful.
+  assert.equal(
+    taskLine("submitted", null, null, false, "submitted", "Requested from 3 providers"),
+    "Requested from 3 providers — awaiting their reply.",
+  );
+  assert.equal(
+    taskLine("submitted", null, null, false, "prepared_for_user", "Sent to your inbox"),
+    "Sent to your inbox — the final step is yours.",
+  );
+  // Without a server account, the honest generic wording still stands.
+  assert.equal(
+    taskLine("submitted", null, null, false, "submitted", null),
+    "Request submitted — provider acceptance, not completion.",
+  );
+});
+
+test("parseMoveSnapshot: proof-of-work counters default to zero", () => {
+  const full = parseMoveSnapshot({
+    event_id: "mkt_x",
+    specialists: [],
+    outbound_requests: 6,
+    replies_received: 2,
+  });
+  assert.ok(full);
+  assert.equal(full.outboundRequests, 6);
+  assert.equal(full.repliesReceived, 2);
+
+  const bare = parseMoveSnapshot({ event_id: "mkt_x", specialists: [] });
+  assert.ok(bare);
+  assert.equal(bare.outboundRequests, 0);
+  assert.equal(bare.repliesReceived, 0);
 });

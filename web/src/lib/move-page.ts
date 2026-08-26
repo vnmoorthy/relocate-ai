@@ -85,6 +85,10 @@ export interface MoveSpecialistSnapshot {
   terminal_outcome: string | null;
   blocker_kind: string | null;
   closed_at: number | null;
+  /** What this specialist actually did — "Requested from 3 providers",
+   *  "Prepared for you", "Sent to your inbox". Null when it did nothing
+   *  because it is blocked on the user. */
+  did: string | null;
   /** Title of a prepared script/letter/checklist already emailed to the user. */
   playbookTitle: string | null;
   /** True only once the digest email actually returned a provider receipt. */
@@ -117,6 +121,9 @@ export interface MoveSnapshot {
   route: { origin_address: string; destination_address: string; move_date: string };
   flags: { has_pets: boolean; has_children: boolean; has_car: boolean; has_visa: boolean };
   specialists: MoveSpecialistSnapshot[];
+  /** Requests that actually left the building, and answers that came back. */
+  outboundRequests: number;
+  repliesReceived: number;
   replies: MoveReply[];
   dispatched: boolean;
   finalized: boolean;
@@ -171,6 +178,7 @@ export function parseMoveSnapshot(raw: unknown): MoveSnapshot | null {
           typeof item.closed_at === "number" && Number.isFinite(item.closed_at)
             ? item.closed_at
             : null,
+        did: asNonEmptyStringOrNull(item.did),
         playbookTitle: asNonEmptyStringOrNull(item.playbook_title),
         playbookDelivered: item.playbook_delivered === true,
       });
@@ -209,6 +217,14 @@ export function parseMoveSnapshot(raw: unknown): MoveSnapshot | null {
       has_visa: flags.has_visa === true,
     },
     specialists,
+    outboundRequests:
+      typeof raw.outbound_requests === "number" && Number.isFinite(raw.outbound_requests)
+        ? raw.outbound_requests
+        : 0,
+    repliesReceived:
+      typeof raw.replies_received === "number" && Number.isFinite(raw.replies_received)
+        ? raw.replies_received
+        : 0,
     replies,
     dispatched: raw.dispatched === true,
     finalized: raw.finalized === true,
@@ -239,6 +255,7 @@ export function taskLine(
   playbookTitle: string | null = null,
   playbookDelivered = false,
   terminalOutcome: string | null = null,
+  did: string | null = null,
 ): string {
   if (state === "needs-user-action" && playbookTitle) {
     return playbookDelivered
@@ -248,8 +265,15 @@ export function taskLine(
   if (blockerKind && BLOCKER_LINES[blockerKind]) return BLOCKER_LINES[blockerKind];
   switch (state) {
     case "submitted":
-      // Some specialists' only email goes to the customer; calling that a
-      // provider acceptance would overstate what happened.
+      // The server reports what this specialist actually did — how many
+      // providers it asked, or that its only email went to the customer.
+      // Anything vaguer reads as work that did not happen.
+      if (did && did.startsWith("Requested from")) {
+        return `${did} — awaiting their reply.`;
+      }
+      if (did === "Sent to your inbox") {
+        return "Sent to your inbox — the final step is yours.";
+      }
       return terminalOutcome === "prepared_for_user"
         ? "Prepared for you — the final step is yours."
         : "Request submitted — provider acceptance, not completion.";
@@ -292,6 +316,8 @@ export interface MoveTaskView {
   playbookTitle: string | null;
   playbookDelivered: boolean;
   terminalOutcome: string | null;
+  /** The server's own account of what this specialist did. */
+  did: string | null;
   line: string;
 }
 
@@ -323,6 +349,7 @@ export function mergeMoveTasks(
       playbookTitle: string | null;
       playbookDelivered: boolean;
       terminalOutcome: string | null;
+      did: string | null;
     }
   >();
   for (const specialist of specialists) {
@@ -333,6 +360,7 @@ export function mergeMoveTasks(
       playbookTitle: specialist.playbookTitle,
       playbookDelivered: specialist.playbookDelivered,
       terminalOutcome: specialist.terminal_outcome,
+      did: specialist.did,
     });
   }
   for (const [agentId, live] of Object.entries(overlay)) {
@@ -345,6 +373,7 @@ export function mergeMoveTasks(
       playbookTitle: stateHolds ? base.playbookTitle : null,
       playbookDelivered: stateHolds ? base.playbookDelivered : false,
       terminalOutcome: stateHolds ? base.terminalOutcome : null,
+      did: stateHolds ? base.did : null,
     });
   }
 
@@ -359,12 +388,14 @@ export function mergeMoveTasks(
       playbookTitle: task.playbookTitle,
       playbookDelivered: task.playbookDelivered,
       terminalOutcome: task.terminalOutcome,
+      did: task.did,
       line: taskLine(
         task.state,
         task.blockerKind,
         task.playbookTitle,
         task.playbookDelivered,
         task.terminalOutcome,
+        task.did,
       ),
     };
   });

@@ -1873,3 +1873,18 @@ a:focus-visible, button:focus-visible {
 .vc-chip--core.vc-chip--on { color: var(--tier-haiku); border-color: rgba(96, 165, 250, 0.45); }
 .vc-chip--core.vc-chip--on .vc-chip-dot { background: var(--tier-haiku); }
 .vc-hud-note { font-size: 12px; line-height: 1.6; color: var(--text-quaternary); max-width: 60ch; }
+
+/* Proof of work: what actually left the building on this move. Sits above
+   the honest-states line because "requests sent" is the fact a reader is
+   looking for, and a task list alone hides it. */
+.mv-work {
+  margin-top: 0.9rem;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.mv-work strong {
+  color: var(--tier-haiku);
+  font-family: var(--font-geist-mono);
+  font-variant-numeric: tabular-nums;
+}
