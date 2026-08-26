@@ -380,8 +380,11 @@ def test_browser_adapter_and_missing_fields_are_needs_user_action() -> None:
     assert ctx.terminal_outcome == "needs_user_action"
     assert ctx.blocker_kind == "integration_unavailable"
     assert ctx.transcript == []
+    # PG&E now runs on the email rail under the intake authorization: an
+    # account number identifies the account, and SSN digits are never emailed.
     assert marketplace.missing_prerequisites("pge_shutoff", {}) == [
-        "origin_address", "move_date", "pge_account_number", "pge_last4_ssn",
+        "origin_address", "move_date", "pge_account_number",
+        "service_authorization_signed",
     ]
 
 

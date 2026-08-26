@@ -57,10 +57,6 @@ class NeedsUserAction(RuntimeError):
 # repository does not yet implement. Keeping the policy at dispatch prevents a
 # configured provider key (or a direct adapter mock) from bypassing the guard.
 MANDATORY_USER_ACTION: dict[str, str] = {
-    "comcast_cancel": (
-        "A customer-reviewed, signed cancellation-letter workflow is required "
-        "before certified mail can be purchased."
-    ),
     "id_card_update": (
         "A customer-reviewed, wet-signed DMV form workflow is required before "
         "certified mail can be purchased."
@@ -81,11 +77,12 @@ MANDATORY_USER_ACTION: dict[str, str] = {
 # until every field it actually transmits is present.
 REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "pge_shutoff": (
-        "origin_address", "move_date", "pge_account_number", "pge_last4_ssn",
+        "origin_address", "move_date", "pge_account_number",
+        "service_authorization_signed",
     ),
     "comcast_cancel": (
         "origin_address", "move_date", "user_name", "user_email",
-        "comcast_account_number", "comcast_authorization_signed",
+        "comcast_account_number", "service_authorization_signed",
     ),
     "geico_address": (
         "destination_address", "move_date", "geico_email", "geico_password",
@@ -112,7 +109,7 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     ),
     "gym_cancel": (
         "user_name", "user_email", "move_date", "equinox_member_id",
-        "gym_authorization_signed",
+        "service_authorization_signed",
     ),
     "pharmacy": (
         "destination_address", "user_name", "user_email", "user_dob",
@@ -768,14 +765,46 @@ async def _run_email(
         return await am.request_gym_cancellation(event_id=event_id, spec=spec, user_email=user_email)
     if p.agent_id == "bank_notify":
         return await am.send_bank_script(event_id=event_id, spec=spec, user_email=user_email)
+    if p.agent_id == "pge_shutoff":
+        return await am.request_utility_stop(
+            event_id=event_id, spec=spec, user_email=user_email,
+        )
+    if p.agent_id == "comcast_cancel":
+        return await am.request_service_cancellation(
+            event_id=event_id, spec=spec, user_email=user_email,
+        )
     if p.agent_id == "spectrum_austin":
         return await am.request_internet_service(
             event_id=event_id, spec=spec, user_email=user_email,
         )
+    if p.agent_id == "pge_shutoff":
+        return await am.request_utility_stop(
+            event_id=event_id, spec=spec, user_email=user_email,
+        )
+    if p.agent_id == "comcast_cancel":
+        return await am.request_service_cancellation(
+            event_id=event_id, spec=spec, user_email=user_email,
+        )
     if p.agent_id == "flight_book":
         return await am.send_flight_options(event_id=event_id, spec=spec, user_email=user_email)
+    if p.agent_id == "pge_shutoff":
+        return await am.request_utility_stop(
+            event_id=event_id, spec=spec, user_email=user_email,
+        )
+    if p.agent_id == "comcast_cancel":
+        return await am.request_service_cancellation(
+            event_id=event_id, spec=spec, user_email=user_email,
+        )
     if p.agent_id == "spectrum_austin":
         return await am.request_internet_service(
+            event_id=event_id, spec=spec, user_email=user_email,
+        )
+    if p.agent_id == "pge_shutoff":
+        return await am.request_utility_stop(
+            event_id=event_id, spec=spec, user_email=user_email,
+        )
+    if p.agent_id == "comcast_cancel":
+        return await am.request_service_cancellation(
             event_id=event_id, spec=spec, user_email=user_email,
         )
 

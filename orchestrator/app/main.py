@@ -880,12 +880,19 @@ async def api_public_start_move(request: Request, payload: dict[str, Any]) -> di
     for flag in ("has_pets", "has_children", "has_car", "has_visa"):
         spec[flag] = bool(payload.get(flag, False))
 
+    # One authorization, given once, is what lets the email-rail specialists
+    # act without handing every task back. It is recorded only when the
+    # customer explicitly grants it, and it is never inferred.
+    if payload.get("authorize_providers") is True:
+        spec["service_authorization_signed"] = True
+
     # Optional household details. Supplying them unblocks the specialists that
     # need them (school enrollment, vet records) exactly as the voice concierge
     # does when the caller volunteers the same facts. Anything invalid is
     # dropped rather than rejected — the move still dispatches.
     for name in (
         "user_name", "user_phone", "work_address", "household_size", "child_name", "child_grade",
+        "pge_account_number", "comcast_account_number", "equinox_member_id",
         "pet_name", "pet_species", "vet_email", "bank_name",
     ):
         raw = payload.get(name)

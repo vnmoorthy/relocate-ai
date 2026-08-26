@@ -159,6 +159,15 @@ BUYER_FIELDS: list[BuyerField] = [
         example="Jane Smith",
     ),
     BuyerField(
+        name="service_authorization_signed",
+        tier="optional", voice_safe=False,
+        agent_ids=("pge_shutoff", "comcast_cancel", "gym_cancel"),
+        ask_phrasing="(emailed) Authorize Relocate to contact your providers",
+        plain_label="Authorization for Relocate to act on your behalf",
+        example="true",
+        validate=_is_bool,
+    ),
+    BuyerField(
         name="work_address",
         tier="optional", voice_safe=True,
         agent_ids=("housing_search", "commute_route"),

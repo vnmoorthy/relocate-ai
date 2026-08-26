@@ -260,20 +260,16 @@ PERSONAS: list[Persona] = [
         agent_id="pge_shutoff",
         name="PG&E shutoff",
         category="utility-electric-gas",
-        voice_mode="browser",
-        counterparty_url=(
-            "https://www.pge.com/en_US/residential/your-account/"
-            "account-management/move-services/move-services.page"
-        ),
-        requires_browser_use=True,
+        voice_mode="email",
+        counterparty_email="customerservice@pge.com",
         body=(
-            "Browser-Use task: navigate to the PG&E 'Stop Service' page. Enter "
-            "PG&E account number {pge_account_number}, service address "
-            "{origin_address}, requested disconnect date {move_date}, and the "
-            "last 4 of the account holder's SSN ({pge_last4_ssn}). Submit. "
-            "On the confirmation page, capture the confirmation number and the "
-            "scheduled disconnect date. Return as JSON: "
-            "{'confirmation_number': str, 'disconnect_date': str, 'final_bill_eta': str}."
+            "Email-mode: request stop of electric/gas service at the origin "
+            "address effective the move date, quoting the account number and "
+            "giving a forwarding address for the final bill. Sent on the "
+            "customer's behalf under the authorization they gave at intake — "
+            "no further human step. The utility verifies identity on its own "
+            "side; SSN digits are never transmitted by email. Artifact: the "
+            "AgentMail message_id."
         ),
     ),
     # ────────────────────────────────────────────────────────────────────
@@ -283,7 +279,7 @@ PERSONAS: list[Persona] = [
         agent_id="comcast_cancel",
         name="Comcast cancel (certified mail)",
         category="utility-internet-sf",
-        voice_mode="mail",
+        voice_mode="email",
         counterparty_address={
             "name": "Comcast Cable Communications, LLC",
             "address_line1": "Attn: Customer Care",
@@ -293,8 +289,7 @@ PERSONAS: list[Persona] = [
             "address_zip": "19103",
             "address_country": "US",
         },
-        requires_lob=True,
-        body=(
+                body=(
             "Lob task: generate a one-page certified-mail cancellation letter "
             "addressed to Comcast Customer Care, body templated as: 'Per the "
             "service agreement, I am hereby providing written notice of "

@@ -37,6 +37,9 @@ ALL_CONDITIONS_SPEC = {
     "pge_last4_ssn": "0000",
     "comcast_account_number": "test-comcast-account",
     "comcast_authorization_signed": True,
+    # One authorization at intake is what lets the email-rail specialists act
+    # without coming back to the customer.
+    "service_authorization_signed": True,
     "geico_email": "demo.mover@example.com",
     "geico_password": "test-only-password",
     "usps_verify_card": "4111111111111111",

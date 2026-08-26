@@ -354,6 +354,80 @@ async def send_flight_options(
     return result
 
 
+async def request_utility_stop(
+    *, event_id: str, spec: dict, user_email: str
+) -> dict | None:
+    """Agent #2 — PG&E. Stop service at the origin, autonomously.
+
+    Runs under the authorization the customer gave at intake, so no further
+    human step is required. Account number identifies the account; identity
+    verification stays with the utility, and no SSN digits are emailed.
+    """
+    origin = spec.get("origin_address", "(service address)")
+    dest = spec.get("destination_address", "(forwarding address)")
+    move_date = spec.get("move_date", "(date)")
+    account = spec.get("pge_account_number", "(account number)")
+    name = spec.get("user_name", "")
+    body = (
+        f"Hi,\n\n"
+        f"Please stop service at the address below effective {move_date}.\n\n"
+        f"Account number: {account}\n"
+        f"Service address: {origin}\n"
+        f"Stop date: {move_date}\n"
+        f"{'Account holder: ' + name + chr(10) if name else ''}"
+        f"Forwarding address for the final bill: {dest}\n\n"
+        f"Please confirm the stop date and send the final bill to the "
+        f"forwarding address. If identity verification is needed, reply and "
+        f"the account holder will complete it directly.\n\n"
+        f"Sent by Relocate on behalf of the account holder, who has authorized "
+        f"this request.\n"
+        f"Reply-to reaches their concierge inbox.\n"
+    )
+    return await _send_via_agentmail(
+        event_id=event_id,
+        agent_id="pge_shutoff",
+        to="customerservice@pge.com",
+        subject=f"Stop service request — account {account} — effective {move_date}",
+        body=body,
+    )
+
+
+async def request_service_cancellation(
+    *, event_id: str, spec: dict, user_email: str
+) -> dict | None:
+    """Agent #3 — Comcast. Written cancellation notice, autonomously.
+
+    The provider's own contract asks for written notice; this is that notice,
+    sent under the customer's intake authorization rather than handed to them
+    to send themselves.
+    """
+    origin = spec.get("origin_address", "(service address)")
+    move_date = spec.get("move_date", "(date)")
+    account = spec.get("comcast_account_number", "(account number)")
+    name = spec.get("user_name", "(account holder)")
+    body = (
+        f"To whom it may concern,\n\n"
+        f"This is written notice of cancellation of all services at the "
+        f"address below, effective {move_date}.\n\n"
+        f"Account holder: {name}\n"
+        f"Account number: {account}\n"
+        f"Service address: {origin}\n"
+        f"Effective cancellation date: {move_date}\n"
+        f"Reason: moving out of the service area.\n\n"
+        f"Please confirm in writing: the cancellation date, any equipment to "
+        f"be returned and where to return it, and the final balance.\n\n"
+        f"Sent by Relocate on behalf of the account holder, who has authorized "
+        f"this cancellation.\n"
+    )
+    return await _send_via_agentmail(
+        event_id=event_id,
+        agent_id="comcast_cancel",
+        to="we_can_help@comcast.com",
+        subject=f"Written notice of cancellation — account {account} — {move_date}",
+        body=body,
+    )
+
+
 async def request_internet_service(
     *, event_id: str, spec: dict, user_email: str
 ) -> dict | None:
