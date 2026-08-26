@@ -578,6 +578,7 @@ PERSONAS: list[Persona] = [
         },
         requires_lob=True,
         requires_car=True,
+        counterparty_url="https://www.dmv.ca.gov/portal/customer-service/change-of-address/",
         body=(
             "Lob task: print and mail DL-13A 'Change of Address' to the CA "
             "DMV Address Change Unit. Fields: DL number {ca_dl_number}, "

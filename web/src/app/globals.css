@@ -1922,3 +1922,26 @@ a:focus-visible, button:focus-visible {
   line-height: 1.6;
   color: var(--text-quaternary);
 }
+
+/* The door for a task the customer has to finish themselves. Sits inside the
+   amber "what you still own" row: the point is to remove the next click of
+   friction, not to compete with the task name. */
+.mv-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-top: 0.55rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  color: var(--amber);
+  font-family: var(--font-geist-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.mv-open:hover {
+  border-color: var(--amber);
+  background: rgba(251, 191, 36, 0.08);
+}

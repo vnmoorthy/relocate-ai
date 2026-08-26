@@ -1011,6 +1011,17 @@ async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str,
     event = state.events.get(event_id)
     if event is None:
         raise HTTPException(404, "unknown move")
+    def _portal_url(ctx) -> str | None:  # noqa: ANN001
+        """Public portal page for a task the customer has to finish."""
+        if ctx.state != "needs-user-action":
+            return None
+        try:
+            persona = by_id(ctx.agent_id)
+        except Exception:  # noqa: BLE001 - unknown agent ids simply have no door
+            return None
+        url = getattr(persona, "counterparty_url", None)
+        return url if isinstance(url, str) and url.startswith("https://") else None
+
     def _did(ctx) -> str | None:  # noqa: ANN001
         """What this specialist actually did, in the user's terms.
 
@@ -1039,6 +1050,10 @@ async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str,
             "terminal_outcome": ctx.terminal_outcome,
             "blocker_kind": ctx.blocker_kind,
             "closed_at": ctx.closed_at,
+            # The exact page to finish this task on. A blocked specialist that
+            # only says "needs you" is a dead end; the door is public
+            # information, so hand it over.
+            "action_url": _portal_url(ctx),
             # Static per-agent title only — playbook BODIES carry the user's
             # own details and travel by email, never through this endpoint.
             "playbook_title": (ctx.playbook or {}).get("title"),

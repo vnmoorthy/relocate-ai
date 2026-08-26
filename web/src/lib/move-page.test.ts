@@ -27,6 +27,7 @@ function specialist(overrides: Partial<MoveSpecialistSnapshot>): MoveSpecialistS
     blocker_kind: null,
     closed_at: null,
     did: null,
+    actionUrl: null,
     playbookTitle: null,
     playbookDelivered: false,
     ...overrides,

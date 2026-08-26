@@ -278,6 +278,20 @@ export function MoveDetail({ snapshot, overlay, conn, finalizedLive = false }: M
                     {task.name}
                   </span>
                   <p>{task.line}</p>
+                  {task.actionUrl && (
+                    // A task the customer has to finish should hand over the
+                    // door, not just the news that it is theirs.
+                    <a
+                      className="mv-open"
+                      href={task.actionUrl}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                    >
+                      Open {new URL(task.actionUrl).hostname.replace(/^www\./, "")}
+                      <span aria-hidden="true"> →</span>
+                      <span className="sr-only"> (opens in a new tab)</span>
+                    </a>
+                  )}
                 </div>
               </li>
             ))}

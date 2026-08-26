@@ -89,6 +89,8 @@ export interface MoveSpecialistSnapshot {
    *  "Prepared for you", "Sent to your inbox". Null when it did nothing
    *  because it is blocked on the user. */
   did: string | null;
+  /** Public page where the user finishes this task themselves. */
+  actionUrl: string | null;
   /** Title of a prepared script/letter/checklist already emailed to the user. */
   playbookTitle: string | null;
   /** True only once the digest email actually returned a provider receipt. */
@@ -139,6 +141,16 @@ function asString(value: unknown): string {
 }
 
 /** Non-empty string → itself; anything else → null. */
+/** Only an https URL is ever rendered as a link the user can click. */
+function asHttpsUrlOrNull(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    return new URL(value).protocol === "https:" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 function asNonEmptyStringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
@@ -179,6 +191,7 @@ export function parseMoveSnapshot(raw: unknown): MoveSnapshot | null {
             ? item.closed_at
             : null,
         did: asNonEmptyStringOrNull(item.did),
+        actionUrl: asHttpsUrlOrNull(item.action_url),
         playbookTitle: asNonEmptyStringOrNull(item.playbook_title),
         playbookDelivered: item.playbook_delivered === true,
       });
@@ -318,6 +331,8 @@ export interface MoveTaskView {
   terminalOutcome: string | null;
   /** The server's own account of what this specialist did. */
   did: string | null;
+  /** Public page where the user finishes this task themselves. */
+  actionUrl: string | null;
   line: string;
 }
 
@@ -350,6 +365,7 @@ export function mergeMoveTasks(
       playbookDelivered: boolean;
       terminalOutcome: string | null;
       did: string | null;
+      actionUrl: string | null;
     }
   >();
   for (const specialist of specialists) {
@@ -361,6 +377,7 @@ export function mergeMoveTasks(
       playbookDelivered: specialist.playbookDelivered,
       terminalOutcome: specialist.terminal_outcome,
       did: specialist.did,
+      actionUrl: specialist.actionUrl,
     });
   }
   for (const [agentId, live] of Object.entries(overlay)) {
@@ -374,6 +391,7 @@ export function mergeMoveTasks(
       playbookDelivered: stateHolds ? base.playbookDelivered : false,
       terminalOutcome: stateHolds ? base.terminalOutcome : null,
       did: stateHolds ? base.did : null,
+      actionUrl: stateHolds ? base.actionUrl : null,
     });
   }
 
@@ -389,6 +407,7 @@ export function mergeMoveTasks(
       playbookDelivered: task.playbookDelivered,
       terminalOutcome: task.terminalOutcome,
       did: task.did,
+      actionUrl: task.actionUrl,
       line: taskLine(
         task.state,
         task.blockerKind,
