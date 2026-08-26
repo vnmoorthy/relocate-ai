@@ -106,10 +106,14 @@ PYEOF
     if (cd "$ORCH_ROOT" && uv run python scripts/update_webhooks.py >>"$LOG" 2>&1); then
       printf "%s" "$TUNNEL_URL" >"$URL_STATE"
       note "webhook now -> $TUNNEL_URL/webhook/agent/buyer"
-      # The public website discovers the backend via web/public/live.json.
-      # Written locally only — publishing it is a deliberate commit/push.
-      printf '{"api":"%s"}\n' "$TUNNEL_URL" >"$REPO_ROOT/web/public/live.json"
-      note "ACTION NEEDED: tunnel URL changed — commit and push web/public/live.json so the public site reconnects"
+      # Self-heal: publish the new endpoint so the deployed site reconnects
+      # on its own. The site reads raw.githubusercontent first, which serves
+      # the pushed file within seconds instead of waiting for a Pages build.
+      if "$REPO_ROOT/scripts/republish-endpoint.sh" >>"$LOG" 2>&1; then
+        note "endpoint republished — public site will reconnect within ~30s"
+      else
+        note "ACTION NEEDED: could not republish automatically — run ./scripts/republish-endpoint.sh"
+      fi
     else
       note "ERROR: webhook update failed (will retry next cycle)"
     fi

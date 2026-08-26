@@ -5,7 +5,7 @@
  * authenticated dashboard socket. Instead it looks for an operator-published
  * discovery file next to the page:
  *
- *   GET ${BASE_PATH}/live.json  →  {"api": "https://some-host"}
+ *   GET <discovery source>/live.json  →  {"api": "https://some-host"}
  *
  * A 404 (the file is simply absent from /public) means "no live backend" and
  * the dashboard stays in its labeled simulation. When the file is present the
@@ -88,18 +88,42 @@ async function isHealthy(api: string): Promise<boolean> {
  * Resolve the live API origin for this page load, or null when the site
  * should stay in simulation. Never throws.
  */
-async function discoverOnce(): Promise<string | null> {
+/**
+ * Where the current API endpoint is published, most-fresh first.
+ *
+ * The backend runs behind a tunnel whose URL rotates. The bundled copy only
+ * refreshes when Pages finishes a rebuild (minutes), while raw.githubusercontent
+ * serves the same file seconds after a push — so a rotation stops taking the
+ * site down for the length of a deploy.
+ */
+const DISCOVERY_SOURCES = [
+  "https://raw.githubusercontent.com/vnmoorthy/relocate-ai/main/web/public/live.json",
+  `${BASE_PATH}/live.json`,
+];
+
+async function fetchEndpoint(url: string): Promise<string | null> {
   try {
-    const res = await fetch(`${BASE_PATH}/live.json?t=${Date.now()}`, {
+    const res = await fetch(`${url}${url.includes("?") ? "&" : "?"}t=${Date.now()}`, {
       cache: "no-store",
     });
     if (!res.ok) return null;
-    const api = parseLiveConfig(await res.json());
-    if (!api) return null;
-    return (await isHealthy(api)) ? api : null;
+    return parseLiveConfig(await res.json());
   } catch {
     return null;
   }
+}
+
+async function discoverOnce(): Promise<string | null> {
+  const seen = new Set<string>();
+  for (const source of DISCOVERY_SOURCES) {
+    const api = await fetchEndpoint(source);
+    // A stale source is common mid-rotation; only a reachable backend counts.
+    if (api && !seen.has(api)) {
+      seen.add(api);
+      if (await isHealthy(api)) return api;
+    }
+  }
+  return null;
 }
 
 const DISCOVERY_RETRY_DELAYS_MS = [1000, 2000];

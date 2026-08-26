@@ -598,11 +598,13 @@ main {
     height: clamp(520px, calc(100svh - var(--nav-h) - 100px), 820px);
   }
   /* Fallback grid inside the capped box scrolls internally rather than
-     bleeding out of the frame. */
+     bleeding out of the frame — same treatment the phone stage already uses. */
   .swarm-scroll {
     max-height: 100%;
     overflow-y: auto;
     scrollbar-width: thin;
+    mask-image: linear-gradient(to bottom, black calc(100% - 32px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 32px), transparent 100%);
   }
 }
 

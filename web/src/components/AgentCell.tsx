@@ -103,7 +103,20 @@ export function AgentCell({
       {/* Row 1 — glyph + callsign + status */}
       <div className={`flex items-center justify-between min-w-0 ${micro ? "gap-1" : "gap-1.5"}`}>
         <span className="flex items-center gap-1 min-w-0">
-          <AgentGlyph agentId={agentId} className="node-glyph shrink-0" />
+          {/* The concierge's glyph IS a voice waveform, so while the call is
+              hot it animates in place rather than doubling up with a second
+              equalizer — which is also what buys the callsign its last 20px
+              on an orbit card. */}
+          {voiceActive ? (
+            <span className={`voice-eq shrink-0 ${s.text}`} aria-hidden="true">
+              <span />
+              <span />
+              <span />
+              <span />
+            </span>
+          ) : (
+            <AgentGlyph agentId={agentId} className="node-glyph shrink-0" />
+          )}
           <h3
             id={`agent-${agentId}-title`}
             className={`font-display leading-none text-[var(--ink-100)] truncate min-w-0 ${
@@ -114,14 +127,6 @@ export function AgentCell({
           </h3>
         </span>
         <span className={`flex items-center shrink-0 ${micro ? "gap-1" : "gap-1.5"}`}>
-          {voiceActive && (
-            <span className={`voice-eq shrink-0 ${s.text}`} aria-hidden="true">
-              <span />
-              <span />
-              <span />
-              <span />
-            </span>
-          )}
           <span
             className={`h-[5px] w-[5px] rounded-full ${s.dot} ${s.pulse ? "live-dot" : ""}`}
             aria-hidden="true"

@@ -148,13 +148,14 @@ const GLYPHS: Record<string, ReactElement> = {
     </>
   ),
 
-  // Arrival transport — taxi (roof sign + cabin + wheels)
+  // Arrival transport — car (flat body + cabin + wheels; the mover truck is a
+  // stepped box, so the curved cabin is what tells them apart at 13px)
   arrival_transport: (
     <>
-      <path d="M9.6 3.2h4.8v2.4H9.6z" />
-      <path d="M4.8 13.6 6.4 8.9a1.6 1.6 0 0 1 1.5-1.1h8.2a1.6 1.6 0 0 1 1.5 1.1l1.6 4.7" />
-      <path d="M3.6 13.6h16.8v3.9H3.6z" />
-      <path d="M6.6 17.5v1.9M17.4 17.5v1.9" />
+      <path d="M6 14.2 8 9.4a1.7 1.7 0 0 1 1.6-1h4.8a1.7 1.7 0 0 1 1.6 1l2 4.8" />
+      <path d="M3.4 14.2h17.2v3.4H3.4z" />
+      <circle cx="7.6" cy="17.9" r="1.5" />
+      <circle cx="16.4" cy="17.9" r="1.5" />
     </>
   ),
 
@@ -179,13 +180,13 @@ const GLYPHS: Record<string, ReactElement> = {
     </>
   ),
 
-  // Visa support — passport book with an entry stamp
+  // Visa support — passport book with an approval seal
   visa_support: (
     <>
-      <rect x="4.6" y="2.8" width="14.8" height="18.4" rx="2" />
-      <path d="M7.9 6.2h8.2" />
-      <rect x="8.4" y="10" width="7.2" height="7.2" rx="1.2" transform="rotate(-16 12 13.6)" />
-      <path d="m10.3 13.6 1.5 1.5 3-3.3" />
+      <rect x="4.8" y="2.9" width="14.4" height="18.2" rx="2" />
+      <path d="M8.4 6.5h7.2" />
+      <circle cx="12" cy="14" r="3.7" />
+      <path d="m10.2 14 1.3 1.4 2.7-2.9" />
     </>
   ),
 
