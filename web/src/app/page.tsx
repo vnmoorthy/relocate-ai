@@ -29,6 +29,9 @@ const REPO_URL = "https://github.com/vnmoorthy/relocate-ai";
 // carrier, so the site must not advertise a line that cannot be reached:
 // flip PHONE_LIVE back to true (with the new number) the moment one is
 // attached to the buyer agent, and every CTA below returns on its own.
+// Static export under a basePath on Pages — every internal link needs it.
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
 const PHONE_LIVE = false;
 const PHONE_E164 = "+16184149537";
 const PHONE_DISPLAY = "+1 (618) 414-9537";
@@ -124,7 +127,9 @@ export default function Page() {
         >
           <a href="#main-content" className="nav-wordmark">Relocate</a>
           <div className="flex items-center gap-5 sm:gap-8">
+            <a href={`${BASE_PATH}/app/`} className="nav-link">Product</a>
             <a href="#dashboard" className="nav-link">Swarm</a>
+            <a href="#notes" className="nav-link hidden sm:inline">Notes</a>
             <a href="#system" className="nav-link hidden sm:inline">System</a>
             <a href="#router" className="nav-link hidden sm:inline">Router</a>
             <a href={REPO_URL} target="_blank" rel="noreferrer" className="nav-link">GitHub</a>
@@ -313,9 +318,9 @@ export default function Page() {
           </p>
 
           <div className="mt-14 sm:mt-20 grid grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-10">
-            <Stat value="17" label="Agents" />
-            <Stat value="3" label="Execution modes" />
-            <Stat value="11–16" label="Dispatched per move" />
+            <Stat value="29" label="Agents" />
+            <Stat value="4" label="Execution modes" />
+            <Stat value="22–28" label="Dispatched per move" />
             <Stat value="0" label="Fabricated successes" />
           </div>
 
@@ -391,7 +396,46 @@ export default function Page() {
         </div>
       </section>
 
-      {/* ── 04 · Early access ────────────────────────────────────────────── */}
+      {/* ── 04 · Field notes ─────────────────────────────────────────────── */}
+      <section
+        id="notes"
+        aria-labelledby="notes-heading"
+        className="w-full border-t border-[var(--border-subtle)] scroll-mt-14"
+      >
+        <div className="w-full max-w-[1500px] mx-auto px-5 sm:px-10 py-20 sm:py-28">
+          <p className="kicker mb-4">04 · Field notes</p>
+          <h2 id="notes-heading" className="display-sub max-w-[900px]">
+            What movers<br />told us.
+          </h2>
+          <p className="mt-5 max-w-[620px] text-[15px] leading-[1.65] text-[var(--text-secondary)]">
+            Every one of these changed the roster. The first conversation is the
+            reason twelve specialists exist that didn&rsquo;t three days ago.
+          </p>
+
+          <div className="mt-14 grid grid-cols-1 md:grid-cols-3 gap-6">
+            <FieldNote
+              heard="Somewhere to sleep near work, and whether anyone I know lives nearby. I get to the electricity bill on week two."
+              built="Housing, commute route and arrival transport now dispatch on every move — ahead of the utilities."
+            />
+            <FieldNote
+              heard="The stuff nobody can do for me is what I dread. The notice to vacate, the records release, the DMV letter."
+              built="Each one arrives drafted from your move details, ready to sign. Relocate never signs or sends them."
+            />
+            <FieldNote
+              heard="Moving abroad broke three things at once — my bank, my money, and the visa file."
+              built="International banking, currency and visa coordination dispatch together when the move crosses a border."
+            />
+          </div>
+
+          <p className="mt-10 max-w-[620px] text-[12.5px] leading-[1.7] text-[var(--text-quaternary)]">
+            Composites from mover conversations, written by us — not customer
+            testimonials, and not attributed to anyone. Named quotes go here
+            when movers have run a real relocation end to end.
+          </p>
+        </div>
+      </section>
+
+      {/* ── 05 · Early access ─────────────────────────────────────────────── */}
       <section
         id="access"
         aria-labelledby="access-heading"
@@ -405,7 +449,7 @@ export default function Page() {
         <div className="relative z-[2] w-full max-w-[1500px] mx-auto px-5 sm:px-10 pt-[14svh] pb-20 sm:pb-28">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-end">
             <div>
-              <p className="kicker mb-4">04 · Early access</p>
+              <p className="kicker mb-4">05 · Early access</p>
               <h2 id="access-heading" className="display-sub">
                 Moving<br />soon?
               </h2>
@@ -518,6 +562,18 @@ function Stat({ value, label }: { value: string; label: string }) {
         {label}
       </span>
     </div>
+  );
+}
+
+function FieldNote({ heard, built }: { heard: string; built: string }) {
+  return (
+    <figure className="field-note">
+      <blockquote className="field-note-heard">&ldquo;{heard}&rdquo;</blockquote>
+      <figcaption className="field-note-built">
+        <span className="tm-label text-[var(--text-quaternary)]">What we built</span>
+        <p>{built}</p>
+      </figcaption>
+    </figure>
   );
 }
 

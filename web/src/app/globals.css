@@ -1632,3 +1632,37 @@ a:focus-visible, button:focus-visible {
   letter-spacing: 0.04em;
   color: var(--text-tertiary);
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Field notes — what movers said, and what it changed. Deliberately not
+   styled as testimonial cards: no avatars, no names, no stars. These are
+   composites we wrote, and the design should not imply otherwise.
+   ────────────────────────────────────────────────────────────────────────── */
+.field-note {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.75rem 1.5rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elev-1);
+  min-width: 0;
+}
+.field-note-heard {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  text-wrap: pretty;
+}
+.field-note-built {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-subtle);
+}
+.field-note-built p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
