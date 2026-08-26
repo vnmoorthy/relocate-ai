@@ -97,9 +97,19 @@ def extract_date(text: str) -> str | None:
     resolves to None: the concierge asking again is free, while a wrong date
     ships to real movers and utilities.
     """
+    candidates = list(_iter_dates(text))
+    # One date in an utterance that is plainly about moving is unambiguous
+    # wherever the word "moving" sits — people say the whole brief in one
+    # breath ("moving from A to B on the 20th"), and a fixed character window
+    # around the date misses it. With several dates, the tight window decides
+    # which one is the move, so the caller is asked rather than guessed at.
+    single = len({iso for _span, iso in candidates}) == 1
     accepted: set[str] = set()
-    for (start, end), iso in _iter_dates(text):
-        window = text[max(0, start - _DATE_CONTEXT_WINDOW):end + _DATE_CONTEXT_WINDOW]
+    for (start, end), iso in candidates:
+        window = (
+            text if single
+            else text[max(0, start - _DATE_CONTEXT_WINDOW):end + _DATE_CONTEXT_WINDOW]
+        )
         if not _MOVE_CONTEXT_RE.search(window):
             continue
         if _DATE_DISQUALIFIER_RE.search(window):
@@ -143,7 +153,44 @@ def _direction_of(text: str, start: int) -> str | None:
     return None
 
 
-def backstop_fields(transcript: str, collected: dict[str, Any]) -> dict[str, str]:
+# Household facts, from how people actually answer. A 2B model drops these
+# constantly, and each miss costs another round-trip on the call — so they are
+# read deterministically from the caller's own words instead.
+_HOUSEHOLD_CUES: dict[str, str] = {
+    "has_pets": r"pets?|dogs?|cats?|puppy|puppies|kitten|kitty",
+    "has_children": r"kids?|child|children|son|daughter|toddler|baby|babies",
+    "has_car": r"cars?|vehicles?|truck|suv|van\b|motorbike|motorcycle",
+    "has_visa": r"visas?|green\s?card|h-?1-?b|work permit|sponsorship",
+}
+# Negation immediately before the noun: "no kids", "don't have a car",
+# "without pets". Anchored to the end so it only reads the adjacent phrase.
+_NEGATION_RE = re.compile(
+    r"\b(?:no|not|none|without|don'?t have|do not have|dont have|"
+    r"haven'?t got|nope,?)\s+(?:any\s+|a\s+|an\s+)?$",
+    re.IGNORECASE,
+)
+
+
+def extract_household(text: str) -> dict[str, bool]:
+    """Household flags the caller stated outright.
+
+    Only what was actually said: a flag appears when the noun appears, and is
+    False when a negation sits immediately before it. Silence stays silent —
+    an absent flag means "not mentioned", never "no".
+    """
+    found: dict[str, bool] = {}
+    for field, pattern in _HOUSEHOLD_CUES.items():
+        for m in re.finditer(rf"\b(?:{pattern})\b", text, re.IGNORECASE):
+            before = text[max(0, m.start() - 28):m.start()]
+            positive = not _NEGATION_RE.search(before)
+            # A positive mention wins over an earlier negative one: "no kids,
+            # well actually one kid" ends up True.
+            if field not in found or positive:
+                found[field] = positive
+    return found
+
+
+def backstop_fields(transcript: str, collected: dict[str, Any]) -> dict[str, Any]:
     """CORE fields recoverable verbatim from this utterance and still missing.
 
     Fills gaps only — an already-collected value is never touched, so model
@@ -152,7 +199,12 @@ def backstop_fields(transcript: str, collected: dict[str, Any]) -> dict[str, str
     the first unclaimed address fills origin, the second destination — unless
     the utterance clearly marks the single address as the new place.
     """
-    out: dict[str, str] = {}
+    out: dict[str, Any] = {}
+    # Household flags the caller stated outright. Each one recovered here is a
+    # question the concierge does not have to ask again.
+    for field, value in extract_household(transcript).items():
+        if field not in collected:
+            out[field] = value
     if not collected.get("user_email"):
         email = extract_email(transcript)
         if email:

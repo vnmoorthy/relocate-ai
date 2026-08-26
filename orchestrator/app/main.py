@@ -205,6 +205,39 @@ async def _process_agentphone_webhook(
         )
 
 
+_QUESTION_RE = re.compile(r"[^.!?]*\?")
+_CLOSING = (
+    "On it. You'll get an email with a live tracking link in a minute — "
+    "there's a spot on that page to add your account numbers if you want "
+    "those cancelled too. Hang up whenever."
+)
+
+
+def _steer_reply(voice_reply: str, ctx: BuyerCallContext) -> str:
+    """Keep the model's acknowledgement; author the question ourselves.
+
+    The model writes its reply before the deterministic backstop has merged
+    this turn's fields, so left alone it asks for the email the caller just
+    gave. Here the model keeps what it is good at — sounding human, echoing
+    back what it heard — and the schema decides what is actually still
+    missing. When nothing is missing the question is replaced outright by
+    the closing line, so a caller who says everything in one breath is never
+    interrogated for fields already in hand.
+    """
+    from .buyer_schema import next_question
+
+    ack = _QUESTION_RE.sub("", voice_reply).strip()
+    question = next_question(ctx.collected)
+    if question is None:
+        # Already-dispatched turns are ordinary conversation, not intake.
+        if ctx.dispatched:
+            return voice_reply
+        return f"{ack} {_CLOSING}".strip()
+    if not ack:
+        return question
+    return f"{ack} {question}"
+
+
 async def _run_buyer_turn(
     call_id: str, transcript: str, history: list[dict],
 ) -> dict[str, Any]:
@@ -301,7 +334,7 @@ async def _run_buyer_turn(
     # high-structure CORE values are also recovered verbatim from the
     # caller's own utterance — gaps only, the model's extraction wins.
     new_fields.update(_merge_backstop_fields(transcript, ctx))
-    voice_reply = _strip_machine_json(reply.content)
+    voice_reply = _steer_reply(_strip_machine_json(reply.content), ctx)
     await ws_broker.broadcast({
         "type": "transcript_turn", "event_id": ctx.event_id, "agent_id": "buyer",
         "turn": ctx.turn_count, "role": "agent", "text": voice_reply,
@@ -470,7 +503,11 @@ def _merge_backstop_fields(transcript: str, ctx) -> dict:
     merged: dict = {}
     for k, v in backstop_fields(transcript, ctx.collected).items():
         field = by_name(k)
-        if field is None or not field.validate(v):
+        if field is None:
+            continue
+        # Household flags arrive as booleans; everything else is a string the
+        # caller actually said, and still has to validate.
+        if not isinstance(v, bool) and not field.validate(v):
             continue
         ctx.collected[k] = v
         merged[k] = v

@@ -589,3 +589,93 @@ def dispatch_json_example() -> str:
     }
     import json as _json
     return _json.dumps(example, indent=2)
+
+
+# ────────────────────────────────────────────────────────────────────
+# Question planning — the concierge asks for what is missing, batched
+# ────────────────────────────────────────────────────────────────────
+# A 2B model cannot reliably track which of eight fields it already holds,
+# and re-asking for an answer the caller just gave is the single most
+# irritating thing a voice agent does. So the *question* is authored here,
+# deterministically, from what is actually collected — the model supplies
+# only the acknowledgement. Fields are grouped the way people answer them
+# ("from A to B on the 3rd" is one breath, not three), which is what makes
+# a full brief collectable in two turns instead of five.
+
+# Each group is (fields, phrase-if-all-missing, per-field noun). The noun
+# list is what makes the question shrink as answers arrive: when the caller
+# has already said "one dog, no kids, a car", the household ask narrows to
+# the visa alone instead of reciting all four back at them.
+_QUESTION_GROUPS: tuple[tuple[tuple[str, ...], str, dict[str, str]], ...] = (
+    (("origin_address", "destination_address"),
+     "where you're moving from and where to",
+     {"origin_address": "where you're moving from",
+      "destination_address": "where you're moving to"}),
+    (("move_date",), "roughly when", {"move_date": "roughly when"}),
+    (("user_email",), "the best email for you",
+     {"user_email": "the best email for you"}),
+    # Pets/kids/car/visa ride together: people rattle all four off in one
+    # breath, and splitting the visa out cost a whole extra turn for a field
+    # that carries a 10-day USCIS deadline.
+    (("has_pets", "has_children", "has_car", "has_visa"),
+     "whether you have pets, kids, a car, or a US visa",
+     {"has_pets": "pets", "has_children": "kids", "has_car": "a car",
+      "has_visa": "a US visa"}),
+)
+
+
+def _join(parts: list[str]) -> str:
+    if len(parts) == 1:
+        return parts[0]
+    return ", ".join(parts[:-1]) + " or " + parts[-1]
+
+
+def _group_phrase(fields: tuple[str, ...], whole: str, nouns: dict[str, str],
+                  missing: set[str]) -> str:
+    absent = [f for f in fields if f in missing]
+    if len(absent) == len(fields):
+        return whole
+    parts = [nouns[f] for f in absent]
+    # The household group's nouns are bare ("pets", "a car"), so they need
+    # the carrier verb the whole-group phrase supplies.
+    if fields[0].startswith("has_"):
+        return "whether you have " + _join(parts)
+    return _join(parts)
+
+
+def blocking_fields(collected: dict) -> list[str]:
+    """CORE + CONDITIONAL field names still missing — what gates dispatch."""
+    missing: list[str] = []
+    for f in BUYER_FIELDS:
+        if f.tier not in ("core", "conditional"):
+            continue
+        v = collected.get(f.name)
+        if f.name not in collected or v is None or v == "":
+            missing.append(f.name)
+            continue
+        # A False conditional is a real answer; an unvalidated string is not.
+        if isinstance(v, str) and not f.validate(v):
+            missing.append(f.name)
+    return missing
+
+
+def next_question(collected: dict) -> str | None:
+    """One spoken question covering the next two groups of missing fields.
+
+    None when nothing is missing — the caller has told us everything and the
+    only correct thing to say is that we're starting.
+    """
+    missing = set(blocking_fields(collected))
+    if not missing:
+        return None
+    phrases = [
+        _group_phrase(fields, whole, nouns, missing)
+        for fields, whole, nouns in _QUESTION_GROUPS
+        if any(f in missing for f in fields)
+    ]
+    # Two groups per breath: enough to be efficient, few enough to answer.
+    phrases = phrases[:2]
+    if len(phrases) == 1:
+        return f"What's {phrases[0]}?" if phrases[0].startswith("the ") \
+            else f"Can you tell me {phrases[0]}?"
+    return f"Can you tell me {phrases[0]}, and {phrases[1]}?"

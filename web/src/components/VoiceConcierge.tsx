@@ -288,7 +288,12 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
   const beginCall = useCallback(() => {
     setConnectedAt(Date.now());
     setElapsed(0);
-    const greeting = "Relocate here. Where are you moving from, and where to?";
+    // People answer the question they are asked: a route-only greeting gets a
+    // route-only answer and costs three more turns. Inviting the whole brief
+    // up front is what makes a one-breath call dispatch on turn one.
+    const greeting =
+      "Relocate here. Tell me where you're moving from, where to, and roughly " +
+      "when — and your email, pets, kids or a car if you have them. All in one go is fine.";
     pushLine("assistant", greeting);
     history.current = appendTurn(history.current, { role: "assistant", content: greeting });
     setPhase("speaking");

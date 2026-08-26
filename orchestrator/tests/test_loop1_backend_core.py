@@ -716,9 +716,11 @@ def test_backstop_only_takes_a_date_tied_to_moving() -> None:
     date and shipped verbatim to movers and utilities."""
     from app.transcript_extract import backstop_fields
 
+    # "daughter" is a household fact the caller stated outright, so it is kept;
+    # what must never survive is the birthday masquerading as the move date.
     assert backstop_fields(
         "My daughter's birthday is 6/12/2026, so we'd like to move after that.", {},
-    ) == {}
+    ) == {"has_children": True}
     assert backstop_fields(
         "My lease ends 2026-01-15 and I have to be out before then.", {},
     ) == {}
