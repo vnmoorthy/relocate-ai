@@ -454,6 +454,11 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
       if (!wantsMic.current) return;
       const text = joinTurn(banked.current, captured.current);
       if (!text) return; // nothing heard yet — no-speech handling owns silence
+      // Sent is sent: without this reset, the hang-up flush re-sent the same
+      // words as a second turn (observed live — a call with the whole brief
+      // recorded twice, one model round-trip apiece).
+      banked.current = "";
+      captured.current = { final: "", interim: "" };
       stopListening();
       setInterim("");
       void sendTurn(text);

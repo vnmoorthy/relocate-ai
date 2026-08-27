@@ -313,6 +313,18 @@ def _steer_reply(voice_reply: str, ctx: BuyerCallContext) -> str:
         return f"{ack} {_CLOSING}".strip()
     if not ack:
         return question
+    # The prompt teaches the model the closing, and it sometimes says it
+    # UNPROMPTED with fields still missing — a live caller was told "you'll
+    # get an email in a minute" and never asked for the email. While a
+    # question remains, any premature closing is stripped from the ack.
+    if _CLOSING_TELL in ack.lower():
+        kept = [
+            s for s in re.split(r"(?<=[.!?])\s+", ack)
+            if _CLOSING_TELL not in s.lower() and "hang up" not in s.lower()
+        ]
+        ack = " ".join(kept).strip()
+    if not ack:
+        return question
     return f"{ack} {question}"
 
 
@@ -343,6 +355,12 @@ async def _run_buyer_turn(
         })
 
     ctx.turn_count += 1
+    # Undo recognizer damage with an unambiguous reading ("9:50 Howard
+    # Street", "m o o r t h y at gmail.com") before anything — model,
+    # backstop, display — ever sees the text.
+    from .transcript_extract import repair_speech_artifacts
+
+    transcript = repair_speech_artifacts(transcript)
     ctx.caller_utterances.append(transcript)
     # The recognizer splits one breath across turns at every pause, so the
     # deterministic extraction always reads the whole call, not the fragment.
@@ -646,7 +664,7 @@ def _extract_and_merge_fields(text: str, ctx, transcript: str) -> dict:
     dog) still merges normally.
     """
     from .buyer_schema import by_name
-    from .transcript_extract import extract_household, mentions_a_time
+    from .transcript_extract import email_evidenced, extract_household, mentions_a_time
     changed: dict = {}
     # Match every {...} block in the reply (buyer may emit one or several).
     for raw in re.findall(r"\{[^{}]+\}", text, re.DOTALL):
@@ -709,10 +727,14 @@ def _extract_and_merge_fields(text: str, ctx, transcript: str) -> dict:
         # an unguarded boolean silently answers a question the concierge then
         # never asks, and dispatches (or cancels) a real specialist on it.
         said_about = extract_household(transcript)
+        # Email evidence is judged against the WHOLE call, not this turn —
+        # the model may correctly re-emit an address given two turns ago.
+        call_text = " ".join(ctx.caller_utterances) or transcript
         uncorroborated = {
             k for k, _v, field in validated
             if (field.tier == "conditional" and k not in said_about)
             or (k == "move_date" and not mentions_a_time(transcript))
+            or (k == "user_email" and not email_evidenced(str(_v), call_text))
         }
         if uncorroborated:
             log.warning(

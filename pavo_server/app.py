@@ -54,7 +54,10 @@ _anthropic: AsyncAnthropic | None = None
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global _http, _anthropic
-    _http = httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=5.0))
+    # 60s read budget: the buyer prompt on gemma2:2b measures 13-20s warm and
+    # worse cold, and a 20s ceiling sat exactly on that line — live calls
+    # 503'd whenever the model landed on the wrong side of it.
+    _http = httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0))
     if ANTHROPIC_API_KEY:
         _anthropic = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
     try:

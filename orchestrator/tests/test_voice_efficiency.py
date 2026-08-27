@@ -326,3 +326,78 @@ def test_fast_path_refuses_corrections() -> None:
         + " wait actually we do have a kid"
     )
     assert _deterministic_turn(joined2, ctx2) is None
+
+
+# ── regressions from live calls on 2026-08-27, verbatim from the DB ────────
+
+def test_day_first_spoken_date() -> None:
+    """"on 15th of October 2026" — how the caller actually said it. The
+    month-first pattern alone missed it and the call never dispatched."""
+    from app.transcript_extract import extract_date
+
+    assert extract_date(
+        "I am moving from 1420 Pine Street Philadelphia to 950 Howard Street "
+        "San Francisco California on 15th of October 2026"
+    ) == "2026-10-15"
+
+
+def test_time_mangled_street_number_is_repaired() -> None:
+    """The recognizer rendered "950 Howard" as the clock time "9:50" and the
+    string shipped to specialists as an address. Real times survive."""
+    from app.transcript_extract import repair_speech_artifacts
+
+    assert repair_speech_artifacts(
+        "to 9:50 Howard Street San Francisco"
+    ) == "to 950 Howard Street San Francisco"
+    assert repair_speech_artifacts(
+        "the movers arrive at 9:50 tomorrow"
+    ) == "the movers arrive at 9:50 tomorrow"
+
+
+def test_spelled_out_email_collapses() -> None:
+    """"m o o r t h y at gmail.com" — a caller spelling their address."""
+    from app.transcript_extract import extract_email, repair_speech_artifacts
+
+    repaired = repair_speech_artifacts("my email is m o o r t h y at gmail.com")
+    assert extract_email(repaired) == "moorthy@gmail.com"
+
+
+def test_negation_distributes_over_or_lists_only() -> None:
+    """"I do not have any kids or a car" denies both; "no kids and a car"
+    affirms the car; unrelated words never ride a negation. All three shapes
+    came from one afternoon of live calls."""
+    from app.transcript_extract import extract_household
+
+    assert extract_household(
+        "no I did not have any beds I do not have any kids or a car and I am on the US Visa"
+    ) == {"has_children": False, "has_car": False, "has_visa": True}
+    assert extract_household("0 pets, 0 kids, 0 car and have US visa") == {
+        "has_pets": False, "has_children": False, "has_car": False, "has_visa": True,
+    }
+    assert extract_household("no visa wait actually we do have a kid") == {
+        "has_visa": False, "has_children": True,
+    }
+
+
+def test_model_email_needs_evidence_in_the_call() -> None:
+    """The model emitted your@example.com for a caller whose email the
+    recognizer mangled to "Yahoo" — and it shipped as the reply-to on real
+    requests. An address without evidence in the transcript never merges."""
+    from app.main import _extract_and_merge_fields
+
+    ctx = BuyerCallContext(call_id="ev1", event_id="ee1")
+    ctx.caller_utterances.append("so I am moving My email is Yahoo")
+    got = _extract_and_merge_fields(
+        'Got it. {"user_email": "your@example.com"}', ctx,
+        "so I am moving My email is Yahoo",
+    )
+    assert "user_email" not in got
+    assert "user_email" not in ctx.collected
+
+    # The same emission with evidence in an EARLIER turn merges fine.
+    ctx2 = BuyerCallContext(call_id="ev2", event_id="ee2")
+    ctx2.caller_utterances.extend(["moorthy at gmail dot com", "one dog"])
+    got2 = _extract_and_merge_fields(
+        'Noted. {"user_email": "moorthy@gmail.com"}', ctx2, "one dog",
+    )
+    assert got2.get("user_email") == "moorthy@gmail.com"

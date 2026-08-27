@@ -47,6 +47,13 @@ _SPOKEN_DATE_RE = re.compile(
     r"(?:\s*,?\s*(20\d{2}))?\b",
     re.IGNORECASE,
 )
+# Day-first is how half of callers actually say it — "15th of October 2026".
+# A real call missed its move date entirely for lack of this form.
+_SPOKEN_DATE_DAY_FIRST_RE = re.compile(
+    r"\b(\d{1,2})(?:st|nd|rd|th)?\s+of\s+(" + "|".join(_MONTHS) + r")\.?"
+    r"(?:\s*,?\s*(20\d{2}))?\b",
+    re.IGNORECASE,
+)
 # "123 Main Street, San Francisco, CA 94103" — number + street words +
 # optional suffix, then a comma-separated city and a 2-letter state, ZIP
 # optional. Deliberately strict: a partial hit is worse than no hit.
@@ -126,6 +133,38 @@ def _spoken_email(text: str) -> str | None:
     return None
 
 
+# Two recognizer artifacts worth repairing before extraction ever looks:
+# a street number rendered as a clock time ("9:50 Howard Street" — that
+# string shipped to real specialists as an address), and an email local part
+# spelled out one letter at a time ("m o o r t h y at gmail.com"). Both
+# repairs are scoped tightly enough that real times and real words survive.
+_TIME_AS_STREET_NUMBER_RE = re.compile(
+    r"\b(\d{1,2}):(\d{2})(?=\s+[A-Z][A-Za-z''.-]*\s+" + _STREET_SUFFIX + r"\b)"
+)
+_SPELLED_LETTERS_RE = re.compile(
+    r"\b(?:[A-Za-z]\s+){2,}[A-Za-z](?=\s+(?:at|@)\b)", re.IGNORECASE,
+)
+
+
+_SPOKEN_AT_BEFORE_AT_RE = re.compile(r"\s+(?:at|art)(?=\s+@)", re.IGNORECASE)
+_SPACED_AT_SIGN_RE = re.compile(r"([A-Za-z0-9._+-])\s+@\s*(?=[A-Za-z0-9-])")
+
+
+def repair_speech_artifacts(text: str) -> str:
+    """Undo recognizer damage that has an unambiguous spoken reading.
+
+    Order matters: the spoken "at"/"art" duplicate is dropped first ("y art
+    @gmail.com" — the recognizer heard the word AND wrote the symbol), then
+    spelled-out letters collapse while the space before @ still marks the
+    boundary, and only then is the @ glued to its neighbours.
+    """
+    text = _TIME_AS_STREET_NUMBER_RE.sub(lambda m: m.group(1) + m.group(2), text)
+    text = _SPOKEN_AT_BEFORE_AT_RE.sub("", text)
+    text = _SPELLED_LETTERS_RE.sub(lambda m: re.sub(r"\s+", "", m.group(0)), text)
+    text = _SPACED_AT_SIGN_RE.sub(lambda m: m.group(1) + "@", text)
+    return text
+
+
 def extract_email(text: str) -> str | None:
     """The caller's email, written or dictated. Written form always wins."""
     m = _EMAIL_RE.search(text)
@@ -146,6 +185,12 @@ def _iter_dates(text: str):
         day = int(m.group(2))
         if 1 <= day <= 31:
             yield m.span(), f"{m.group(3)}-{_MONTHS[m.group(1).lower()]:02d}-{day:02d}"
+    for m in _SPOKEN_DATE_DAY_FIRST_RE.finditer(text):
+        if not m.group(3):
+            continue  # no year — never inferred
+        day = int(m.group(1))
+        if 1 <= day <= 31:
+            yield m.span(), f"{m.group(3)}-{_MONTHS[m.group(2).lower()]:02d}-{day:02d}"
 
 
 def extract_date(text: str) -> str | None:
@@ -258,9 +303,31 @@ _HOUSEHOLD_CUES: dict[str, str] = {
 }
 # Negation immediately before the noun: "no kids", "don't have a car",
 # "without pets". Anchored to the end so it only reads the adjacent phrase.
+# "or" continues a negation ("I don't have any kids or a car" denies both);
+# "and" exits it ("no kids and a car" means they DO have the car). A real
+# caller's "do not have any kids or a car" marked the car as owned because
+# the negation only looked one noun back.  "0"/"zero" are negations too —
+# "0 pets, 0 kids, 0 car" is how people answer a list question.
 _NEGATION_RE = re.compile(
-    r"\b(?:no|not|none|without|don'?t have|do not have|dont have|"
-    r"haven'?t got|nope,?)\s+(?:any\s+|a\s+|an\s+)?$",
+    r"\b(?:no|not|none|without|zero|0|don'?t have|do not have|dont have|"
+    r"haven'?t got|nope,?)\s+(?:(?:any|a|an)\s+)?"
+    # Only an explicit list continues a negation: each intermediate noun must
+    # be joined by a comma or "or" ("no pets, kids or a car" denies all
+    # three). A bare run of words does not — "no visa, wait, actually we do
+    # have a kid" must leave the kid standing — and "and" exits the negation
+    # entirely ("no kids and a car" affirms the car).
+    r"(?:(?!and\b)[a-z]+s?\s*(?:,|,?\s+or)\s+(?:(?:a|an|any)\s+)?)*$",
+    re.IGNORECASE,
+)
+
+
+# "I'm a US citizen" answers the visa question in the negative — and it is
+# how most callers actually answer it, since few people say the word "visa"
+# back. An explicit visa mention in the same call still wins: "I'm on an
+# H-1B, my kids are citizens" must keep the visa.
+_CITIZEN_RE = re.compile(
+    r"\b(?:i'?m|i am|we'?re|we are)\s+(?:a\s+|an\s+|all\s+)?"
+    r"(?:us|u\.s\.?|american)?\s*citizens?\b",
     re.IGNORECASE,
 )
 
@@ -275,13 +342,36 @@ def extract_household(text: str) -> dict[str, bool]:
     found: dict[str, bool] = {}
     for field, pattern in _HOUSEHOLD_CUES.items():
         for m in re.finditer(rf"\b(?:{pattern})\b", text, re.IGNORECASE):
-            before = text[max(0, m.start() - 28):m.start()]
+            # 60 chars: a distributed negation ("do not have any pets,
+            # kids or a car") spans well past the 28 that fit one noun.
+            before = text[max(0, m.start() - 60):m.start()]
             positive = not _NEGATION_RE.search(before)
             # A positive mention wins over an earlier negative one: "no kids,
             # well actually one kid" ends up True.
             if field not in found or positive:
                 found[field] = positive
+    if "has_visa" not in found and _CITIZEN_RE.search(text):
+        found["has_visa"] = False
     return found
+
+
+_ALNUM_RE = re.compile(r"[^a-z0-9]")
+
+
+def email_evidenced(candidate: str, caller_text: str) -> bool:
+    """True when the caller's own words contain this address, in any spoken
+    or written form. The model once emitted your@example.com for a caller
+    whose email the recognizer had mangled to "Yahoo" — near enough to the
+    prompt's example to dodge the regurgitation guard, and it shipped as the
+    reply-to on real requests. An email either has evidence in the
+    transcript or it does not merge; the concierge asking again is free.
+    """
+    if not candidate or not caller_text:
+        return False
+    text = repair_speech_artifacts(caller_text)
+    text = re.sub(r"\s+at\s+", "@", text, flags=re.IGNORECASE)
+    text = _SPOKEN_DOT_RE.sub(".", text)
+    return _ALNUM_RE.sub("", candidate.lower()) in _ALNUM_RE.sub("", text.lower())
 
 
 def backstop_fields(transcript: str, collected: dict[str, Any]) -> dict[str, Any]:
