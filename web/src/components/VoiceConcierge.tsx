@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   appendTurn,
+  chunkForSpeech,
   conciergeEndUrl,
   conciergeTurnUrl,
   CONDITIONAL_FIELDS,
@@ -12,8 +13,16 @@ import {
   missingSummary,
   parseConciergeEnd,
   parseConciergeTurn,
+  pickVoice,
+  RATE_UNKNOWN_VOICE,
   recognitionErrorMessage,
+  shapeForSpeech,
+  SPEECH_PITCH,
+  SPEECH_VOLUME,
+  speechWatchdogMs,
+  synthesisErrorMessage,
   type ChatTurn,
+  type VoiceChoice,
 } from "@/lib/voice-concierge";
 
 /**
@@ -77,6 +86,56 @@ const readSupport = (): SpeechSupportSnapshot => {
 
 type SpeechSupportSnapshot = { recognition: boolean; synthesis: boolean };
 
+/**
+ * Chrome and Safari both fill getVoices() asynchronously — measured at ~2 ms
+ * after 'voiceschanged' on a warm browser, ~50 ms on a cold one — and the very
+ * first call in a page's life returns []. The greeting used to *be* that first
+ * call, so the single most important sentence in the product was the one
+ * utterance that never got a chosen voice.
+ *
+ * So warm the list at mount, long before anyone clicks. Three mechanisms
+ * because none of them is reliable on its own: a synchronous read for warm
+ * loads, the sanctioned event, and a poll because that event has a long
+ * history of not firing inside embedded WebViews. The listener stays attached
+ * after the list arrives — Safari re-fires it if someone downloads a voice
+ * mid-session, and a better voice should win immediately.
+ */
+const VOICE_WARM_TIMEOUT_MS = 2000;
+
+function warmVoices(onVoices: (voices: SpeechSynthesisVoice[]) => void): () => void {
+  const synth = window.speechSynthesis;
+  if (!synth) return () => {};
+  let poll = 0;
+  let timer = 0;
+  const stopPolling = () => {
+    if (poll) { window.clearInterval(poll); poll = 0; }
+    if (timer) { window.clearTimeout(timer); timer = 0; }
+  };
+  const check = () => {
+    const voices = synth.getVoices();
+    if (voices.length === 0) return;
+    stopPolling();
+    onVoices(voices);
+  };
+  synth.addEventListener("voiceschanged", check);
+  poll = window.setInterval(check, 100);
+  // Never let this block the greeting. If nothing has landed by now, the
+  // engine's own default is a better answer than silence.
+  timer = window.setTimeout(stopPolling, VOICE_WARM_TIMEOUT_MS);
+  check();
+  return () => {
+    synth.removeEventListener("voiceschanged", check);
+    stopPolling();
+  };
+}
+
+/**
+ * Chrome can garbage-collect an in-flight SpeechSynthesisUtterance together
+ * with its event handlers, which strands the queue mid-reply. Holding a hard
+ * reference until it ends is the long-standing dodge.
+ */
+const liveUtterances = new Set<SpeechSynthesisUtterance>();
+
 export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeProps) {
   // Server-rendered markup assumes no speech; hydration fills in the truth.
   const support = useSyncExternalStore(subscribeToNothing, readSupport, () => NO_SPEECH);
@@ -97,6 +156,14 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
   const recognition = useRef<SpeechRecognitionLike | null>(null);
   const wantsMic = useRef(false);
   const lineId = useRef(0);
+  const voiceChoice = useRef<VoiceChoice<SpeechSynthesisVoice> | null>(null);
+  // Monotonic: every cancel bumps it, and a chain from an older epoch is
+  // provably inert — it can neither speak nor report itself finished.
+  const speechEpoch = useRef(0);
+  // `muted` also lives in a ref because the recogniser is long-lived: it keeps
+  // the handlers it was constructed with, so a captured `muted` would stay
+  // stale for the rest of the call — mute worked when typed, not when spoken.
+  const mutedRef = useRef(false);
 
   const pushLine = useCallback((role: Line["role"], text: string) => {
     lineId.current += 1;
@@ -115,26 +182,166 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
   }, [connectedAt]);
 
   // ── speech out ──────────────────────────────────────────────────────────
+
+  // Resolve the voice once, at mount. By the time anyone clicks "Start the
+  // call" the list is warm and the greeting can pick synchronously — which it
+  // has to, because Safari and iOS only honour speak() inside the gesture.
+  useEffect(() => {
+    if (!support.synthesis) return;
+    return warmVoices((voices) => { voiceChoice.current = pickVoice(voices); });
+  }, [support.synthesis]);
+
+  /**
+   * Stop the concierge talking, from any path.
+   *
+   * The epoch bump has to come first. cancel() fires an 'interrupted' error on
+   * whatever is mid-flight, and without the bump that event would run the
+   * *previous* turn's onDone — which meant opening the microphone under the
+   * agent's own voice, or reopening it on a backgrounded tab right after the
+   * teardown deliberately closed it. Neither is acceptable next to the promise
+   * on this page that the mic only runs when the user asked for it.
+   */
+  const stopSpeaking = useCallback(() => {
+    speechEpoch.current += 1;
+    liveUtterances.clear();
+    try { window.speechSynthesis?.cancel(); } catch { /* noop */ }
+  }, []);
+
+  /**
+   * The ref is the source of truth for mute; the state exists only to label the
+   * button. Muting has to stop the sentence already in progress, not merely the
+   * next one — and handing the turn straight back is the honest move, because
+   * the reply is already on screen.
+   */
+  const toggleMute = useCallback(() => {
+    const nowMuted = !mutedRef.current;
+    mutedRef.current = nowMuted;
+    setMuted(nowMuted);
+    if (!nowMuted) return;
+    stopSpeaking();
+    setPhase((current) => (current === "speaking" ? "idle" : current));
+  }, [stopSpeaking]);
+
+  /**
+   * Speak a reply, one sentence-sized utterance at a time, and call onDone
+   * exactly once when the last one lands.
+   *
+   * Chunking is for prosody first: a whole reply in one utterance is rendered
+   * as a single intonation run, so every sentence gets the same flat contour.
+   * Spoken one at a time each sentence gets its own closing fall, and the
+   * scheduling gap between them reads as a breath. It also keeps every
+   * utterance well under the ~15 s watchdog Chrome runs on Windows, which sits
+   * directly across the longest line this product says — the one telling the
+   * user their move actually dispatched.
+   *
+   * Note the deps: none. Everything mutable is read through a ref, so this
+   * function is stable and no handler can ever close over a stale copy.
+   */
   const speak = useCallback((text: string, onDone: () => void) => {
-    if (muted || !window.speechSynthesis || !text) {
+    const synth = typeof window === "undefined" ? undefined : window.speechSynthesis;
+    const epoch = ++speechEpoch.current;
+    if (!synth || mutedRef.current || !text.trim()) {
       onDone();
       return;
     }
+
+    let chunks: string[];
     try {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = "en-US";
-      const voices = window.speechSynthesis.getVoices();
-      const preferred = voices.find((v) => /en-US/i.test(v.lang) && /natural|samantha|google/i.test(v.name))
-        ?? voices.find((v) => /en-US/i.test(v.lang));
-      if (preferred) utterance.voice = preferred;
-      utterance.onend = onDone;
-      utterance.onerror = onDone;
-      window.speechSynthesis.speak(utterance);
+      // Shaped for pronunciation only. pushLine() keeps the model's exact
+      // words, so the transcript and the audio can never drift apart.
+      chunks = chunkForSpeech(shapeForSpeech(text));
     } catch {
       onDone();
+      return;
     }
-  }, [muted]);
+    if (chunks.length === 0) {
+      onDone();
+      return;
+    }
+
+    // Only cancel when something is actually queued: a cancel() immediately
+    // followed by speak() is a documented Chrome race that can drop the new
+    // utterance outright. The greeting has nothing to cancel, so it stays a
+    // clean synchronous speak() inside the click.
+    try {
+      if (synth.speaking || synth.pending) synth.cancel();
+    } catch { /* noop */ }
+
+    const choice = voiceChoice.current;
+    const rate = choice?.rate ?? RATE_UNKNOWN_VOICE;
+    let index = 0;
+    let settled = false;
+
+    const settle = () => {
+      if (settled || epoch !== speechEpoch.current) return;
+      settled = true;
+      onDone();
+    };
+
+    const next = () => {
+      // A superseded chain stays silent and never settles; the newer epoch
+      // owns the phase now.
+      if (epoch !== speechEpoch.current) return;
+      if (index >= chunks.length) {
+        settle();
+        return;
+      }
+      const body = chunks[index];
+      index += 1;
+
+      const utterance = new SpeechSynthesisUtterance(body);
+      liveUtterances.add(utterance);
+      if (choice) utterance.voice = choice.voice;
+      utterance.rate = rate;
+      utterance.pitch = choice?.pitch ?? SPEECH_PITCH;
+      utterance.volume = choice?.volume ?? SPEECH_VOLUME;
+      // After the voice, never before: once a voice is assigned its language
+      // wins anyway, and setting lang first only hides an unassigned voice.
+      utterance.lang = utterance.voice?.lang ?? "en-US";
+
+      let finished = false;
+      let watchdog = 0;
+      const release = () => {
+        finished = true;
+        window.clearTimeout(watchdog);
+        liveUtterances.delete(utterance);
+      };
+      const advance = () => {
+        if (finished) return;
+        release();
+        next();
+      };
+      utterance.onend = advance;
+      utterance.onerror = (event) => {
+        const message = synthesisErrorMessage(event.error);
+        // No message means an "interrupted"/"canceled" code. stopSpeaking()
+        // bumps the epoch BEFORE it cancels, so if we are still on the current
+        // epoch this cancel did not come from us — the OS took the audio
+        // (an incoming call, a device change). Settle so the turn comes back
+        // to the user instead of the status line reading "Speaking…" forever.
+        // When it WAS our own cancel the epoch is already stale and settle()
+        // is a no-op, which is the behaviour we want there.
+        if (!message) {
+          if (!finished) release();
+          settle();
+          return;
+        }
+        setNotice(message);
+        advance();
+      };
+      // A stuck synth fires neither end nor error. Without this the status
+      // line reads "Speaking…" forever with no audio and no failure — a stall
+      // dressed up as progress, which is exactly what this codebase refuses.
+      watchdog = window.setTimeout(advance, speechWatchdogMs(body, rate));
+      try {
+        synth.speak(utterance);
+      } catch {
+        advance();
+      }
+    };
+
+    next();
+  }, []);
 
   // ── the turn itself ─────────────────────────────────────────────────────
   const sendTurn = useCallback(async (transcript: string) => {
@@ -155,6 +362,10 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
         body: JSON.stringify(body),
       });
       if (res.status === 429) {
+        // Chunked replies outlive a fast-failing fetch, so silence the queue
+        // before claiming the turn is back — otherwise the notice appears
+        // while the concierge is audibly still talking over it.
+        stopSpeaking();
         setNotice("That was a lot at once — give it a second and keep going.");
         setPhase("idle");
         return;
@@ -169,10 +380,11 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
       setPhase("speaking");
       speak(turn.text, () => setPhase("idle"));
     } catch {
+      stopSpeaking();
       setNotice("Couldn't reach the concierge just then. Try that again.");
       setPhase("idle");
     }
-  }, [api, demoToken, pushLine, speak]);
+  }, [api, demoToken, pushLine, speak, stopSpeaking]);
 
   // ── speech in ───────────────────────────────────────────────────────────
   const stopListening = useCallback(() => {
@@ -235,12 +447,29 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
     }
   }, [sendTurn, stopListening]);
 
+  /**
+   * The user tapping "Keep talking" is a barge-in: they want the floor now.
+   *
+   * The button stays live during "speaking" on purpose — waiting out a reply
+   * you have already heard is the worst part of talking to a machine. But the
+   * concierge has to actually stop first. Opening the recogniser while it is
+   * mid-sentence just transcribes the agent back to itself and posts its own
+   * words as the user's turn, which is the whole failure the epoch guard
+   * exists to prevent — it only ever closed the automatic path.
+   *
+   * startListening() owns the phase from here, so there is nothing to reset.
+   */
+  const takeTheFloor = useCallback(() => {
+    stopSpeaking();
+    startListening();
+  }, [startListening, stopSpeaking]);
+
   // ── session hygiene: a live mic must never outlive the component ────────
   useEffect(() => {
     const teardown = () => {
       wantsMic.current = false;
       try { recognition.current?.abort(); } catch { /* noop */ }
-      try { window.speechSynthesis?.cancel(); } catch { /* noop */ }
+      stopSpeaking();
     };
     const onHide = () => { if (document.hidden) { teardown(); setPhase("idle"); } };
     document.addEventListener("visibilitychange", onHide);
@@ -248,12 +477,12 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
       document.removeEventListener("visibilitychange", onHide);
       teardown();
     };
-  }, []);
+  }, [stopSpeaking]);
 
   // ── hang up ─────────────────────────────────────────────────────────────
   const endSession = useCallback(async () => {
     stopListening();
-    try { window.speechSynthesis?.cancel(); } catch { /* noop */ }
+    stopSpeaking();
     if (!callId.current) return;
     setEnding(true);
     setNotice("");
@@ -279,7 +508,7 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
       setPhase("idle");
       setConnectedAt(null);
     }
-  }, [api, onDispatched, stopListening]);
+  }, [api, onDispatched, stopListening, stopSpeaking]);
 
   const started = lines.length > 0 || connectedAt !== null;
   const busy = phase === "thinking" || ending;
@@ -345,7 +574,7 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
             <button
               type="button"
               className={`vc-mic ${phase === "listening" ? "vc-mic--live" : ""}`}
-              onClick={() => (phase === "listening" ? stopListening() : startListening())}
+              onClick={() => (phase === "listening" ? stopListening() : takeTheFloor())}
               disabled={busy}
               aria-pressed={phase === "listening"}
             >
@@ -364,7 +593,7 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {support.synthesis && (
-            <button type="button" className="vc-ghost" onClick={() => setMuted((m) => !m)}>
+            <button type="button" className="vc-ghost" onClick={toggleMute}>
               {muted ? "Unmute" : "Mute"}
             </button>
           )}

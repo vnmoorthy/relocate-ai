@@ -70,9 +70,39 @@ _ADDRESS_RE = re.compile(
 )
 
 
+# Nobody says "@" out loud. Speech recognition renders a dictated address as
+# "moorthy at example dot com", which the plain email regex cannot see — and
+# user_email is a CORE field, so losing it stalls dispatch on a call where the
+# caller plainly gave their address. The domain must carry at least one dot
+# (spoken or literal), which is what keeps ordinary prepositions out: "meet me
+# at the store" and "I'm at 950 Howard Street" have no dotted domain.
+_SPOKEN_EMAIL_RE = re.compile(
+    r"\b(?P<local>[A-Za-z0-9_+-]+(?:\s+(?:dot|period)\s+[A-Za-z0-9_+-]+)*)"
+    r"\s+at\s+"
+    r"(?P<domain>[A-Za-z0-9-]+(?:(?:\s+(?:dot|period)\s+|\.)[A-Za-z0-9-]+)+)",
+    re.IGNORECASE,
+)
+_SPOKEN_DOT_RE = re.compile(r"\s+(?:dot|period)\s+", re.IGNORECASE)
+
+
+def _spoken_email(text: str) -> str | None:
+    """A dictated address like "jane dot smith at gmail dot com" -> an address."""
+    m = _SPOKEN_EMAIL_RE.search(text)
+    if not m:
+        return None
+    local = _SPOKEN_DOT_RE.sub(".", m.group("local")).strip()
+    domain = _SPOKEN_DOT_RE.sub(".", m.group("domain")).strip()
+    candidate = f"{local}@{domain}".lower()
+    # Round-trip through the strict regex so nothing malformed escapes.
+    return candidate if _EMAIL_RE.fullmatch(candidate) else None
+
+
 def extract_email(text: str) -> str | None:
+    """The caller's email, written or dictated. Written form always wins."""
     m = _EMAIL_RE.search(text)
-    return m.group(0).lower() if m else None
+    if m:
+        return m.group(0).lower()
+    return _spoken_email(text)
 
 
 def _iter_dates(text: str):

@@ -82,3 +82,48 @@ def test_steering_leaves_post_dispatch_conversation_alone() -> None:
     ctx.dispatched = True
     reply = "PG&E is scheduled. Want me to add the vet records too?"
     assert _steer_reply(reply, ctx) == reply
+
+
+def test_dictated_email_becomes_an_address() -> None:
+    """Nobody says "@" out loud. A dictated address must still land, or a
+    caller who gave their email plainly is asked for it again."""
+    from app.transcript_extract import extract_email
+
+    assert extract_email("My email is moorthy at example dot com.") == "moorthy@example.com"
+    assert extract_email("jane dot smith at gmail dot com") == "jane.smith@gmail.com"
+    assert extract_email("sam at company dot co dot uk") == "sam@company.co.uk"
+    # The recognizer sometimes writes the domain correctly but not the "@".
+    assert extract_email("reach me at moorthy at gmail.com") == "moorthy@gmail.com"
+    # A written address always wins over anything dictated later in the turn.
+    assert extract_email("a@b.com, or say it: jane at gmail dot com") == "a@b.com"
+
+
+def test_ordinary_prepositions_never_become_emails() -> None:
+    """"at" is one of the commonest words in English. A dotted domain is what
+    separates a dictated address from a person saying where they are."""
+    from app.transcript_extract import extract_email
+
+    for benign in (
+        "meet me at the store",
+        "I'm at 950 Howard Street, San Francisco",
+        "We arrive at noon on the 3rd",
+        "moving to Austin at some point",
+        "I work at Google",
+        "the movers get there at 9",
+    ):
+        assert extract_email(benign) is None, benign
+
+
+def test_spoken_brief_with_dictated_email_is_dispatchable() -> None:
+    """The whole point: a caller who says everything out loud, including the
+    email, dispatches without a follow-up question."""
+    ctx = BuyerCallContext(call_id="c5", event_id="e5")
+    _merge_backstop_fields(
+        "I am moving from 950 Howard Street, San Francisco to 4700 Duval "
+        "Street, Austin, TX 78751 on August 20th, 2027. My email is moorthy "
+        "at example dot com. One dog, no kids, and a car. No visa, I am a citizen.",
+        ctx,
+    )
+    assert ctx.collected["user_email"] == "moorthy@example.com"
+    assert blocking_fields(ctx.collected) == []
+    assert next_question(ctx.collected) is None
