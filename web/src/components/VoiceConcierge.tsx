@@ -10,11 +10,15 @@ import {
   CORE_FIELDS,
   detectSpeechSupport,
   fieldLabel,
+  joinTurn,
+  MAX_SILENT_RESTARTS,
   missingSummary,
   parseConciergeEnd,
   parseConciergeTurn,
   pickVoice,
   RATE_UNKNOWN_VOICE,
+  readTranscript,
+  recognitionErrorAction,
   recognitionErrorMessage,
   shapeForSpeech,
   SPEECH_PITCH,
@@ -22,7 +26,9 @@ import {
   speechWatchdogMs,
   synthesisErrorMessage,
   turnFailureMessage,
+  TURN_SILENCE_MS,
   type ChatTurn,
+  type TranscriptSnapshot,
   type VoiceChoice,
 } from "@/lib/voice-concierge";
 
@@ -156,6 +162,22 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
   const history = useRef<ChatTurn[]>([]);
   const recognition = useRef<SpeechRecognitionLike | null>(null);
   const wantsMic = useRef(false);
+  // One caller turn can span several recognizer sessions: Chrome ends them at
+  // will, and no-speech restarts get a fresh instance. `banked` keeps the
+  // finals from sessions already gone; `captured` mirrors the live one; the
+  // silence timer is what actually ends the turn.
+  const banked = useRef("");
+  const captured = useRef<TranscriptSnapshot>({ final: "", interim: "" });
+  const silenceTimer = useRef(0);
+  const restartCount = useRef(0);
+  const spawnRef = useRef<() => void>(() => {});
+  // sendTurn is declared before startListening, so the hands-free reopen
+  // goes through a ref — same pattern as spawnRef.
+  const listenRef = useRef<() => void>(() => {});
+  // True while a listening stretch has heard nothing at all: exhausting the
+  // restart allowance in pure silence is a caller who walked away, not a
+  // broken microphone, and the notice should say so.
+  const heardNothing = useRef(true);
   const lineId = useRef(0);
   const voiceChoice = useRef<VoiceChoice<SpeechSynthesisVoice> | null>(null);
   // Monotonic: every cancel bumps it, and a chain from an older epoch is
@@ -387,74 +409,144 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
       pushLine("assistant", turn.text);
       history.current = appendTurn(history.current, { role: "assistant", content: turn.text });
       setPhase("speaking");
-      speak(turn.text, () => setPhase("idle"));
+      speak(turn.text, () => {
+        // Hands-free the whole call, exactly like the greeting: the agent
+        // finishes talking, the mic opens. Making the caller tap a button
+        // between every exchange read as "the call keeps stopping".
+        if (support.recognition) listenRef.current();
+        else setPhase("idle");
+      });
     } catch {
       stopSpeaking();
       setNotice(turnFailureMessage(null));
       setPhase("idle");
     }
-  }, [api, demoToken, pushLine, speak, stopSpeaking]);
+  }, [api, demoToken, pushLine, speak, stopSpeaking, support.recognition]);
 
   // ── speech in ───────────────────────────────────────────────────────────
-  const stopListening = useCallback(() => {
-    wantsMic.current = false;
-    try { recognition.current?.stop(); } catch { /* already stopped */ }
+  const clearSilenceTimer = useCallback(() => {
+    if (silenceTimer.current) {
+      window.clearTimeout(silenceTimer.current);
+      silenceTimer.current = 0;
+    }
   }, []);
 
-  const startListening = useCallback(() => {
+  const stopListening = useCallback(() => {
+    wantsMic.current = false;
+    clearSilenceTimer();
+    try { recognition.current?.stop(); } catch { /* already stopped */ }
+  }, [clearSilenceTimer]);
+
+  /**
+   * The turn ends on SILENCE, not on the engine's first committed segment.
+   * Chrome finalizes a segment at every brief pause, so "send on first final"
+   * shipped half-sentences and closed the mic mid-thought — the caller said
+   * "I'm moving from 1420 Pine Street … [breath]" and the rest was never
+   * heard. Now every recognition event re-arms this timer, and only a real
+   * stretch of quiet sends what was captured — all of it, banked sessions
+   * included.
+   */
+  const armSilenceTimer = useCallback(() => {
+    clearSilenceTimer();
+    silenceTimer.current = window.setTimeout(() => {
+      silenceTimer.current = 0;
+      // Teardown may have closed the mic between arming and firing.
+      if (!wantsMic.current) return;
+      const text = joinTurn(banked.current, captured.current);
+      if (!text) return; // nothing heard yet — no-speech handling owns silence
+      stopListening();
+      setInterim("");
+      void sendTurn(text);
+    }, TURN_SILENCE_MS);
+  }, [clearSilenceTimer, sendTurn, stopListening]);
+
+  /**
+   * Bring up a FRESH recognizer for the current turn. Always fresh: Chrome
+   * ends sessions whenever it likes, and calling start() on one it already
+   * shut down either throws or silently does nothing — the mic looked alive
+   * ("Listening…") while hearing nothing. A session that ends while the
+   * caller still has the floor banks its finals and is replaced, up to
+   * MAX_SILENT_RESTARTS in a row; real speech resets the allowance.
+   */
+  const spawnRecognizer = useCallback(() => {
     const Ctor = ((window as unknown as { SpeechRecognition?: SpeechRecognitionCtor;
       webkitSpeechRecognition?: SpeechRecognitionCtor }).SpeechRecognition
       ?? (window as unknown as { webkitSpeechRecognition?: SpeechRecognitionCtor }).webkitSpeechRecognition);
     if (!Ctor) return;
     if (recognition.current) {
-      try { recognition.current.abort(); } catch { /* noop */ }
+      const old = recognition.current;
+      old.onresult = null; old.onerror = null; old.onend = null;
+      try { old.abort(); } catch { /* noop */ }
     }
     const rec = new Ctor();
     rec.continuous = true;
     rec.interimResults = true;
     rec.lang = "en-US";
     rec.onresult = (event) => {
-      let partial = "";
-      for (let i = event.resultIndex; i < event.results.length; i += 1) {
-        const result = event.results[i];
-        const said = result[0]?.transcript ?? "";
-        if (result.isFinal) {
-          // Never listen while the agent talks, or the mic transcribes it.
-          stopListening();
-          void sendTurn(said);
-          return;
-        }
-        partial += said;
-      }
-      setInterim(partial);
+      restartCount.current = 0; // real audio: the mic is demonstrably alive
+      heardNothing.current = false;
+      captured.current = readTranscript(event.results);
+      // Show the caller everything we hold for this turn, committed or not —
+      // seeing your own words appear is what "it's hearing me" feels like,
+      // and it's the earliest place a mis-hearing can be caught.
+      setInterim(joinTurn(banked.current, captured.current));
+      armSilenceTimer();
     };
     rec.onerror = (event) => {
+      const action = recognitionErrorAction(event.error);
+      if (action === "ignore") return;
+      if (action === "restart") return; // onend fires next and handles it
+      // Fatal: permissions or hardware. Honesty over optimism.
+      wantsMic.current = false;
+      clearSilenceTimer();
       const message = recognitionErrorMessage(event.error);
       if (message) setNotice(message);
-      wantsMic.current = false;
       setPhase("idle");
     };
     rec.onend = () => {
-      // Chrome ends the session on its own pauses; restart while the user
-      // still wants the mic, otherwise settle.
-      if (wantsMic.current) {
-        try { rec.start(); } catch { /* racing a stop */ }
-      } else {
+      if (!wantsMic.current) {
         setPhase((current) => (current === "listening" ? "idle" : current));
+        return;
       }
+      // The session died mid-turn. Keep its words, replace the instance.
+      banked.current = joinTurn(banked.current, { ...captured.current, interim: "" });
+      captured.current = { final: "", interim: "" };
+      if (restartCount.current >= MAX_SILENT_RESTARTS) {
+        wantsMic.current = false;
+        clearSilenceTimer();
+        setPhase("idle");
+        setNotice(heardNothing.current
+          ? "Still there? Tap Keep talking when you're ready, or type below."
+          : "The microphone keeps cutting out. Tap Keep talking to retry, or type below.");
+        return;
+      }
+      restartCount.current += 1;
+      spawnRef.current();
     };
     recognition.current = rec;
-    wantsMic.current = true;
     try {
       rec.start();
-      setPhase("listening");
-      setInterim("");
-      setNotice("");
     } catch {
       setNotice("Couldn't start the microphone. Check your browser's site settings.");
+      wantsMic.current = false;
+      clearSilenceTimer();
       setPhase("idle");
     }
-  }, [sendTurn, stopListening]);
+  }, [armSilenceTimer, clearSilenceTimer]);
+  useEffect(() => { spawnRef.current = spawnRecognizer; }, [spawnRecognizer]);
+
+  const startListening = useCallback(() => {
+    banked.current = "";
+    captured.current = { final: "", interim: "" };
+    restartCount.current = 0;
+    heardNothing.current = true;
+    wantsMic.current = true;
+    setPhase("listening");
+    setInterim("");
+    setNotice("");
+    spawnRecognizer();
+  }, [spawnRecognizer]);
+  useEffect(() => { listenRef.current = startListening; }, [startListening]);
 
   /**
    * The user tapping "Keep talking" is a barge-in: they want the floor now.
@@ -477,6 +569,7 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
   useEffect(() => {
     const teardown = () => {
       wantsMic.current = false;
+      clearSilenceTimer();
       try { recognition.current?.abort(); } catch { /* noop */ }
       stopSpeaking();
     };
@@ -486,7 +579,7 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
       document.removeEventListener("visibilitychange", onHide);
       teardown();
     };
-  }, [stopSpeaking]);
+  }, [clearSilenceTimer, stopSpeaking]);
 
   // ── hang up ─────────────────────────────────────────────────────────────
   const endSession = useCallback(async () => {

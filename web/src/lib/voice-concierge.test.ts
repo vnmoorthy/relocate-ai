@@ -7,12 +7,15 @@ import {
   detectSpeechSupport,
   estimateSpeechMs,
   fieldLabel,
+  joinTurn,
   missingCoreFields,
   missingSummary,
   parseConciergeEnd,
   parseConciergeTurn,
   pickVoice,
   rankVoice,
+  readTranscript,
+  recognitionErrorAction,
   recognitionErrorMessage,
   shapeForSpeech,
   speechWatchdogMs,
@@ -374,4 +377,47 @@ test("turnFailureMessage: a dead backend is stated, not dressed up as a blip", (
   assert.doesNotMatch(down, /again/);
   // Anything else may genuinely be transient.
   assert.equal(turnFailureMessage(null), "Couldn't reach the concierge just then. Try that again.");
+});
+
+test("readTranscript: rebuilds finals and interim from the whole session", () => {
+  const results = {
+    length: 3,
+    0: { isFinal: true, 0: { transcript: "I am moving from" } },
+    1: { isFinal: true, 0: { transcript: " 1420 Pine Street" } },
+    2: { isFinal: false, 0: { transcript: " Philadelphia" } },
+  };
+  assert.deepEqual(readTranscript(results), {
+    final: "I am moving from 1420 Pine Street",
+    interim: "Philadelphia",
+  });
+});
+
+test("readTranscript: empty session and sparse results stay safe", () => {
+  assert.deepEqual(readTranscript({ length: 0 }), { final: "", interim: "" });
+  assert.deepEqual(
+    readTranscript({ length: 2, 0: { isFinal: true, 0: { transcript: "hi" } } } as never),
+    { final: "hi", interim: "" },
+  );
+});
+
+test("joinTurn: banked finals from earlier sessions survive a restart", () => {
+  // Chrome ended the session mid-turn; the earlier words were banked and the
+  // new session only heard the rest. The turn is the whole sentence.
+  const snapshot = { final: "on October 15th 2026", interim: "" };
+  assert.equal(
+    joinTurn("I am moving from 1420 Pine Street Philadelphia", snapshot),
+    "I am moving from 1420 Pine Street Philadelphia on October 15th 2026",
+  );
+  assert.equal(joinTurn("", { final: "", interim: "" }), "");
+});
+
+test("recognitionErrorAction: silence restarts, permission problems end it", () => {
+  // no-speech killed the mic whenever the caller stopped to think.
+  assert.equal(recognitionErrorAction("no-speech"), "restart");
+  assert.equal(recognitionErrorAction("aborted"), "ignore");
+  assert.equal(recognitionErrorAction("not-allowed"), "fatal");
+  assert.equal(recognitionErrorAction("audio-capture"), "fatal");
+  // Unknowns restart — the MAX_SILENT_RESTARTS cap keeps that honest.
+  assert.equal(recognitionErrorAction("network"), "restart");
+  assert.equal(recognitionErrorAction("weird-new-code"), "restart");
 });

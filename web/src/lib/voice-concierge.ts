@@ -811,3 +811,90 @@ export function synthesisErrorMessage(code: string): string {
       return "The browser's voice stopped unexpectedly. The reply is above.";
   }
 }
+
+// ── speech capture ─────────────────────────────────────────────────────────
+//
+// Chrome's recognizer finalizes a segment at every brief pause and ends the
+// whole session whenever it feels like it. The first cut of this component
+// sent the FIRST finalized segment as the turn — so pausing mid-sentence
+// closed the mic and shipped the fragment ("I am moving from 1420 Pine
+// Street" … click). The capture model here is the opposite: keep everything
+// the session has heard, and only call the turn done after a real stretch of
+// silence.
+
+/** Silence, in ms, after the last recognition event before the captured
+ * speech is sent as the caller's turn. Long enough to think mid-sentence,
+ * short enough that the call doesn't feel stalled. */
+export const TURN_SILENCE_MS = 1800;
+
+/** Consecutive silent recognizer restarts before we stop pretending the mic
+ * works and say so. Real speech resets the count. */
+export const MAX_SILENT_RESTARTS = 4;
+
+export interface RecognitionAlternativeLike {
+  transcript: string;
+}
+export interface RecognitionResultLike {
+  isFinal: boolean;
+  0: RecognitionAlternativeLike;
+}
+export interface RecognitionResultsLike {
+  length: number;
+  [index: number]: RecognitionResultLike;
+}
+
+export interface TranscriptSnapshot {
+  /** Segments the engine has committed to. */
+  final: string;
+  /** What it's still guessing at. */
+  interim: string;
+}
+
+/** The whole session's transcript, not just the newest event's slice.
+ * `results` is cumulative within one recognizer session, so rebuilding from
+ * index 0 is stateless and immune to missed events. */
+export function readTranscript(results: RecognitionResultsLike): TranscriptSnapshot {
+  let final = "";
+  let interim = "";
+  for (let i = 0; i < results.length; i += 1) {
+    const said = results[i]?.[0]?.transcript ?? "";
+    if (results[i]?.isFinal) final += ` ${said}`;
+    else interim += ` ${said}`;
+  }
+  return {
+    final: final.replace(/\s+/g, " ").trim(),
+    interim: interim.replace(/\s+/g, " ").trim(),
+  };
+}
+
+/** Everything heard this turn, banked finals from earlier recognizer sessions
+ * included. Interim text rides along: by the time the silence timer fires it
+ * has sat unchanged for the whole window, which means the engine stalled
+ * before committing it — sending it beats losing it. */
+export function joinTurn(banked: string, snapshot: TranscriptSnapshot): string {
+  return `${banked} ${snapshot.final} ${snapshot.interim}`.replace(/\s+/g, " ").trim();
+}
+
+export type RecognitionErrorAction = "restart" | "ignore" | "fatal";
+
+/** Whether a recognition error should silently restart the mic, be ignored,
+ * or end the session with a notice. `no-speech` is the big one: Chrome fires
+ * it after ~8 quiet seconds, and treating it as fatal meant the mic died
+ * whenever the caller stopped to think. */
+export function recognitionErrorAction(code: string): RecognitionErrorAction {
+  switch (code) {
+    case "no-speech":
+      return "restart";
+    // Our own abort() — teardown or barge-in already owns the phase.
+    case "aborted":
+      return "ignore";
+    case "not-allowed":
+    case "service-not-allowed":
+    case "audio-capture":
+      return "fatal";
+    // Transient by default — the restart cap turns a persistent fault into
+    // an honest notice instead of a silent forever-loop.
+    default:
+      return "restart";
+  }
+}
