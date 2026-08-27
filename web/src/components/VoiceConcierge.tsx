@@ -583,8 +583,26 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
 
   // ── hang up ─────────────────────────────────────────────────────────────
   const endSession = useCallback(async () => {
+    // Hanging up must not discard speech the silence timer hadn't sent yet.
+    // A real caller said their entire brief and clicked "Hang up & dispatch"
+    // half a second later — everything they said was still interim, nothing
+    // had been sent, and the hang-up honestly reported an empty call. Flush
+    // first: the server merges late turns into the ended call and re-runs
+    // the end-of-call dispatch once their fields land.
+    const unsent = joinTurn(banked.current, captured.current);
     stopListening();
     stopSpeaking();
+    banked.current = "";
+    captured.current = { final: "", interim: "" };
+    if (unsent) {
+      setInterim("");
+      void sendTurn(unsent);
+      // Give the turn a moment to register the call server-side, so the /end
+      // below closes a call that exists rather than an empty one.
+      if (!callId.current) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      }
+    }
     if (!callId.current) {
       // No turn ever reached the concierge, so there is no session to close —
       // but the mic and the synth have just been shut down, and leaving "On
@@ -619,7 +637,7 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
       setPhase("idle");
       setConnectedAt(null);
     }
-  }, [api, onDispatched, stopListening, stopSpeaking]);
+  }, [api, onDispatched, sendTurn, stopListening, stopSpeaking]);
 
   const started = lines.length > 0 || connectedAt !== null;
   const busy = phase === "thinking" || ending;
