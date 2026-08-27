@@ -50,10 +50,24 @@ def _is_bool(v: str | bool) -> bool:
     return v.strip().lower() in ("true", "false", "yes", "no", "1", "0")
 
 
+# Speech recognition emits no punctuation, so a dictated address arrives as
+# "1420 Pine Street Philadelphia" — no comma, no ZIP. A street-suffix word is
+# the third acceptable shape: it only appears when a street was actually named,
+# and the extraction regex upstream is the strict gatekeeper for structure.
+_STREET_SUFFIX_HINT = re.compile(
+    r"\b(?:Street|St|Avenue|Ave|Boulevard|Blvd|Road|Rd|Drive|Dr|Lane|Ln|Way|"
+    r"Court|Ct|Place|Pl|Terrace|Ter|Circle|Cir|Parkway|Pkwy|Highway|Hwy)\b\.?",
+    re.IGNORECASE,
+)
+
+
 def _is_address(v: str) -> bool:
-    # Heuristic: at least one digit (street number) + at least one comma or zip-like.
+    # Heuristic: a street number, plus one structural hint — a comma, a ZIP,
+    # or a street-suffix word.
     s = v.strip()
-    return bool(re.search(r"\d", s)) and (("," in s) or bool(re.search(r"\b\d{5}\b", s)))
+    if not re.search(r"\d", s):
+        return False
+    return ("," in s) or bool(re.search(r"\b\d{5}\b", s)) or bool(_STREET_SUFFIX_HINT.search(s))
 
 
 def _is_dob(v: str) -> bool:

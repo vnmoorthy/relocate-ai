@@ -249,25 +249,33 @@ def _route_ack(collected: dict[str, Any]) -> str:
     return "Got it."
 
 
-def _deterministic_turn(transcript: str, ctx: BuyerCallContext) -> PavoReply | None:
-    """A first turn the backstop can answer alone, or None to ask the model.
+def _deterministic_turn(caller_text: str, ctx: BuyerCallContext) -> PavoReply | None:
+    """A brief the backstop can answer alone, or None to ask the model.
 
     Returns a PavoReply carrying no content: every field is already recoverable
     from the caller's own words, so _steer_reply supplies the closing and the
     model has nothing left to contribute. The turn costs nothing and answers
     immediately, which matters because this is the turn the caller is waiting
-    on. Restricted to the first turn on purpose — the backstop fills gaps and
-    never overrides, so a later correction ("no, make it the 22nd") must reach
-    the model.
+    on. `caller_text` is the whole call so far, not the latest fragment — the
+    recognizer splits one breath across turns at every pause.
+
+    Two guards keep corrections out of this path, because the model is the
+    only thing that understands "no, make it the 22nd":
+      - the joined transcript must yield a COMPLETE brief entirely on its own
+        (a correction adds a second date, which extraction refuses as
+        ambiguous, so the probe comes back incomplete), and
+      - nothing it yields may disagree with what is already collected (a
+        re-said value that changed is a correction by definition).
     """
     from .buyer_schema import blocking_fields
     from .transcript_extract import backstop_fields
 
-    if ctx.turn_count != 1 or ctx.dispatched or ctx.collected:
+    if ctx.dispatched:
         return None
-    probe = dict(ctx.collected)
-    probe.update(backstop_fields(transcript, probe))
+    probe = backstop_fields(caller_text, {})
     if blocking_fields(probe):
+        return None
+    if any(ctx.collected.get(k, v) != v for k, v in probe.items()):
         return None
     return PavoReply(
         content=_route_ack(probe),
@@ -335,6 +343,10 @@ async def _run_buyer_turn(
         })
 
     ctx.turn_count += 1
+    ctx.caller_utterances.append(transcript)
+    # The recognizer splits one breath across turns at every pause, so the
+    # deterministic extraction always reads the whole call, not the fragment.
+    caller_text = " ".join(ctx.caller_utterances)
 
     await ws_broker.broadcast({
         "type": "transcript_turn", "event_id": ctx.event_id, "agent_id": "buyer",
@@ -381,7 +393,7 @@ async def _run_buyer_turn(
     # hear that it worked. First turn only: a later turn may be a correction,
     # and the backstop fills gaps rather than overriding, so only the model
     # understands those.
-    reply = _deterministic_turn(transcript, ctx)
+    reply = _deterministic_turn(caller_text, ctx)
     if reply is None:
         try:
             reply = await pavo_chat(
@@ -426,7 +438,7 @@ async def _run_buyer_turn(
     # Deterministic backstop: the 2B model drops fields stochastically, so
     # high-structure CORE values are also recovered verbatim from the
     # caller's own utterance — gaps only, the model's extraction wins.
-    new_fields.update(_merge_backstop_fields(transcript, ctx))
+    new_fields.update(_merge_backstop_fields(caller_text, ctx))
     voice_reply = _steer_reply(_strip_machine_json(reply.content), ctx)
     await ws_broker.broadcast({
         "type": "transcript_turn", "event_id": ctx.event_id, "agent_id": "buyer",

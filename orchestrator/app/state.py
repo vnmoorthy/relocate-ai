@@ -47,6 +47,13 @@ class BuyerCallContext:
     # v2 field-collection state — the buyer emits partial JSON each turn;
     # the orchestrator merges them here and dispatches on CORE-complete.
     collected: dict[str, Any] = field(default_factory=dict)
+    # Everything the caller has said this call, in order. The deterministic
+    # backstop reads the JOIN of these, not the latest utterance alone: the
+    # browser recognizer splits one spoken brief across turns at every pause,
+    # so "I'm moving from A" and "to B on the 15th" arrive separately — and
+    # per-utterance extraction then rejects the date for lacking moving
+    # language, which lives one turn earlier.
+    caller_utterances: list[str] = field(default_factory=list)
     # Track which fields came in on which turn for the dashboard timeline.
     collection_history: list[dict[str, Any]] = field(default_factory=list)
     # True once agent.call_ended has been observed. Late in-flight turns check

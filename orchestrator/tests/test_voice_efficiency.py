@@ -228,18 +228,101 @@ def test_an_incomplete_breath_still_reaches_the_model() -> None:
     assert _deterministic_turn("Hi, I'm moving next month sometime.", ctx) is None
 
 
-def test_a_later_turn_always_reaches_the_model() -> None:
-    """The backstop fills gaps and never overrides, so a correction like
-    "no, make it the 22nd" is only understood by the model. Skipping it on a
-    later turn would silently drop the correction."""
+def test_agreeing_collected_values_do_not_block_the_fast_path() -> None:
+    """A value the model collected that MATCHES what the joined transcript
+    yields is corroboration, not a correction — the fast path may proceed.
+    (Corrections are covered by test_fast_path_refuses_corrections.)"""
     from app.main import _deterministic_turn
 
-    ctx = BuyerCallContext(call_id="c9", event_id="e9")
+    ctx = BuyerCallContext(call_id="c10", event_id="e10")
     ctx.turn_count = 2
-    assert _deterministic_turn(ONE_BREATH, ctx) is None
+    ctx.collected["move_date"] = "2027-08-20"  # same date ONE_BREATH carries
+    assert _deterministic_turn(ONE_BREATH, ctx) is not None
 
-    # Same on turn one if anything was already collected out of band.
-    ctx2 = BuyerCallContext(call_id="c10", event_id="e10")
-    ctx2.turn_count = 1
-    ctx2.collected["move_date"] = "2027-08-20"
-    assert _deterministic_turn(ONE_BREATH, ctx2) is None
+
+# The exact two fragments a real caller's browser produced on 2026-08-27 —
+# the recognizer split one breath at a pause, and emitted no punctuation.
+SPLIT_TURN_1 = "I am moving from 1420 Pine Street Philadelphia"
+SPLIT_TURN_2 = "to 1950 Howard Street San Francisco California on October 15th 2026"
+
+
+def test_speech_has_no_commas_and_addresses_still_land() -> None:
+    """Web Speech emits no punctuation. Requiring a comma before the city made
+    every genuinely spoken address invisible — the demo path failed while all
+    the written-form tests passed."""
+    from app.transcript_extract import backstop_fields
+
+    assert backstop_fields(SPLIT_TURN_1, {}) == {
+        "origin_address": "1420 Pine Street Philadelphia",
+    }
+    assert backstop_fields(SPLIT_TURN_2, {}).get("destination_address") == (
+        "1950 Howard Street San Francisco California"
+    )
+
+
+def test_a_brief_split_across_turns_accumulates_to_dispatch() -> None:
+    """The recognizer pauses mid-breath, so the date arrives one turn after
+    the word "moving". Extraction reads the whole call, not the fragment."""
+    from app.buyer_schema import is_dispatch_ready
+
+    ctx = BuyerCallContext(call_id="split1", event_id="es1")
+    ctx.caller_utterances.append(SPLIT_TURN_1)
+    _merge_backstop_fields(" ".join(ctx.caller_utterances), ctx)
+    assert ctx.collected.get("origin_address") == "1420 Pine Street Philadelphia"
+
+    ctx.caller_utterances.append(SPLIT_TURN_2)
+    _merge_backstop_fields(" ".join(ctx.caller_utterances), ctx)
+    assert ctx.collected.get("move_date") == "2026-10-15"
+    assert ctx.collected.get("destination_address", "").startswith("1950 Howard")
+
+    ctx.caller_utterances.append(
+        "my email is moorthy at example dot com one dog no kids and a car no visa"
+    )
+    _merge_backstop_fields(" ".join(ctx.caller_utterances), ctx)
+    assert is_dispatch_ready(ctx.collected)
+    assert blocking_fields(ctx.collected) == []
+
+
+def test_fast_path_covers_the_completing_later_turn() -> None:
+    """The turn that completes a split brief is answered deterministically —
+    the caller should not wait 15 seconds for a model to say what the schema
+    already knows."""
+    from app.main import _deterministic_turn
+
+    ctx = BuyerCallContext(call_id="split2", event_id="es2")
+    ctx.turn_count = 2
+    ctx.collected["origin_address"] = "1420 Pine Street Philadelphia"
+    joined = (
+        SPLIT_TURN_1 + " " + SPLIT_TURN_2
+        + " my email is moorthy at example dot com one dog no kids and a car no visa"
+    )
+    reply = _deterministic_turn(joined, ctx)
+    assert reply is not None and reply.tier == "deterministic"
+
+
+def test_fast_path_refuses_corrections() -> None:
+    """A second date makes the probe ambiguous-incomplete; a changed value
+    disagrees with what is collected. Either way the model must see it."""
+    from app.main import _deterministic_turn
+
+    # Two dates in the joined text -> extraction refuses -> incomplete -> model.
+    ctx = BuyerCallContext(call_id="split3", event_id="es3")
+    ctx.turn_count = 2
+    ctx.collected["move_date"] = "2026-10-15"
+    joined = (
+        SPLIT_TURN_1 + " " + SPLIT_TURN_2
+        + " actually no make that November 2nd 2026"
+        + " my email is a@b.com one dog no kids and a car no visa"
+    )
+    assert _deterministic_turn(joined, ctx) is None
+
+    # A household answer that flipped is a correction too.
+    ctx2 = BuyerCallContext(call_id="split4", event_id="es4")
+    ctx2.turn_count = 2
+    ctx2.collected["has_children"] = False
+    joined2 = (
+        SPLIT_TURN_1 + " " + SPLIT_TURN_2
+        + " my email is a@b.com one dog and a car no visa"
+        + " wait actually we do have a kid"
+    )
+    assert _deterministic_turn(joined2, ctx2) is None

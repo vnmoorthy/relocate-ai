@@ -56,9 +56,13 @@ _STREET_SUFFIX = (
 )
 # The state is optional on purpose: people say "950 Howard Street, San
 # Francisco" out loud far more often than they recite the state, and
-# requiring it silently dropped the origin of most spoken moves. The city
-# segment must be capitalised, which keeps "123 Main Street, please" from
-# reading as an address.
+# requiring it silently dropped the origin of most spoken moves. The comma
+# before the city is optional for the same reason, only more so: this text
+# comes from speech recognition, which emits NO punctuation — a real caller's
+# "1420 Pine Street Philadelphia" carried no comma, so the whole address
+# vanished and nothing dispatched. Capitalisation holds the line instead: the
+# city must be capitalised words, which keeps "123 Main Street, please" and
+# the lowercase "to" in "San Francisco to 4700 Duval Street" out of the city.
 # City words admit a period only inside a 1-2 letter abbreviation ("St.
 # Louis", "Ft. Worth"). A bare period ends the address: with "." inside the
 # city class, a ZIP-less city at the end of a sentence chained onto whatever
@@ -73,8 +77,8 @@ _ADDRESS_RE = re.compile(
     # City as 1-3 capitalised words: greedy enough for "San Francisco",
     # and it cannot run on through the lowercase "to" that follows it in
     # "…, San Francisco to 4700 Duval Street".
-    r"(?:\s*,\s*" + _CITY_WORD + r"(?:\s+" + _CITY_WORD + r"){0,2})"
-    r"(?:\s*,\s*[A-Z]{2})?"
+    r"(?:(?:\s*,\s*|\s+)" + _CITY_WORD + r"(?:\s+" + _CITY_WORD + r"){0,2})"
+    r"(?:(?:\s*,\s*|\s+)[A-Z]{2}\b)?"
     r"(?:\s+\d{5}(?:-\d{4})?)?)(?=[\s,.;!?]|$)",
 )
 
