@@ -21,6 +21,7 @@ import {
   SPEECH_VOLUME,
   speechWatchdogMs,
   synthesisErrorMessage,
+  turnFailureMessage,
   type ChatTurn,
   type VoiceChoice,
 } from "@/lib/voice-concierge";
@@ -370,6 +371,14 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
         setPhase("idle");
         return;
       }
+      if (res.status === 503) {
+        // Every completion provider is down. Chunked replies outlive a
+        // fast-failing fetch, so silence the queue before the notice lands.
+        stopSpeaking();
+        setNotice(turnFailureMessage(503));
+        setPhase("idle");
+        return;
+      }
       if (!res.ok) throw new Error(`turn http ${res.status}`);
       const turn = parseConciergeTurn(await res.json());
       if (!turn) throw new Error("malformed turn");
@@ -381,7 +390,7 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
       speak(turn.text, () => setPhase("idle"));
     } catch {
       stopSpeaking();
-      setNotice("Couldn't reach the concierge just then. Try that again.");
+      setNotice(turnFailureMessage(null));
       setPhase("idle");
     }
   }, [api, demoToken, pushLine, speak, stopSpeaking]);
@@ -483,7 +492,16 @@ export function VoiceConcierge({ api, demoToken, onDispatched }: VoiceConciergeP
   const endSession = useCallback(async () => {
     stopListening();
     stopSpeaking();
-    if (!callId.current) return;
+    if (!callId.current) {
+      // No turn ever reached the concierge, so there is no session to close —
+      // but the mic and the synth have just been shut down, and leaving "On
+      // call" ticking (or the status line reading "Speaking…") would claim a
+      // call that is over. End it here and say what actually happened.
+      setPhase("idle");
+      setConnectedAt(null);
+      setNotice("Nothing was captured, so nothing was dispatched.");
+      return;
+    }
     setEnding(true);
     setNotice("");
     try {

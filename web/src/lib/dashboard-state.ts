@@ -23,7 +23,16 @@ export interface TranscriptLine {
 
 export interface DashboardState {
   transcripts: Record<string, TranscriptLine[]>;
-  agentStates: Record<string, { state: string; sinceTs: number }>;
+  agentStates: Record<
+    string,
+    {
+      state: string;
+      sinceTs: number;
+      terminalOutcome: string | null;
+      /** Deployment reroutes all outbound mail to itself: nothing was sent. */
+      demoRouting: boolean;
+    }
+  >;
   routingDecisions: Array<{
     agent_id: string;
     tier: string;
@@ -42,6 +51,13 @@ export interface DashboardState {
   eventId: string | null;
   /** Server ts (epoch seconds) of the last event applied for the pinned id. */
   lastEventTs: number | null;
+  /**
+   * Server ts of the newest bootstrap frame, while the stage has been built
+   * from replay alone. Null the moment any live event lands — a stage the
+   * server replayed is a finished move, not traffic happening now, and the
+   * screen has to say which one it is showing.
+   */
+  replayedAt: number | null;
   demoMode: boolean;
   completed: boolean;
   completionSummary: Record<string, unknown> | null;
@@ -91,6 +107,7 @@ export function createDashboardState(
     connected: connection === "live",
     eventId,
     lastEventTs: null,
+    replayedAt: null,
     demoMode: connection === "demo",
     completed: false,
     completionSummary: null,
@@ -129,22 +146,52 @@ function canAdoptNewEvent(state: DashboardState, eventTs: number): boolean {
   return eventTs - state.lastEventTs >= EVENT_SILENCE_TAKEOVER_S;
 }
 
+/**
+ * How stale a replayed stage is, in words. The server's clock and the
+ * browser's rarely agree to the second, so anything under a minute and a half
+ * — including a negative gap from skew — reads as "just now" rather than as a
+ * time in the future.
+ */
+export function replayAgeLabel(replayedAt: number, nowSeconds: number): string {
+  const seconds = Math.floor(nowSeconds - replayedAt);
+  if (seconds < 90) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
 export function applyDashboardEvent(state: DashboardState, event: WSEvent): DashboardState {
   // A bootstrap replay describes state as of subscribe time; its historical
   // ts must not masquerade as live activity (that reset the clock and let a
   // concurrent move wipe the swarm immediately).
   const isBootstrap = event.type === "agent_state" && event.bootstrap === true;
   const liveTs = isBootstrap ? null : event.ts;
+  // Replay provenance follows the same rule as the clock: bootstrap frames
+  // record how stale the stage is, and the first live event clears it.
+  const replayedAt = (previous: number | null) =>
+    isBootstrap ? Math.max(previous ?? 0, event.ts) : null;
 
   let nextState: DashboardState;
   if (!state.eventId) {
-    nextState = { ...state, eventId: event.event_id, lastEventTs: liveTs };
+    nextState = {
+      ...state,
+      eventId: event.event_id,
+      lastEventTs: liveTs,
+      replayedAt: replayedAt(state.replayedAt),
+    };
   } else if (state.eventId === event.event_id) {
-    nextState = { ...state, lastEventTs: liveTs ?? state.lastEventTs };
+    nextState = {
+      ...state,
+      lastEventTs: liveTs ?? state.lastEventTs,
+      replayedAt: replayedAt(state.replayedAt),
+    };
   } else if (canAdoptNewEvent(state, event.ts)) {
     nextState = {
       ...createDashboardState(state.connection, event.event_id),
       lastEventTs: liveTs,
+      replayedAt: replayedAt(null),
     };
   } else {
     // Stay pinned: a concurrent dispatch (someone else starting a move while
@@ -200,7 +247,12 @@ export function applyDashboardEvent(state: DashboardState, event: WSEvent): Dash
         ...nextState,
         agentStates: {
           ...nextState.agentStates,
-          [event.agent_id]: { state: event.state, sinceTs: event.ts },
+          [event.agent_id]: {
+            state: event.state,
+            sinceTs: event.ts,
+            terminalOutcome: event.terminal_outcome ?? null,
+            demoRouting: event.demo_routing === true,
+          },
         },
       };
     }
@@ -284,6 +336,7 @@ const AGENT_STATES = new Set<AgentState>([
   "calling",
   "in-progress",
   "submitted",
+  "prepared",
   "succeeded",
   "needs-user-action",
   "failed",
@@ -339,6 +392,10 @@ export function parseDashboardEvent(raw: unknown): WSEvent | null {
       return typeof raw.agent_id === "string" &&
         typeof raw.state === "string" &&
         AGENT_STATES.has(raw.state as AgentState) &&
+        (raw.terminal_outcome === undefined ||
+          raw.terminal_outcome === null ||
+          typeof raw.terminal_outcome === "string") &&
+        (raw.demo_routing === undefined || typeof raw.demo_routing === "boolean") &&
         (raw.bootstrap === undefined || typeof raw.bootstrap === "boolean")
         ? (raw as unknown as WSEvent)
         : null;

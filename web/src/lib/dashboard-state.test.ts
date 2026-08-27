@@ -9,11 +9,13 @@ import {
   parseDashboardEvent,
   parseDashboardMessage,
   reconnectDelay,
+  replayAgeLabel,
   sponsorStatus,
 } from "./dashboard-state.ts";
 import { buildDemoTimeline } from "./demo-replay.ts";
 import { publicFeedText, redactDisplayText } from "./privacy.ts";
-import type { RoutingDecisionEvent } from "./types.ts";
+import { isPreparedOutcome } from "./types.ts";
+import type { RoutingDecisionEvent, WSEvent } from "./types.ts";
 
 function routingEvent(eventId: string, turn: number, ts = turn): RoutingDecisionEvent {
   return {
@@ -280,13 +282,16 @@ test("demo timeline is sorted, conditional, finalized, and uses honest terminal 
     ),
   );
 
-  // Terminal-state table: 12 submitted, 3 needs-user-action handoffs, 1 failed.
+  // Terminal-state table: 10 submitted, 14 prepared, 3 handoffs, 1 failed.
   const terminal = new Map<string, string>();
   for (const event of events) {
     if (
       event.type === "agent_state" &&
       event.agent_id !== "buyer" &&
-      (event.state === "submitted" || event.state === "needs-user-action" || event.state === "failed")
+      (event.state === "submitted" ||
+        event.state === "prepared" ||
+        event.state === "needs-user-action" ||
+        event.state === "failed")
     ) {
       terminal.set(event.agent_id, event.state);
     }
@@ -296,10 +301,19 @@ test("demo timeline is sorted, conditional, finalized, and uses honest terminal 
   assert.equal(terminal.get("uscis_ar11"), "needs-user-action");
   assert.equal(terminal.get("pcp_transfer"), "needs-user-action");
   assert.equal(terminal.get("gym_cancel"), "needs-user-action");
-  const terminalCounts = { submitted: 0, "needs-user-action": 0, failed: 0 } as Record<string, number>;
+  // A specialist that contacted a counterparty and one that contacted nobody
+  // must not share a terminal state, in the replay any more than live.
+  assert.equal(terminal.get("pge_shutoff"), "submitted");
+  assert.equal(terminal.get("housing_search"), "prepared");
+  assert.equal(terminal.get("bank_notify"), "prepared");
+  assert.equal(terminal.get("flight_book"), "prepared");
+  const terminalCounts = {
+    submitted: 0, prepared: 0, "needs-user-action": 0, failed: 0,
+  } as Record<string, number>;
   for (const state of terminal.values()) terminalCounts[state] += 1;
-  // 12 provider-facing submitted + 12 prepared, 3 handoffs, 1 failure.
-  assert.equal(terminalCounts.submitted, 24);
+  // 10 provider-facing submitted, 14 prepared, 3 handoffs, 1 failure.
+  assert.equal(terminalCounts.submitted, 10);
+  assert.equal(terminalCounts.prepared, 14);
   assert.equal(terminalCounts["needs-user-action"], 3);
   assert.equal(terminalCounts.failed, 1);
 
@@ -315,7 +329,8 @@ test("demo timeline is sorted, conditional, finalized, and uses honest terminal 
   const finalized = events.find((event) => event.type === "event_finalized");
   assert.ok(finalized && finalized.type === "event_finalized");
   assert.equal(finalized.outcome, "partial_failure");
-  assert.equal(finalized.summary?.submitted_count, 24);
+  // submitted_count is provider acceptances only — prepared work is not one.
+  assert.equal(finalized.summary?.submitted_count, 10);
   assert.equal(finalized.summary?.failed_count, 1);
 });
 
@@ -378,4 +393,141 @@ test("reconnect backoff is bounded", () => {
   assert.equal(reconnectDelay(0), 1000);
   assert.equal(reconnectDelay(3), 8000);
   assert.equal(reconnectDelay(20), 30_000);
+});
+
+test("prepared is a state of its own, and terminal_outcome rides along", () => {
+  assert.notEqual(
+    parseDashboardEvent({
+      type: "agent_state",
+      event_id: "evt",
+      agent_id: "housing_search",
+      state: "prepared",
+      ts: 1,
+    }),
+    null,
+  );
+  assert.notEqual(
+    parseDashboardEvent({
+      type: "agent_state",
+      event_id: "evt",
+      agent_id: "housing_search",
+      state: "submitted",
+      terminal_outcome: "prepared_for_user",
+      ts: 1,
+    }),
+    null,
+  );
+  assert.equal(
+    parseDashboardEvent({
+      type: "agent_state",
+      event_id: "evt",
+      agent_id: "housing_search",
+      state: "submitted",
+      terminal_outcome: 7,
+      ts: 1,
+    }),
+    null,
+  );
+
+  // The outcome has to survive into state, or the console cannot tell a
+  // provider acceptance from a document prepared for the customer.
+  let state = createDashboardState("live");
+  state = applyDashboardEvent(state, {
+    type: "agent_state",
+    event_id: "evt-prepared",
+    agent_id: "housing_search",
+    state: "submitted",
+    terminal_outcome: "prepared_for_user",
+    ts: 1,
+  });
+  state = applyDashboardEvent(state, {
+    type: "agent_state",
+    event_id: "evt-prepared",
+    agent_id: "mover_quote",
+    state: "submitted",
+    ts: 2,
+  });
+  assert.equal(state.agentStates.housing_search.terminalOutcome, "prepared_for_user");
+  assert.equal(state.agentStates.mover_quote.terminalOutcome, null);
+  assert.equal(isPreparedOutcome("submitted", "prepared_for_user"), true);
+  assert.equal(isPreparedOutcome("prepared", null), true);
+  assert.equal(isPreparedOutcome("submitted", "submitted"), false);
+  assert.equal(isPreparedOutcome("needs-user-action", "prepared_for_user"), false);
+});
+
+test("a stage built from replay alone is marked as replay until a live event lands", () => {
+  const bootstrap = (agentId: string, ts: number): WSEvent => ({
+    type: "agent_state",
+    event_id: "evt-replay",
+    agent_id: agentId,
+    state: "submitted",
+    ts,
+    bootstrap: true,
+  });
+
+  let state = createDashboardState("live");
+  assert.equal(state.replayedAt, null);
+  state = applyDashboardEvent(state, bootstrap("pge_shutoff", 1_000));
+  state = applyDashboardEvent(state, bootstrap("usps_coa", 1_200));
+  // The stage is populated, so the counters render — but nothing here is
+  // happening now, and replayedAt is what lets the page say so.
+  assert.equal(state.eventId, "evt-replay");
+  assert.equal(state.lastEventTs, null);
+  assert.equal(state.replayedAt, 1_200);
+
+  state = applyDashboardEvent(state, {
+    type: "agent_state",
+    event_id: "evt-replay",
+    agent_id: "mover_quote",
+    state: "in-progress",
+    ts: 1_500,
+  });
+  assert.equal(state.replayedAt, null);
+  assert.equal(state.lastEventTs, 1_500);
+});
+
+test("replay age is stated in words, and clock skew never reads as the future", () => {
+  assert.equal(replayAgeLabel(1_000, 1_000), "just now");
+  assert.equal(replayAgeLabel(1_000, 900), "just now");
+  assert.equal(replayAgeLabel(1_000, 1_089), "just now");
+  assert.equal(replayAgeLabel(1_000, 1_000 + 60 * 5), "5m ago");
+  assert.equal(replayAgeLabel(1_000, 1_000 + 3600 * 2), "2h ago");
+  assert.equal(replayAgeLabel(1_000, 1_000 + 86_400 * 3), "3d ago");
+});
+
+test("demo routing reaches the public swarm, so its counter stops saying submitted", () => {
+  // The stage counts "N submitted" straight off the feed, and the feed is the
+  // only place it could learn that this deployment rewrites every recipient
+  // to its own inbox. Without the flag the marketing page credited the swarm
+  // with provider acceptances the tracker beside it denied.
+  const frame = {
+    type: "agent_state",
+    event_id: "evt-demoroute",
+    agent_id: "mover_quote",
+    state: "submitted",
+    terminal_outcome: "submitted",
+    demo_routing: true,
+    ts: 3,
+  };
+  assert.notEqual(parseDashboardEvent(frame), null);
+  // A non-boolean is rejected rather than coerced, like every other field.
+  assert.equal(parseDashboardEvent({ ...frame, demo_routing: "yes" }), null);
+
+  let state = createDashboardState("live");
+  state = applyDashboardEvent(state, frame as never);
+  assert.equal(state.agentStates.mover_quote.demoRouting, true);
+  assert.equal(
+    isPreparedOutcome(
+      state.agentStates.mover_quote.state,
+      state.agentStates.mover_quote.terminalOutcome,
+      state.agentStates.mover_quote.demoRouting,
+    ),
+    true,
+  );
+
+  // Normal routing is untouched: a real submission is still a submission.
+  let normal = createDashboardState("live");
+  normal = applyDashboardEvent(normal, { ...frame, demo_routing: false } as never);
+  assert.equal(normal.agentStates.mover_quote.demoRouting, false);
+  assert.equal(isPreparedOutcome("submitted", "submitted", false), false);
 });

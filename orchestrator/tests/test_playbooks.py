@@ -232,7 +232,8 @@ def test_digest_and_documents_are_not_resent_after_a_resume(
 
     async def fake_send(**kwargs):  # noqa: ANN003
         sent.append(kwargs)
-        return {"message_id": "msg_digest"}
+        # Real receipts name the address the message actually reached.
+        return {"message_id": "msg_digest", "to": kwargs["to_email"]}
 
     monkeypatch.setattr(marketplace.am, "send_move_package", fake_send)
 

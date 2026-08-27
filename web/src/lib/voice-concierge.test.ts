@@ -17,6 +17,7 @@ import {
   shapeForSpeech,
   speechWatchdogMs,
   synthesisErrorMessage,
+  turnFailureMessage,
   VOICE_UNUSABLE,
   type VoiceLike,
 } from "./voice-concierge.ts";
@@ -362,4 +363,15 @@ test("synthesisErrorMessage: honest about failure, silent about our own cancels"
   assert.match(synthesisErrorMessage("synthesis-failed"), /reply is above/);
   assert.match(synthesisErrorMessage("audio-busy"), /audio output/);
   assert.match(synthesisErrorMessage("weird-code"), /reply is above/);
+});
+
+test("turnFailureMessage: a dead backend is stated, not dressed up as a blip", () => {
+  // 503 is the orchestrator saying every completion provider is down. Telling
+  // the reader to try again would send them round a loop that cannot succeed.
+  const down = turnFailureMessage(503);
+  assert.match(down, /nothing was dispatched/);
+  assert.match(down, /typed form/);
+  assert.doesNotMatch(down, /again/);
+  // Anything else may genuinely be transient.
+  assert.equal(turnFailureMessage(null), "Couldn't reach the concierge just then. Try that again.");
 });

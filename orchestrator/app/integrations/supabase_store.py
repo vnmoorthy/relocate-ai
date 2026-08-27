@@ -72,8 +72,11 @@ def _iso(ts: float | None) -> str | None:
 
 def _move_row(event: Any) -> dict[str, Any]:
     spec = event.spec or {}
-    outbound = sum(
-        int((c.bid or {}).get("intended") or 0)
+    # Same arithmetic as the public tracker (main.py): count messages that
+    # actually left, and none at all under demo routing, where every recipient
+    # is rewritten to the operator's own inbox.
+    outbound = 0 if settings.agentmail_demo_recipient_override.strip() else sum(
+        int((c.bid or {}).get("count") or 0)
         for c in event.specialist_calls.values()
         if isinstance(c.bid, dict)
     )

@@ -59,12 +59,21 @@ _STREET_SUFFIX = (
 # requiring it silently dropped the origin of most spoken moves. The city
 # segment must be capitalised, which keeps "123 Main Street, please" from
 # reading as an address.
+# City words admit a period only inside a 1-2 letter abbreviation ("St.
+# Louis", "Ft. Worth"). A bare period ends the address: with "." inside the
+# city class, a ZIP-less city at the end of a sentence chained onto whatever
+# capitalised word opened the next one — "…, Austin. June".
+_CITY_WORD = r"(?:[A-Z][a-zA-Z]?\.|[A-Z][a-zA-Z'-]+)"
 _ADDRESS_RE = re.compile(
-    r"\b(\d{1,6}(?:\s+[A-Za-z0-9'.]+){1,5}\s+" + _STREET_SUFFIX + r"\.?"
+    # Every word between the house number and the street suffix must start
+    # capitalised or numeric, so a lowercase connective cannot be read as part
+    # of the street name: "moving 2026 from 950 Howard Street" used to yield
+    # "2026 from 950 Howard Street", and that string was emailed to movers.
+    r"\b(\d{1,6}(?:\s+[A-Z0-9][A-Za-z0-9'.-]*){1,5}\s+" + _STREET_SUFFIX + r"\.?"
     # City as 1-3 capitalised words: greedy enough for "San Francisco",
     # and it cannot run on through the lowercase "to" that follows it in
     # "…, San Francisco to 4700 Duval Street".
-    r"(?:\s*,\s*[A-Z][a-zA-Z.'-]+(?:\s+[A-Z][a-zA-Z.'-]+){0,2})"
+    r"(?:\s*,\s*" + _CITY_WORD + r"(?:\s+" + _CITY_WORD + r"){0,2})"
     r"(?:\s*,\s*[A-Z]{2})?"
     r"(?:\s+\d{5}(?:-\d{4})?)?)(?=[\s,.;!?]|$)",
 )
@@ -83,18 +92,34 @@ _SPOKEN_EMAIL_RE = re.compile(
     re.IGNORECASE,
 )
 _SPOKEN_DOT_RE = re.compile(r"\s+(?:dot|period)\s+", re.IGNORECASE)
+# A dotted domain is NOT enough on its own: "I work at Salesforce dot com"
+# has one, and it was becoming work@salesforce.com — a CORE field invented
+# out of ordinary prose. Either the caller announced an address, or the whole
+# utterance is the address (the bare answer to "what's your email?").
+# `$`-anchored so only the phrase immediately before the match votes.
+_EMAIL_CUE_RE = re.compile(
+    r"\b(?:e-?mail(?: address)?(?:\s+is)?|reach me at|send (?:it|everything|that) to|"
+    r"contact me at|it'?s|that'?s)\s*[:,]?\s*$",
+    re.IGNORECASE,
+)
 
 
 def _spoken_email(text: str) -> str | None:
     """A dictated address like "jane dot smith at gmail dot com" -> an address."""
-    m = _SPOKEN_EMAIL_RE.search(text)
-    if not m:
-        return None
-    local = _SPOKEN_DOT_RE.sub(".", m.group("local")).strip()
-    domain = _SPOKEN_DOT_RE.sub(".", m.group("domain")).strip()
-    candidate = f"{local}@{domain}".lower()
-    # Round-trip through the strict regex so nothing malformed escapes.
-    return candidate if _EMAIL_RE.fullmatch(candidate) else None
+    stripped = text.strip(" .,")
+    # finditer, not search: a caller who names their employer's domain and
+    # their own address in one breath must not have the employer win.
+    for m in _SPOKEN_EMAIL_RE.finditer(text):
+        announced = _EMAIL_CUE_RE.search(text[:m.start()])
+        if not announced and m.group(0).strip(" .,") != stripped:
+            continue
+        local = _SPOKEN_DOT_RE.sub(".", m.group("local")).strip()
+        domain = _SPOKEN_DOT_RE.sub(".", m.group("domain")).strip()
+        candidate = f"{local}@{domain}".lower()
+        # Round-trip through the strict regex so nothing malformed escapes.
+        if _EMAIL_RE.fullmatch(candidate):
+            return candidate
+    return None
 
 
 def extract_email(text: str) -> str | None:
@@ -149,6 +174,33 @@ def extract_date(text: str) -> str | None:
     return accepted.pop() if len(accepted) == 1 else None
 
 
+# Anything that could be a caller SAYING when. Digits, a month name, or a
+# relative day/period word — deliberately loose, because its only job is to
+# tell "the caller mentioned a time" apart from "the caller mentioned no time
+# at all and a value appeared anyway".
+# A bare digit is NOT enough: every street address has one. It takes a month
+# name, an ordinal day, a slash/ISO date, or a relative period word.
+_DATE_LANGUAGE_RE = re.compile(
+    r"\b\d{1,2}(?:st|nd|rd|th)\b|\b\d{1,2}/\d{1,2}|\b20\d{2}-\d{1,2}-\d{1,2}\b"
+    r"|\b(?:" + "|".join(_MONTHS) + r"|today|tomorrow|tonight|yesterday|"
+    r"weekend|week|weeks|month|months|day|days|year|quarter|"
+    r"spring|summer|fall|autumn|winter|"
+    r"soon|asap|immediately|whenever)\b"
+    r"|\b(?:next|this|last|end of|start of|beginning of|mid|early|late)\s+\w+",
+    re.IGNORECASE,
+)
+
+
+def mentions_a_time(text: str) -> bool:
+    """Did the caller say anything at all about when?
+
+    A move_date the model produced from an utterance with no time language in
+    it was not heard — it was invented (for a long while, from the "Today is"
+    line the prompt itself carried).
+    """
+    return bool(_DATE_LANGUAGE_RE.search(text or ""))
+
+
 # The cue must sit IMMEDIATELY before the address (the `$` anchor), so
 # ordinary filler cannot vote: "I have to move from <addr>" reads `from`,
 # not the `to` in "have to". Longest-match alternation puts multiword cues
@@ -167,9 +219,17 @@ _DEST_CUE_RE = re.compile(
 
 def extract_addresses(text: str) -> list[tuple[int, str]]:
     """(start_offset, address) for each full street address, in order."""
+    # Blank out every date span first (same width, so offsets — and therefore
+    # _direction_of's cue lookup — are untouched). A year reads as a house
+    # number otherwise: "moving June 1, 2026 from 950 Howard Street" produced
+    # "2026 from 950 Howard Street".
+    masked = list(text)
+    for (start, end), _iso in _iter_dates(text):
+        masked[start:end] = " " * (end - start)
+    scannable = "".join(masked)
     return [
         (m.start(1), re.sub(r"\s+", " ", m.group(1)).strip(" ,."))
-        for m in _ADDRESS_RE.finditer(text)
+        for m in _ADDRESS_RE.finditer(scannable)
     ]
 
 

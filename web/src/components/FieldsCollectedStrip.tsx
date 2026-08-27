@@ -64,13 +64,20 @@ const LABEL: Record<string, string> = {
 
 export function FieldsCollectedStrip({ collectedFields }: Props) {
   const allFields = [...CORE_FIELDS, ...CONDITIONAL_FIELDS, ...OPTIONAL_FIELDS];
-  const collected = allFields.filter((field) => field in collectedFields);
+  // Count only what actually gates dispatch. The optional pills are nice to
+  // have and are mostly collected later by email, so folding them into the
+  // denominator made a finished intake read "8/19" — a complete call looking
+  // two-thirds done, at the moment the caller is being told it worked.
+  const gating = [...CORE_FIELDS, ...CONDITIONAL_FIELDS];
+  const gatingDone = gating.filter((field) => field in collectedFields);
+  const extras = OPTIONAL_FIELDS.filter((field) => field in collectedFields);
   const coreDone = CORE_FIELDS.every((f) => f in collectedFields);
 
   return (
     <section className="panel px-3 py-2 flex items-center gap-2 overflow-x-auto scrollbar-clean scroll-fade-r" aria-labelledby="fields-heading">
       <h3 id="fields-heading" className="text-[10px] tracking-[0.12em] text-[var(--ink-300)] uppercase shrink-0 pr-2 border-r border-[var(--border-soft)]">
-        Buyer · {collected.length}/{allFields.length} fields
+        Buyer · {gatingDone.length}/{gating.length} fields
+        {extras.length > 0 && <span className="text-[var(--ink-400)] ml-1">{" "}+{extras.length}</span>}
         {coreDone && <span className="text-[var(--mint)] ml-1.5">· dispatch ready</span>}
       </h3>
       <div className="flex items-center gap-2" role="list" aria-live="polite">

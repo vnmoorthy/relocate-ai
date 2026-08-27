@@ -5,12 +5,34 @@ export type AgentState =
   | "calling"
   | "in-progress"
   | "submitted"
+  // Terminal, and NOT a submission: the specialist produced the customer's
+  // next step without ever contacting a counterparty.
+  | "prepared"
   | "succeeded"
   | "needs-user-action"
   | "failed"
   | "closed"
   | "voicemail"
   | "error";
+
+/**
+ * True when a specialist finished by preparing something for the customer
+ * rather than by reaching a counterparty. The orchestrator states this two
+ * ways — a dedicated `prepared` state, or the honest `terminal_outcome`
+ * carried alongside the older `submitted` lifecycle state — and neither may
+ * ever render as a provider acceptance.
+ */
+export function isPreparedOutcome(
+  state: string | undefined,
+  terminalOutcome: string | null | undefined,
+  demoRouting = false,
+): boolean {
+  if (state === "prepared") return true;
+  if (state !== "submitted") return false;
+  // Demo routing rewrites every outbound recipient to the deployment's own
+  // inbox, so nothing was submitted to anybody whatever the outcome says.
+  return demoRouting || terminalOutcome === "prepared_for_user";
+}
 
 export type PavoTier = "gemma-local" | "gemini-flash" | "claude-haiku" | "claude-opus" | "fallback-mock";
 
@@ -53,6 +75,18 @@ export interface AgentStateEvent {
   event_id: string;
   agent_id: string;
   state: AgentState;
+  /**
+   * True when this deployment reroutes every outbound message to its own
+   * inbox. Nothing reached a counterparty then, so no counter may call it a
+   * submission. Absent on deployments that do not send it: normal routing.
+   */
+  demo_routing?: boolean;
+  /**
+   * The honest terminal outcome behind the lifecycle state — notably
+   * "prepared_for_user", which the orchestrator may pair with the older
+   * `submitted` state. Absent on deployments that do not send it yet.
+   */
+  terminal_outcome?: string | null;
   ts: number;
   /**
    * True for a current-state replay sent when a socket subscribes, as

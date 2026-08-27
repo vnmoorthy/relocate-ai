@@ -12,6 +12,8 @@ import {
   moveIdFromHash,
   moveSnapshotUrl,
   parseMoveSnapshot,
+  pruneMoveOverlay,
+  type MoveOverlayEntry,
   type MoveSnapshot,
 } from "@/lib/move-page";
 
@@ -39,7 +41,7 @@ interface LiveView {
   forId: string;
   phase: LoadedPhase | null; // null = discovery/snapshot still in flight
   conn: Conn;
-  overlay: Record<string, { state: string }>;
+  overlay: Record<string, MoveOverlayEntry>;
   finalizedLive: boolean;
 }
 
@@ -47,7 +49,7 @@ function emptyView(forId: string): LiveView {
   return { forId, phase: null, conn: "connecting", overlay: {}, finalizedLive: false };
 }
 
-const EMPTY_OVERLAY: Record<string, { state: string }> = {};
+const EMPTY_OVERLAY: Record<string, MoveOverlayEntry> = {};
 
 /**
  * Shareable per-move tracking page (static route; the move id rides in the
@@ -141,7 +143,14 @@ export default function MovePage() {
         if (event.type === "agent_state") {
           patch((v) => ({
             ...v,
-            overlay: { ...v.overlay, [event.agent_id]: { state: event.state } },
+            overlay: {
+              ...v.overlay,
+              [event.agent_id]: {
+                state: event.state,
+                ts: event.ts,
+                terminalOutcome: event.terminal_outcome ?? null,
+              },
+            },
           }));
         } else if (event.type === "event_finalized") {
           patch((v) => ({ ...v, finalizedLive: true }));
@@ -184,8 +193,13 @@ export default function MovePage() {
         if (cancelled) return;
         if (!snapshot) throw new Error("snapshot payload malformed");
         publicRef = snapshot.public_ref;
-        // A fresh snapshot is authoritative; live events re-apply on top.
-        patch((v) => ({ ...v, phase: { kind: "ready", api, snapshot }, overlay: {} }));
+        // A fresh snapshot is authoritative for everything it already knows
+        // about; only live events newer than the snapshot itself survive it.
+        patch((v) => ({
+          ...v,
+          phase: { kind: "ready", api, snapshot },
+          overlay: pruneMoveOverlay(v.overlay, snapshot.ts),
+        }));
         connect(api);
       } catch {
         if (cancelled) return;

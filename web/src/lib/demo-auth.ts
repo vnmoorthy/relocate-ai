@@ -229,6 +229,7 @@ function parseCounts(raw: unknown): MoveTaskCounts {
     total: asCount(counts.total),
     working: asCount(counts.working),
     submitted: asCount(counts.submitted),
+    prepared: asCount(counts.prepared),
     action: asCount(counts.action),
     failed: asCount(counts.failed),
     done: asCount(counts.done),
@@ -287,7 +288,7 @@ export function sortDemoMoves(moves: DemoMoveSummary[]): DemoMoveSummary[] {
  * states the task total, and "working" is everything not yet terminal.
  */
 export interface DemoCountChip {
-  key: "submitted" | "action" | "failed" | "done";
+  key: "submitted" | "prepared" | "action" | "failed" | "done";
   label: string;
   value: number;
   /** CSS custom property reference — same palette as the /move tracker. */
@@ -296,6 +297,9 @@ export interface DemoCountChip {
 
 const CHIP_SPEC: Array<{ key: DemoCountChip["key"]; label: string; color: string }> = [
   { key: "submitted", label: "Submitted", color: "var(--tier-haiku)" },
+  // Prepared work reached no provider, so it never borrows the submitted
+  // colour — a neutral token, because there is nothing to celebrate yet.
+  { key: "prepared", label: "Prepared", color: "var(--ink-300)" },
   { key: "action", label: "Need you", color: "var(--amber)" },
   { key: "failed", label: "Failed", color: "var(--red)" },
   { key: "done", label: "Done", color: "var(--mint)" },

@@ -62,8 +62,10 @@ def test_rows_carry_the_facts_the_tracker_shows(monkeypatch: pytest.MonkeyPatch)
     move = sent["moves"][0]
     assert move["id"] == "mkt_mirror1"
     assert move["origin_channel"] == "demo"
-    # Outbound counts what was asked for, matching the tracker's headline.
-    assert move["outbound_requests"] == 3
+    # Outbound counts messages that actually left, matching the tracker's
+    # headline. `intended` is 3 here; crediting it would report two sends that
+    # never happened.
+    assert move["outbound_requests"] == 1
     assert move["replies_received"] == 1
     assert move["started_at"].endswith("+00:00")
 

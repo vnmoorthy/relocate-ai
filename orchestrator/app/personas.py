@@ -16,6 +16,7 @@ the "prompt" is the task description shipped to Browser Use / AgentMail / Lob.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from typing import Literal
 
 from .buyer_schema import schema_block_for_prompt, dispatch_json_example
@@ -188,7 +189,7 @@ EXIT PROTOCOL (after dispatch):
 automatically. You don't have to do anything.
 
 CONTEXT FOR THIS CALL:
-Today is 2026-05-17. Move spec defaults: 2-bedroom, 1-truck job, no piano, \
+Move spec defaults: 2-bedroom, 1-truck job, no piano, \
 no safe. SF → Austin is the most common pattern for this customer base.
 """
 
@@ -643,6 +644,18 @@ def all_specialists() -> list[Persona]:
 
 def buyer_persona() -> Persona:
     return by_id("buyer")
+
+
+def buyer_system_prompt() -> str:
+    """The concierge prompt with today's real date appended.
+
+    The date used to be baked into BUYER_PROMPT_BODY, which is an import-time
+    f-string: it froze at whatever day the literal was written, and the model
+    then answered "when are you moving?" with it — recording a move_date the
+    caller never said. Computed per call, it cannot go stale, and it cannot
+    freeze on a long-lived server either.
+    """
+    return f"{buyer_persona().system_prompt}\n\nToday is {date.today().isoformat()}."
 
 
 # The prepared-artifact specialists live in their own module (generated from

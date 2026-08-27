@@ -23,6 +23,7 @@ import logging
 import time
 from dataclasses import dataclass
 
+import anthropic
 import httpx
 from anthropic import AsyncAnthropic
 from anthropic.types import MessageParam
@@ -77,7 +78,11 @@ async def pavo_chat(
         "prior_tier": prior_tier,
     }
     try:
-        async with httpx.AsyncClient(timeout=15.0) as c:
+        # Wider than PAVO's own 20s upstream budget on purpose: a client
+        # timeout tighter than the server's guarantees we abandon completions
+        # the server is still legitimately waiting on, and fall through to the
+        # fallback for no reason.
+        async with httpx.AsyncClient(timeout=30.0) as c:
             r = await c.post(
                 url,
                 json=body,
@@ -95,7 +100,16 @@ async def pavo_chat(
     except (httpx.HTTPError, KeyError, ValueError) as e:
         # Fallback to direct Claude Haiku so the demo doesn't die.
         log.warning("PAVO server unreachable (%s); falling back to Claude Haiku direct.", e)
-        return await _fallback_claude_haiku(messages, max_tokens, t0)
+        try:
+            return await _fallback_claude_haiku(messages, max_tokens, t0)
+        except (anthropic.APIError, httpx.HTTPError, KeyError, ValueError) as fe:
+            # An exhausted provider chain is a known failure, not a crash.
+            # Raised untyped, it escaped every caller as a bare 500 — which
+            # also loses the CORS headers, so the browser could only report it
+            # as a network blip and invite a retry that cannot succeed.
+            raise PavoUnavailableError(
+                f"PAVO failed ({e}) and the fallback provider failed ({fe})"
+            ) from fe
 
 
 # Note: When PAVO server is reachable, tier in response will be one of:

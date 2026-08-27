@@ -150,8 +150,16 @@ def missing_prerequisites(agent_id: str, spec: dict[str, Any]) -> list[str]:
 
 
 def _public_artifact_summary(p: Persona, artifact: dict[str, Any]) -> str:
-    """Describe an artifact without broadcasting values, tokens, or PII."""
+    """Describe an artifact without broadcasting values, tokens, or PII.
+
+    A prepared document has no counterparty and no receipt, so it must not
+    borrow the vocabulary of one — "request submitted; receipt fields" over a
+    section we wrote ourselves reads as work a provider accepted.
+    """
     safe_keys = sorted(k for k in artifact if "token" not in k.lower())
+    if p.agent_id in _SELF_DELIVERED_AGENTS or p.voice_mode == "prepared":
+        key_text = ", ".join(safe_keys[:8]) or "document"
+        return f"{p.name}: prepared for you; document sections: {key_text}"
     key_text = ", ".join(safe_keys[:8]) or "provider receipt"
     return f"{p.name}: request submitted; receipt fields: {key_text}"
 
@@ -185,7 +193,15 @@ def pick_specialists(spec: dict[str, Any]) -> list[Persona]:
 
 
 async def _emit_agent_state(event_id: str, agent_id: str, new_state: str) -> None:
-    """Update SpecialistCallContext.state + broadcast."""
+    """Update SpecialistCallContext.state + broadcast.
+
+    `state` is a lifecycle marker: "submitted" means this specialist reached
+    its terminal step, which for a prepared-artifact persona is a document,
+    not a counterparty acceptance. `terminal_outcome` is the honest claim, so
+    it rides along on every broadcast — a surface that renders only `state`
+    has no way to tell "a provider took this" from "we wrote this for you",
+    and it was showing the former for both.
+    """
     event = state.events.get(event_id)
     if event is None:
         return
@@ -201,6 +217,12 @@ async def _emit_agent_state(event_id: str, agent_id: str, new_state: str) -> Non
         "event_id": event_id,
         "agent_id": agent_id,
         "state": new_state,
+        "terminal_outcome": ctx.terminal_outcome,
+        # Deployment-wide, but it rides on the frame because the public feed
+        # carries nothing else: with every outbound recipient rewritten to the
+        # operator's inbox, a "submitted" here reached no counterparty, and the
+        # public swarm was tallying it as one.
+        "demo_routing": bool(settings.agentmail_demo_recipient_override.strip()),
         "ts": time.time(),
     })
 
@@ -485,8 +507,19 @@ async def finalize_event(event_id: str) -> None:
     event.finalization_started = True
     try:
         failed = [ctx.agent_id for ctx in contexts if ctx.state == "failed"]
+        # submitted_count is rendered as "N submitted" next to a tooltip that
+        # says a provider accepted the request. Prepared artifacts reached
+        # nobody, so they get their own count instead of inflating that one.
+        terminal = [
+            ctx for ctx in contexts if ctx.state in {"submitted", "succeeded"}
+        ]
+        prepared = [
+            ctx.agent_id for ctx in terminal
+            if ctx.terminal_outcome == "prepared_for_user"
+        ]
         submitted = [
-            ctx.agent_id for ctx in contexts if ctx.state in {"submitted", "succeeded"}
+            ctx.agent_id for ctx in terminal
+            if ctx.terminal_outcome != "prepared_for_user"
         ]
         outcome = "partial_failure" if failed else "submitted"
 
@@ -535,6 +568,7 @@ async def finalize_event(event_id: str) -> None:
             "outcome": outcome,
             "summary": {
                 "submitted_count": len(submitted),
+                "prepared_count": len(prepared),
                 "failed_count": len(failed),
                 "summary_email_sent": bool(email_result),
                 "memory_persisted": bool(persist_result),
@@ -586,7 +620,20 @@ async def _send_playbook_digest(event) -> None:  # noqa: ANN001 - MarketplaceEve
             body_markdown=body,
         )
         if result:
-            event.playbook_digest_sent = True
+            # A receipt proves the provider accepted the message, not that it
+            # reached the customer: demo routing rewrites the recipient to the
+            # operator's inbox. Only a match with the address the customer gave
+            # may set the flag the tracker renders as "sent to your inbox".
+            delivered_to = str(result.get("to") or "").strip().lower()
+            if delivered_to == user_email.strip().lower():
+                event.playbook_digest_sent = True
+            else:
+                event.playbook_digest_rerouted = True
+                log.warning(
+                    "playbook digest rerouted away from the customer: "
+                    "event=%s intended=%s delivered=%s",
+                    event.id, user_email, delivered_to,
+                )
             state.save_event(event)
             log.info("playbook digest emailed: event=%s count=%d", event.id, len(playbooks))
         else:

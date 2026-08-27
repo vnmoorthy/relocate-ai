@@ -13,6 +13,8 @@ import {
   replyLine,
   shortMoveRef,
   sortQuotedReplies,
+  taskIsPrepared,
+  type MoveOverlayEntry,
   type MoveReply,
   type MoveReplyQuote,
   type MoveSnapshot,
@@ -25,6 +27,10 @@ export type MoveConn = "connecting" | "live" | "offline";
 // Reused verbatim from the dashboard's submitted tooltip — same honest wording.
 const SUBMITTED_TOOLTIP =
   "Provider accepted the request; the underlying service change is not confirmed complete.";
+// Prepared work never touched a counterparty, so it must never inherit the
+// sentence above. This is the whole difference between the two buckets.
+const PREPARED_TOOLTIP =
+  "Prepared for you — no provider was contacted; the final step is yours.";
 
 /** Status dot + word — same palette and labels as the dashboard's AgentCell. */
 const STATE_META: Record<string, { label: string; dot: string; text: string; pulse?: boolean }> = {
@@ -33,6 +39,7 @@ const STATE_META: Record<string, { label: string; dot: string; text: string; pul
   calling: { label: "CALLING", dot: "bg-[var(--amber)]", text: "text-[var(--amber)]" },
   "in-progress": { label: "LIVE", dot: "bg-[var(--red)]", text: "text-[var(--red)]", pulse: true },
   submitted: { label: "SUBMITTED", dot: "bg-[var(--tier-haiku)]", text: "text-[var(--tier-haiku)]" },
+  prepared: { label: "PREPARED", dot: "bg-[var(--ink-300)]", text: "text-[var(--ink-300)]" },
   succeeded: { label: "DONE", dot: "bg-[var(--mint)]", text: "text-[var(--mint)]" },
   "needs-user-action": { label: "ACTION", dot: "bg-[var(--amber)]", text: "text-[var(--amber)]" },
   failed: { label: "FAILED", dot: "bg-[var(--red)]", text: "text-[var(--red)]" },
@@ -45,7 +52,7 @@ export interface MoveDetailProps {
   /** Parsed snapshot from GET /api/public/move/{event_id}. */
   snapshot: MoveSnapshot;
   /** Live agent_state overlay, keyed by agent id — strictly newer than the snapshot. */
-  overlay: Record<string, { state: string }>;
+  overlay: Record<string, MoveOverlayEntry>;
   /** Connection state of the public feed feeding that overlay. */
   conn: MoveConn;
   /** True once an event_finalized arrived live, ahead of the next snapshot. */
@@ -74,10 +81,13 @@ export function MoveDetail({
   onUnlocked,
 }: MoveDetailProps) {
   const tasks = useMemo(
-    () => mergeMoveTasks(snapshot.specialists, overlay),
+    () => mergeMoveTasks(snapshot.specialists, overlay, snapshot.demoRouting),
     [snapshot, overlay],
   );
-  const counts = useMemo(() => moveTaskCounts(tasks), [tasks]);
+  const counts = useMemo(
+    () => moveTaskCounts(tasks, snapshot.demoRouting),
+    [tasks, snapshot.demoRouting],
+  );
   const quotedReplies = useMemo(() => sortQuotedReplies(snapshot.replies), [snapshot]);
   const ownTasks = tasks.filter((task) => task.state === "needs-user-action");
   const finalized = snapshot.finalized || finalizedLive;
@@ -140,6 +150,12 @@ export function MoveDetail({
                 className="text-[var(--tier-haiku)]"
                 title={SUBMITTED_TOOLTIP}
               />
+              <Count
+                n={counts.prepared}
+                label="Prepared"
+                className="text-[var(--ink-300)]"
+                title={PREPARED_TOOLTIP}
+              />
               <Count n={counts.action} label="Need you" className="text-[var(--amber)]" />
               <Count n={counts.failed} label="Failed" className="text-[var(--red)]" />
               <Count n={counts.working} label="Working" className="text-[var(--ink-300)]" />
@@ -150,13 +166,16 @@ export function MoveDetail({
             <div
               className="mv-bar"
               role="img"
-              aria-label={`${counts.done} done, ${counts.submitted} submitted, ${counts.action} need you, ${counts.failed} failed, ${counts.working} working — ${counts.total} tasks total`}
+              aria-label={`${counts.done} done, ${counts.submitted} submitted, ${counts.prepared} prepared, ${counts.action} need you, ${counts.failed} failed, ${counts.working} working — ${counts.total} tasks total`}
             >
               {counts.done > 0 && (
                 <span style={{ flexGrow: counts.done }} className="bg-[var(--mint)]" />
               )}
               {counts.submitted > 0 && (
                 <span style={{ flexGrow: counts.submitted }} className="bg-[var(--tier-haiku)]" />
+              )}
+              {counts.prepared > 0 && (
+                <span style={{ flexGrow: counts.prepared }} className="bg-[var(--ink-300)]" />
               )}
               {counts.action > 0 && (
                 <span style={{ flexGrow: counts.action }} className="bg-[var(--amber)]" />
@@ -172,23 +191,42 @@ export function MoveDetail({
               )}
             </div>
             {/* What actually left the building. Without this the page reads
-                as a to-do list and hides the work the swarm really did. */}
-            <p className="mv-work">
-              <strong>{snapshot.outboundRequests}</strong>{" "}
-              {snapshot.outboundRequests === 1 ? "request" : "requests"} sent to real
-              providers
-              {snapshot.repliesReceived > 0 && (
-                <>
-                  {" · "}
-                  <strong>{snapshot.repliesReceived}</strong>{" "}
-                  {snapshot.repliesReceived === 1 ? "reply" : "replies"} back
-                </>
-              )}
-              . Everything else was prepared for you or needs something only you have.
-            </p>
+                as a to-do list and hides the work the swarm really did — and
+                under demo routing nothing left the building at all, so the
+                sentence has to say that instead of counting the attempts. */}
+            {snapshot.demoRouting ? (
+              <p className="mv-work">
+                Demo routing is on: every outbound message went to this
+                deployment&rsquo;s own inbox, so <strong>no provider was contacted</strong>
+                {snapshot.repliesReceived > 0 && (
+                  <>
+                    {" and the "}
+                    <strong>{snapshot.repliesReceived}</strong>{" "}
+                    {snapshot.repliesReceived === 1 ? "reply" : "replies"} below arrived
+                    there too
+                  </>
+                )}
+                . Everything here was prepared for you or needs something only you have.
+              </p>
+            ) : (
+              <p className="mv-work">
+                <strong>{snapshot.outboundRequests}</strong>{" "}
+                {snapshot.outboundRequests === 1 ? "request" : "requests"} sent to real
+                providers
+                {snapshot.repliesReceived > 0 && (
+                  <>
+                    {" · "}
+                    <strong>{snapshot.repliesReceived}</strong>{" "}
+                    {snapshot.repliesReceived === 1 ? "reply" : "replies"} back
+                  </>
+                )}
+                . Everything else was prepared for you or needs something only you have.
+              </p>
+            )}
             <p className="mv-honest">
               Submitted means the provider accepted the request — the underlying service
-              change is not confirmed complete.
+              change is not confirmed complete. Prepared means nobody was contacted at
+              all: the document is yours to send or sign.
             </p>
           </div>
         </div>
@@ -337,7 +375,7 @@ export function MoveDetail({
         ) : (
           <ul className="mv-list">
             {tasks.map((task) => (
-              <TaskRow key={task.agentId} task={task} />
+              <TaskRow key={task.agentId} task={task} demoRouting={snapshot.demoRouting} />
             ))}
           </ul>
         )}
@@ -381,8 +419,19 @@ function Count({
   );
 }
 
-function TaskRow({ task }: { task: MoveTaskView }) {
-  const meta = STATE_META[task.state] ?? STATE_META.dispatched;
+function TaskRow({
+  task,
+  demoRouting,
+}: {
+  task: MoveTaskView;
+  demoRouting: boolean;
+}) {
+  // The badge is the headline claim on this row, so it follows the outcome,
+  // not the lifecycle state: a specialist that contacted nobody must never
+  // wear the same word as one a provider actually accepted — and under demo
+  // routing no specialist reached anybody at all.
+  const prepared = taskIsPrepared(task.state, task.terminalOutcome, demoRouting);
+  const meta = (prepared ? STATE_META.prepared : STATE_META[task.state]) ?? STATE_META.dispatched;
   const mod =
     task.state === "needs-user-action"
       ? "mv-row--action"

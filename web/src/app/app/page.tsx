@@ -36,10 +36,13 @@ import { discoverLiveApi, publicWsUrl } from "@/lib/live-config";
 import {
   cityFromAddress,
   formatMoveDate,
+  isTerminalTaskState,
   moveIdFromHash,
   moveSnapshotUrl,
   parseMoveSnapshot,
+  pruneMoveOverlay,
   shortMoveRef,
+  type MoveOverlayEntry,
   type MoveSnapshot,
 } from "@/lib/move-page";
 
@@ -51,6 +54,20 @@ const MOVES_POLL_MS = 20_000;
 const REDISCOVERY_MS = 60_000;
 const THROTTLE_RETRY_MS = 20_000;
 const ERROR_RETRY_MS = 15_000;
+/**
+ * Re-reads of a freshly opened move. The socket can only match this move once
+ * the snapshot has handed over its public alias, so every agent_state
+ * broadcast before that point was dropped — and fan-out finishes in about a
+ * second, which is inside that window. One snapshot is therefore never
+ * evidence of a final state: the pane reconciles with the server until the
+ * move stops changing.
+ */
+const RECONCILE_MS = 4_000;
+/** Extra re-reads even once every task looks terminal (the states this pane
+ *  missed are exactly the ones the snapshot had not recorded yet). */
+const SETTLED_RECONCILES = 3;
+/** Ceiling for a move that never settles, so a stuck task cannot poll forever. */
+const MAX_RECONCILES = 20;
 /** setTimeout fires immediately past this, so a far-off expiry is not scheduled. */
 const MAX_TIMEOUT_MS = 2_147_483_647;
 
@@ -70,7 +87,7 @@ interface DetailView {
   forId: string;
   phase: DetailPhase;
   snapshot: MoveSnapshot | null;
-  overlay: Record<string, { state: string }>;
+  overlay: Record<string, MoveOverlayEntry>;
   finalizedLive: boolean;
   retryReason: "throttled" | "error" | null;
 }
@@ -225,6 +242,12 @@ export default function WorkspacePage() {
     };
   }, [api, token, movesNonce, signOut]);
 
+  // Read by the snapshot effect, which must not re-run every list poll.
+  const movesRef = useRef<DemoMoveSummary[]>([]);
+  useEffect(() => {
+    movesRef.current = moves.items;
+  }, [moves.items]);
+
   // ── Move snapshot ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!api || !selectedId) {
@@ -234,12 +257,16 @@ export default function WorkspacePage() {
     const moveId = selectedId;
     let cancelled = false;
     let retryTimer: number | undefined;
+    let reconciles = 0;
 
     const patch = (mutate: (current: DetailView) => DetailView) => {
       setDetail((prev) => mutate(prev && prev.forId === moveId ? prev : emptyDetail(moveId)));
     };
 
     const load = async (silent: boolean) => {
+      // One chain at a time: a reload from the socket takes over the pending
+      // reconcile rather than running a second timer beside it.
+      window.clearTimeout(retryTimer);
       try {
         const res = await fetch(moveSnapshotUrl(api, moveId), { cache: "no-store" });
         if (cancelled) return;
@@ -261,8 +288,22 @@ export default function WorkspacePage() {
         if (cancelled) return;
         if (!snapshot) throw new Error("snapshot payload malformed");
         publicRefRef.current = snapshot.public_ref;
-        // A fresh snapshot is authoritative; live events re-apply on top.
-        patch((v) => ({ ...v, phase: "ready", snapshot, overlay: {}, retryReason: null }));
+        // A fresh snapshot is authoritative for everything it already knows
+        // about; only live events newer than the snapshot itself survive it.
+        patch((v) => ({
+          ...v,
+          phase: "ready",
+          snapshot,
+          overlay: pruneMoveOverlay(v.overlay, snapshot.ts),
+          retryReason: null,
+        }));
+        const settled =
+          snapshot.specialists.length > 0 &&
+          snapshot.specialists.every((specialist) => isTerminalTaskState(specialist.state));
+        if (reconciles < (settled ? SETTLED_RECONCILES : MAX_RECONCILES)) {
+          reconciles += 1;
+          retryTimer = window.setTimeout(() => void load(true), RECONCILE_MS);
+        }
       } catch {
         if (cancelled) return;
         if (!silent) patch((v) => ({ ...v, phase: "retry", retryReason: "error" }));
@@ -271,6 +312,13 @@ export default function WorkspacePage() {
     };
 
     reloadDetailRef.current = () => void load(true);
+    // The list row already carries this move's public alias. Seeding it here
+    // means the socket starts matching before the snapshot comes back,
+    // instead of discarding every event that lands in between. A move
+    // dispatched seconds ago is not in the list yet — that gap is what the
+    // reconcile re-reads above are for.
+    publicRefRef.current =
+      movesRef.current.find((move) => move.eventId === moveId)?.publicRef ?? "";
     void load(false);
 
     return () => {
@@ -337,7 +385,14 @@ export default function WorkspacePage() {
         if (event.type === "agent_state") {
           patchDetail((v) => ({
             ...v,
-            overlay: { ...v.overlay, [event.agent_id]: { state: event.state } },
+            overlay: {
+              ...v.overlay,
+              [event.agent_id]: {
+                state: event.state,
+                ts: event.ts,
+                terminalOutcome: event.terminal_outcome ?? null,
+              },
+            },
           }));
         } else if (event.type === "event_finalized") {
           patchDetail((v) => ({ ...v, finalizedLive: true }));

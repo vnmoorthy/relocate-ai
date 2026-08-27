@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { AgentGlyph } from "@/components/AgentGlyph";
 import { publicFeedText, redactDisplayText } from "@/lib/privacy";
+import { isPreparedOutcome } from "@/lib/types";
 import { tierMeta } from "@/lib/tiers";
 
 /**
@@ -23,6 +24,10 @@ interface Props {
   name: string;
   category: string;
   state: string | undefined;
+  /** Honest outcome behind the state — "prepared_for_user" is not a send. */
+  terminalOutcome?: string | null;
+  /** Deployment reroutes all outbound mail to itself, so nothing was sent. */
+  demoRouting?: boolean;
   sinceTs: number | undefined;
   transcript: Array<{ role: string; text: string; ts: number; turn: number; tier?: string }>;
   demoMode: boolean;
@@ -39,6 +44,7 @@ const STATE: Record<string, { label: string; short: string; dot: string; text: s
   calling: { label: "CALLING", short: "CALL", dot: "bg-[var(--amber)]", text: "text-[var(--amber)]" },
   "in-progress": { label: "LIVE", short: "LIVE", dot: "bg-[var(--red)]", text: "text-[var(--red)]", pulse: true },
   submitted: { label: "SUBMITTED", short: "SUB", dot: "bg-[var(--tier-haiku)]", text: "text-[var(--tier-haiku)]" },
+  prepared: { label: "PREPARED", short: "PREP", dot: "bg-[var(--ink-300)]", text: "text-[var(--ink-300)]" },
   succeeded: { label: "DONE", short: "DONE", dot: "bg-[var(--mint)]", text: "text-[var(--mint)]" },
   "needs-user-action": { label: "ACTION", short: "ACT", dot: "bg-[var(--amber)]", text: "text-[var(--amber)]" },
   failed: { label: "FAILED", short: "FAIL", dot: "bg-[var(--red)]", text: "text-[var(--red)]" },
@@ -52,6 +58,8 @@ export function AgentCell({
   name,
   category,
   state,
+  terminalOutcome = null,
+  demoRouting = false,
   sinceTs,
   transcript,
   demoMode,
@@ -63,6 +71,7 @@ export function AgentCell({
     if (
       !sinceTs ||
       state === "submitted" ||
+      state === "prepared" ||
       state === "succeeded" ||
       state === "needs-user-action" ||
       state === "failed" ||
@@ -76,7 +85,10 @@ export function AgentCell({
     return () => clearInterval(interval);
   }, [sinceTs, state]);
 
-  const s = STATE[state ?? "idle"] ?? STATE.idle;
+  // A specialist that produced the customer's next step contacted nobody, so
+  // it wears its own word — never SUBMITTED, whichever way the server said it.
+  const prepared = isPreparedOutcome(state, terminalOutcome, demoRouting);
+  const s = (prepared ? STATE.prepared : STATE[state ?? "idle"]) ?? STATE.idle;
   const lastTurn = transcript.length > 0 ? transcript[transcript.length - 1] : undefined;
   const lastAgentTurn = [...transcript].reverse().find((t) => t.role === "agent");
   const isLive = state === "in-progress";
@@ -163,7 +175,14 @@ export function AgentCell({
         aria-live={isLive ? "polite" : "off"}
         aria-label={`${name} transcript, sensitive values redacted`}
       >
-        {state === "submitted" && lastAgentTurn ? (
+        {prepared && lastAgentTurn ? (
+          <span
+            className="font-mono-tight text-[11px] leading-snug text-[var(--ink-300)] node-line flex-1 min-w-0"
+            title="Prepared for you — no provider was contacted; the final step is yours."
+          >
+            ▪ prepared · {extractBid(lastAgentTurn.text)}
+          </span>
+        ) : state === "submitted" && lastAgentTurn ? (
           <span
             className="font-mono-tight text-[11px] leading-snug text-[var(--tier-haiku)] node-line flex-1 min-w-0"
             title="Provider accepted the request; the underlying service change is not confirmed complete."

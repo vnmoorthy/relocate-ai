@@ -41,7 +41,16 @@ _PASSTHROUGH_KEYS: dict[str, tuple[str, ...]] = {
     # "bootstrap" marks a current-state replay rather than a live transition:
     # the client uses it to avoid letting a stale replay overwrite fresher
     # live state or reset its event-pinning clock.
-    "agent_state": ("type", "event_id", "agent_id", "state", "ts", "bootstrap"),
+    # terminal_outcome is a fixed enum (submitted / prepared_for_user /
+    # needs_user_action / failed), carries no PII, and is the only thing that
+    # distinguishes "a provider took this" from "we wrote this for you" — the
+    # public swarm was counting both as submitted without it.
+    # demo_routing is a deployment-wide boolean, no PII, and the only way the
+    # public swarm can tell an accepted request from one that never left.
+    "agent_state": (
+        "type", "event_id", "agent_id", "state", "terminal_outcome",
+        "demo_routing", "ts", "bootstrap",
+    ),
     "routing_decision": ("type", "event_id", "agent_id", "tier", "reason", "complexity", "turn", "ts"),
     "cost_update": ("type", "event_id", "pavo_cents", "baseline_cents", "decisions", "tier_counts", "ts"),
     "event_waiting_for_user": ("type", "event_id", "agents", "count", "ts"),

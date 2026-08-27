@@ -7,7 +7,7 @@
  * anything malformed degrades to a safe default instead of throwing.
  */
 
-import { ALL_AGENTS } from "./types.ts";
+import { ALL_AGENTS, isPreparedOutcome } from "./types.ts";
 
 // ── Move id (URL hash) ────────────────────────────────────────────────────
 
@@ -154,6 +154,20 @@ export interface MoveSpecialistSnapshot {
   playbookTitle: string | null;
   /** True only once the digest email actually returned a provider receipt. */
   playbookDelivered: boolean;
+  /**
+   * Why that digest is not with the reader, when it is not: "rerouted" is a
+   * send that succeeded to somebody else (demo routing), which is neither a
+   * delivery nor a send still to come. Null on deployments that do not state
+   * it, where playbookDelivered is the whole story.
+   */
+  playbookDelivery: PlaybookDelivery | null;
+}
+
+/** The states the server distinguishes for a prepared digest. */
+export type PlaybookDelivery = "delivered" | "pending" | "rerouted";
+
+function asPlaybookDelivery(value: unknown): PlaybookDelivery | null {
+  return value === "delivered" || value === "pending" || value === "rerouted" ? value : null;
 }
 
 /** Deterministic quote facts extracted from a provider's emailed reply. */
@@ -168,6 +182,12 @@ export interface MoveReply {
   receivedAt: number | null;
   /** Which specialist's outreach this reply answers, when the backend knows. */
   agentId: string | null;
+  /**
+   * True when this reply came from the deployment's own demo inbox rather
+   * than from a counterparty. It is still a real message, but it is not a
+   * provider's bid and must never be ranked against one.
+   */
+  selfRouted: boolean;
   quote: MoveReplyQuote | null;
 }
 
@@ -189,6 +209,15 @@ export interface MoveSnapshot {
   dispatched: boolean;
   finalized: boolean;
   final_outcome: string | null;
+  /** Server ts (epoch seconds) this snapshot describes; 0 when unstated. */
+  ts: number;
+  /**
+   * True when the deployment reroutes every outbound message to its own demo
+   * inbox. Nothing reaches a provider then, so no copy on this page may claim
+   * one was contacted. Absent on deployments that do not send the flag, which
+   * is the honest default: normal routing.
+   */
+  demoRouting: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -256,6 +285,7 @@ export function parseMoveSnapshot(raw: unknown): MoveSnapshot | null {
         actionUrl: asHttpsUrlOrNull(item.action_url),
         playbookTitle: asNonEmptyStringOrNull(item.playbook_title),
         playbookDelivered: item.playbook_delivered === true,
+        playbookDelivery: asPlaybookDelivery(item.playbook_delivery),
       });
     }
   }
@@ -272,6 +302,7 @@ export function parseMoveSnapshot(raw: unknown): MoveSnapshot | null {
             ? item.received_at
             : null,
         agentId: asNonEmptyStringOrNull(item.agent_id),
+        selfRouted: item.self_routed === true,
         quote: parseReplyQuote(item.quote),
       });
     }
@@ -304,6 +335,8 @@ export function parseMoveSnapshot(raw: unknown): MoveSnapshot | null {
     dispatched: raw.dispatched === true,
     finalized: raw.finalized === true,
     final_outcome: typeof raw.final_outcome === "string" ? raw.final_outcome : null,
+    ts: typeof raw.ts === "number" && Number.isFinite(raw.ts) ? raw.ts : 0,
+    demoRouting: raw.demo_routing === true,
   };
 }
 
@@ -323,6 +356,11 @@ const BLOCKER_LINES: Record<string, string> = {
  * One-line human explanation for a task row. On a user-action row a prepared
  * playbook wins (the system already emailed a script for it); blocker copy is
  * the fallback, then plain state copy.
+ *
+ * `demoRouting` reroutes every honest claim about delivery: on a deployment
+ * that collapses all outbound mail into its own demo inbox, nothing reached
+ * the provider and nothing reached the reader either, and every line here has
+ * to say so rather than describe the send that was attempted.
  */
 export function taskLine(
   state: string,
@@ -331,27 +369,45 @@ export function taskLine(
   playbookDelivered = false,
   terminalOutcome: string | null = null,
   did: string | null = null,
+  demoRouting = false,
+  playbookDelivery: PlaybookDelivery | null = null,
 ): string {
   if (state === "needs-user-action" && playbookTitle) {
+    // A digest that went somewhere else is not on its way to the reader, and
+    // "emailing it to you" would be a stall dressed up as progress.
+    if (playbookDelivery === "rerouted" || (playbookDelivery === null && demoRouting)) {
+      return `Prepared: ${playbookTitle} — demo routing sent it to the operator's inbox, not yours.`;
+    }
     return playbookDelivered
       ? `Prepared: ${playbookTitle} — sent to your inbox.`
       : `Prepared: ${playbookTitle} — emailing it to you.`;
   }
   if (blockerKind && BLOCKER_LINES[blockerKind]) return BLOCKER_LINES[blockerKind];
+  // The server's own account of a self-delivered specialist: its one email
+  // went to the customer, never to a provider.
+  if (did === "Sent to your inbox") {
+    return demoRouting
+      ? "Prepared for you — demo routing sent it to the operator's inbox, not yours."
+      : "Sent to your inbox — the final step is yours.";
+  }
+  // Prepared work reached no counterparty at all, whichever way the server
+  // said so. It is terminal, but it is not a submission.
+  if (isPreparedOutcome(state, terminalOutcome)) {
+    return "Prepared for you — the final step is yours.";
+  }
   switch (state) {
     case "submitted":
-      // The server reports what this specialist actually did — how many
-      // providers it asked, or that its only email went to the customer.
-      // Anything vaguer reads as work that did not happen.
+      // The server reports how many providers this specialist asked. Anything
+      // vaguer reads as work that did not happen — and under demo routing the
+      // ask itself never left the deployment.
       if (did && did.startsWith("Requested from")) {
         return `${did} — awaiting their reply.`;
       }
-      if (did === "Sent to your inbox") {
-        return "Sent to your inbox — the final step is yours.";
-      }
-      return terminalOutcome === "prepared_for_user"
-        ? "Prepared for you — the final step is yours."
-        : "Request submitted — provider acceptance, not completion.";
+      // The server states the rest in its own words — a partial fan-out, or a
+      // request demo routing never let out of the building. Its account is
+      // more truthful than any generic line this page could substitute.
+      if (did) return `${did}.`;
+      return "Request submitted — provider acceptance, not completion.";
     case "succeeded":
       return "Done.";
     case "failed":
@@ -390,6 +446,7 @@ export interface MoveTaskView {
   blockerKind: string | null;
   playbookTitle: string | null;
   playbookDelivered: boolean;
+  playbookDelivery: PlaybookDelivery | null;
   terminalOutcome: string | null;
   /** The server's own account of what this specialist did. */
   did: string | null;
@@ -411,6 +468,72 @@ export function moveAgentName(agentId: string | null): string | null {
 }
 
 /**
+ * One live agent_state event, as the pages keep it: the state, when the
+ * server said it, and the honest outcome behind it. `ts` is what makes a
+ * later snapshot comparable to it (see pruneMoveOverlay).
+ */
+export interface MoveOverlayEntry {
+  state: string;
+  ts: number;
+  terminalOutcome: string | null;
+}
+
+/**
+ * Overlay entries still worth keeping across a snapshot refresh: only the
+ * ones the snapshot cannot already know about. Wiping the overlay would roll
+ * a task back to a state the server has already superseded; keeping all of it
+ * would pin a stale live state over a fresher snapshot.
+ */
+export function pruneMoveOverlay(
+  overlay: Record<string, MoveOverlayEntry>,
+  snapshotTs: number,
+): Record<string, MoveOverlayEntry> {
+  const kept: Record<string, MoveOverlayEntry> = {};
+  for (const [agentId, live] of Object.entries(overlay)) {
+    if (live.ts > snapshotTs) kept[agentId] = live;
+  }
+  return kept;
+}
+
+/**
+ * States a specialist never leaves. A snapshot where every task is terminal
+ * is the only one worth trusting as final — anything else means the page is
+ * still watching a move that has not settled.
+ */
+const TERMINAL_TASK_STATES = new Set([
+  "submitted",
+  "prepared",
+  "succeeded",
+  "needs-user-action",
+  "failed",
+  "error",
+  "closed",
+  "voicemail",
+]);
+
+export function isTerminalTaskState(state: string): boolean {
+  return TERMINAL_TASK_STATES.has(state);
+}
+
+/**
+ * Whether this row may claim a provider accepted its request.
+ *
+ * Two ways it may not. The outcome itself can say so (`isPreparedOutcome`),
+ * and demo routing can: it rewrites every outbound recipient to the
+ * deployment's own inbox, so on such a deployment NOTHING was submitted to
+ * anybody, whatever lifecycle state the specialist reached. The server says
+ * exactly that in its own `did` line ("no provider was contacted") — a
+ * SUBMITTED badge and a submitted tally beside that sentence contradict it.
+ */
+export function taskIsPrepared(
+  state: string,
+  terminalOutcome: string | null | undefined,
+  demoRouting = false,
+): boolean {
+  return isPreparedOutcome(state, terminalOutcome, demoRouting);
+}
+
+/**
  * Snapshot specialists overlaid with live agent_state events (overlay wins —
  * it is strictly newer than the snapshot). The concierge ("buyer") is not a
  * per-move task. A blocker — and the playbook prepared for it — survives only
@@ -418,7 +541,8 @@ export function moveAgentName(agentId: string | null): string | null {
  */
 export function mergeMoveTasks(
   specialists: MoveSpecialistSnapshot[],
-  overlay: Record<string, { state: string }>,
+  overlay: Record<string, MoveOverlayEntry>,
+  demoRouting = false,
 ): MoveTaskView[] {
   const byId = new Map<
     string,
@@ -427,6 +551,7 @@ export function mergeMoveTasks(
       blockerKind: string | null;
       playbookTitle: string | null;
       playbookDelivered: boolean;
+      playbookDelivery: PlaybookDelivery | null;
       terminalOutcome: string | null;
       did: string | null;
       actionUrl: string | null;
@@ -440,6 +565,7 @@ export function mergeMoveTasks(
       blockerKind: specialist.blocker_kind,
       playbookTitle: specialist.playbookTitle,
       playbookDelivered: specialist.playbookDelivered,
+      playbookDelivery: specialist.playbookDelivery,
       terminalOutcome: specialist.terminal_outcome,
       did: specialist.did,
       actionUrl: specialist.actionUrl,
@@ -455,7 +581,11 @@ export function mergeMoveTasks(
       blockerKind: stateHolds ? base.blockerKind : null,
       playbookTitle: stateHolds ? base.playbookTitle : null,
       playbookDelivered: stateHolds ? base.playbookDelivered : false,
-      terminalOutcome: stateHolds ? base.terminalOutcome : null,
+      playbookDelivery: stateHolds ? base.playbookDelivery : null,
+      // The live event carries its own outcome; only fall back to the
+      // snapshot's when the state it described still holds. Without this a
+      // prepared specialist would spend the live window labelled SUBMITTED.
+      terminalOutcome: live.terminalOutcome ?? (stateHolds ? base.terminalOutcome : null),
       did: stateHolds ? base.did : null,
       actionUrl: stateHolds ? base.actionUrl : null,
       missingFields: stateHolds ? base.missingFields : [],
@@ -472,6 +602,7 @@ export function mergeMoveTasks(
       blockerKind: task.blockerKind,
       playbookTitle: task.playbookTitle,
       playbookDelivered: task.playbookDelivered,
+      playbookDelivery: task.playbookDelivery,
       terminalOutcome: task.terminalOutcome,
       did: task.did,
       actionUrl: task.actionUrl,
@@ -483,6 +614,8 @@ export function mergeMoveTasks(
         task.playbookDelivered,
         task.terminalOutcome,
         task.did,
+        demoRouting,
+        task.playbookDelivery,
       ),
     };
   });
@@ -520,7 +653,12 @@ export function sortQuotedReplies(
   return replies
     .filter(
       (reply): reply is MoveReply & { quote: MoveReplyQuote } =>
-        reply.quote !== null && reply.agentId !== null && QUOTE_AGENTS.has(reply.agentId),
+        reply.quote !== null &&
+        reply.agentId !== null &&
+        QUOTE_AGENTS.has(reply.agentId) &&
+        // A message the deployment sent to itself is not a competing bid, and
+        // badging it "Lowest" would present our own numbers as a mover's.
+        !reply.selfRouted,
     )
     .sort((a, b) => {
       const left = quoteTotalValue(a.quote.totalDisplay);
@@ -538,6 +676,7 @@ export interface MoveTaskCounts {
   total: number;
   working: number;
   submitted: number;
+  prepared: number;
   action: number;
   failed: number;
   done: number;
@@ -545,19 +684,28 @@ export interface MoveTaskCounts {
 
 /**
  * Honest buckets: submitted stays distinct from done (provider acceptance is
- * not completion), failed is never relabeled, and everything non-terminal
+ * not completion), prepared stays distinct from submitted (nobody was
+ * contacted at all), failed is never relabeled, and everything non-terminal
  * counts as working.
  */
-export function moveTaskCounts(tasks: Array<{ state: string }>): MoveTaskCounts {
+export function moveTaskCounts(
+  tasks: Array<{ state: string; terminalOutcome?: string | null }>,
+  demoRouting = false,
+): MoveTaskCounts {
   const counts: MoveTaskCounts = {
     total: tasks.length,
     working: 0,
     submitted: 0,
+    prepared: 0,
     action: 0,
     failed: 0,
     done: 0,
   };
   for (const task of tasks) {
+    if (taskIsPrepared(task.state, task.terminalOutcome, demoRouting)) {
+      counts.prepared += 1;
+      continue;
+    }
     switch (task.state) {
       case "submitted":
         counts.submitted += 1;

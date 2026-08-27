@@ -75,6 +75,22 @@ export function parseConciergeEnd(raw: unknown): ConciergeEnd | null {
   };
 }
 
+/**
+ * What the reader is told when a turn does not come back.
+ *
+ * 503 is the orchestrator stating that every completion provider is down.
+ * That is a definite, non-retryable failure, and "try that again" would send
+ * the reader round a loop that cannot succeed — a stall dressed up as a blip.
+ * Anything else, including a fetch that never produced a status at all, may
+ * genuinely be transient and is worded that way.
+ */
+export function turnFailureMessage(status: number | null): string {
+  if (status === 503) {
+    return "The concierge is unavailable right now — nothing was captured and nothing was dispatched. The typed form below still dispatches the same move.";
+  }
+  return "Couldn't reach the concierge just then. Try that again.";
+}
+
 // ── Conversation state ────────────────────────────────────────────────────
 
 const MAX_HISTORY_TURNS = 12;

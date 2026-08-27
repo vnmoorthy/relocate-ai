@@ -99,6 +99,10 @@ class MarketplaceEvent:
     # your inbox" line is gated on this — a failed send must never be
     # reported to the user as delivered.
     playbook_digest_sent: bool = False
+    # Demo routing sends the digest to the operator's inbox instead of the
+    # customer's. The send succeeded, but "sent to your inbox" would be false,
+    # so the reroute is recorded separately rather than folded into "sent".
+    playbook_digest_rerouted: bool = False
     prepared_docs_sent: bool = False
     arrival_pack_sent: bool = False
     finalization_started: bool = False

@@ -1,4 +1,4 @@
-import type { WSEvent } from "./types";
+import { ALL_AGENTS, type WSEvent } from "./types.ts";
 
 /**
  * Demo replay — fake WSEvent timeline used when no live orchestrator is reachable
@@ -13,9 +13,9 @@ import type { WSEvent } from "./types";
  *   ~8–17s   staggered specialist fan-out
  *   ~9–44s   interleaved specialist transcript turns
  *   ~27s     spectrum_austin fails (isolated — the other 15 keep working)
- *   ~28–45s  terminal cascade: 12 submitted, 3 needs-user-action
+ *   ~28–45s  terminal cascade: 10 submitted, 14 prepared, 3 needs-user-action
  *   ~46s     event_waiting_for_user (the three signature/consent handoffs)
- *   ~57s     event_finalized (partial_failure: 12 submitted, 1 failed)
+ *   ~57s     event_finalized (partial_failure: 10 submitted, 1 failed)
  * Cost ticks fire every 2s from 8s to 54s so no stretch goes visually dead.
  *
  * Terminal states mirror the runtime policy (see DEMO_SCRIPT.md narration rules):
@@ -193,13 +193,29 @@ const SCRIPTS: Record<string, Step[]> = {
 
 // Honest terminal states, mirroring the runtime policy: signature/consent-gated
 // workflows hand off to the user; one synthetic provider failure stays isolated.
-type TerminalState = "submitted" | "needs-user-action" | "failed";
+type TerminalState = "submitted" | "prepared" | "needs-user-action" | "failed";
 const TERMINAL_STATES: Record<string, TerminalState> = {
   spectrum_austin: "failed",
   pcp_transfer: "needs-user-action",
   gym_cancel: "needs-user-action",
   uscis_ar11: "needs-user-action",
 };
+
+/**
+ * Specialists that contact no counterparty at all: the prepared-artifact
+ * roster, plus the two whose single email goes to the customer. Their honest
+ * terminal state is `prepared` — calling it "submitted" here would have the
+ * offline replay tell a different story from the live feed.
+ */
+const PREPARED_AGENTS = new Set<string>([
+  ...ALL_AGENTS.filter((agent) => agent.mode === "prepared").map((agent) => agent.id),
+  "flight_book",
+  "bank_notify",
+]);
+
+function terminalStateFor(agentId: string): TerminalState {
+  return TERMINAL_STATES[agentId] ?? (PREPARED_AGENTS.has(agentId) ? "prepared" : "submitted");
+}
 
 // Per-agent gap between transcript turns (ms). Hand-tuned so turns interleave
 // across the whole run and terminal states cascade from ~28s to ~45s instead of
@@ -464,7 +480,7 @@ export function buildDemoTimeline(): Array<{ at_ms: number; event: WSEvent }> {
         type: "agent_state",
         event_id: EVENT_ID,
         agent_id,
-        state: TERMINAL_STATES[agent_id] ?? "submitted",
+        state: terminalStateFor(agent_id),
         ts: 0,
       },
     });
@@ -521,8 +537,10 @@ export function buildDemoTimeline(): Array<{ at_ms: number; event: WSEvent }> {
     });
   }
 
+  // Prepared work is excluded on purpose: submitted_count is what a provider
+  // accepted, and the replay must not inflate it any more than the live feed.
   const submittedCount = SPECIALIST_IDS.filter(
-    (agentId) => (TERMINAL_STATES[agentId] ?? "submitted") === "submitted",
+    (agentId) => terminalStateFor(agentId) === "submitted",
   ).length;
   const failedCount = SPECIALIST_IDS.filter(
     (agentId) => TERMINAL_STATES[agentId] === "failed",

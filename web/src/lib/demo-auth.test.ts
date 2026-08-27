@@ -58,7 +58,9 @@ function hostileStore(): SessionStore {
 const SESSION: DemoSession = { token: "opaque-token", expiresAt: 2_000 };
 
 function counts(overrides: Partial<MoveTaskCounts> = {}): MoveTaskCounts {
-  return { total: 0, working: 0, submitted: 0, action: 0, failed: 0, done: 0, ...overrides };
+  return {
+    total: 0, working: 0, submitted: 0, prepared: 0, action: 0, failed: 0, done: 0, ...overrides,
+  };
 }
 
 // ── Endpoints ─────────────────────────────────────────────────────────────
@@ -252,9 +254,13 @@ test("sorting leaves the caller's array untouched", () => {
 test("only non-zero buckets become count figures, in tracker order", () => {
   assert.deepEqual(demoCountChips(counts()), []);
   assert.deepEqual(
-    demoCountChips(counts({ submitted: 3, action: 1, failed: 0, done: 2, working: 4, total: 10 })),
+    demoCountChips(
+      counts({ submitted: 3, prepared: 5, action: 1, failed: 0, done: 2, working: 4, total: 15 }),
+    ),
     [
       { key: "submitted", label: "Submitted", color: "var(--tier-haiku)", value: 3 },
+      // Prepared never folds into submitted: nobody was contacted for those.
+      { key: "prepared", label: "Prepared", color: "var(--ink-300)", value: 5 },
       { key: "action", label: "Need you", color: "var(--amber)", value: 1 },
       { key: "done", label: "Done", color: "var(--mint)", value: 2 },
     ],

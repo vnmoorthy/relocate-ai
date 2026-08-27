@@ -306,12 +306,12 @@ def test_field_corrections_sync_event_and_sensitive_values_are_not_broadcast() -
     first = main._extract_and_merge_fields(
         '{"origin_address":"123 Main St, SF, CA 94103",'
         '"user_email":"first@test.invalid","pge_last4_ssn":"1234"}',
-        ctx,
+        ctx, "I'm at 123 Main St, SF and my email is first at test dot invalid",
     )
     corrected = main._extract_and_merge_fields(
         '{"origin_address":"456 Oak St, SF, CA 94107",'
         '"user_email":"second@test.invalid"}',
-        ctx,
+        ctx, "sorry, 456 Oak St, and use second at test dot invalid",
     )
 
     assert first["origin_address"].startswith("123")
@@ -347,14 +347,14 @@ def test_example_regurgitation_is_dropped_but_coincidences_merge() -> None:
         "vet_email": example("vet_email"),
         "bank_name": example("bank_name"),
     })
-    merged = main._extract_and_merge_fields(regurgitated, ctx)
+    merged = main._extract_and_merge_fields(regurgitated, ctx, "we live at 9 Real Caller Way")
     assert set(merged) == {"origin_address"}
 
     # One coincidental example match alone (a real bank named Chase) merges.
     ctx2 = BuyerCallContext(call_id="call-chase", event_id=event.id, turn_count=1)
     state.buyer_contexts[ctx2.call_id] = ctx2
     merged2 = main._extract_and_merge_fields(
-        json.dumps({"bank_name": example("bank_name")}), ctx2,
+        json.dumps({"bank_name": example("bank_name")}), ctx2, "I bank with Chase",
     )
     assert merged2 == {"bank_name": example("bank_name")}
 
@@ -646,12 +646,14 @@ def test_lone_core_example_match_is_dropped() -> None:
     ctx = BuyerCallContext(call_id="c-regurg-core", event_id="mkt_regurg_core")
     merged = _extract_and_merge_fields(
         'Okay, May 31st it is. {"move_date": "2026-05-31"}', ctx,
+        "we're moving May 31st",
     )
     assert merged == {}
     assert "move_date" not in ctx.collected
 
     merged = _extract_and_merge_fields(
         'October 20th, got it. {"move_date": "2026-10-20"}', ctx,
+        "we're moving October 20th",
     )
     assert merged == {"move_date": "2026-10-20"}
     assert ctx.collected["move_date"] == "2026-10-20"
@@ -795,3 +797,84 @@ def test_backstop_reads_addresses_spoken_without_a_state() -> None:
     ]
     # A lowercase word after the comma is not a city, so this is not an address.
     assert extract_addresses("123 Main Street, please help me move") == []
+
+
+def test_household_flags_need_the_caller_to_have_mentioned_them() -> None:
+    """A model-emitted flag the caller never said is not a collected fact.
+
+    The prompt's own example household (pets yes, kids no, car yes) is also
+    the modal one, so it cannot be caught by value. Worse, an invented flag
+    silences the question: `blocking_fields` treats a present boolean as
+    answered, so nobody ever asks, and vet_transfer emails a stranger's clinic
+    about a pet that does not exist.
+    """
+    from app.buyer_schema import blocking_fields
+    from app.main import _extract_and_merge_fields
+    from app.state import BuyerCallContext
+
+    ctx = BuyerCallContext(call_id="c-household", event_id="mkt_household")
+    emitted = '{"has_pets": true, "has_children": false, "has_car": true}'
+
+    merged = _extract_and_merge_fields(
+        emitted, ctx, "We're moving from San Francisco to Austin.",
+    )
+    assert merged == {}
+    assert set(blocking_fields(ctx.collected)) >= {"has_pets", "has_children", "has_car"}
+
+    # Corroborated by the caller's own words, the same emission merges.
+    merged = _extract_and_merge_fields(
+        emitted, ctx, "One dog, no kids, and yeah we have a car.",
+    )
+    assert merged == {"has_pets": True, "has_children": False, "has_car": True}
+
+
+def test_a_move_date_appears_only_when_the_caller_mentioned_a_time() -> None:
+    """The prompt used to carry a hardcoded "Today is <date>", and the model
+    answered "when are you moving?" with it. Nothing compares a date to today,
+    so the invention shipped to movers as the PG&E shutoff date."""
+    from app.main import _extract_and_merge_fields
+    from app.state import BuyerCallContext
+
+    ctx = BuyerCallContext(call_id="c-nodate", event_id="mkt_nodate")
+    merged = _extract_and_merge_fields(
+        '{"move_date": "2026-05-17"}', ctx,
+        "I am moving from 950 Howard Street to 4700 Duval Street.",
+    )
+    assert merged == {} and "move_date" not in ctx.collected
+
+    merged = _extract_and_merge_fields(
+        '{"move_date": "2026-05-17"}', ctx, "we'd like to go on May 17th",
+    )
+    assert merged == {"move_date": "2026-05-17"}
+
+
+def test_non_string_example_values_are_dropped_too() -> None:
+    """household_size arrives as an int and slipped a string-only comparison,
+    so the example's "2" merged as something the caller stated."""
+    from app.buyer_schema import by_name
+    from app.main import _extract_and_merge_fields
+    from app.state import BuyerCallContext
+
+    field = by_name("household_size")
+    assert field is not None
+    ctx = BuyerCallContext(call_id="c-hsize", event_id="mkt_hsize")
+    merged = _extract_and_merge_fields(
+        json.dumps({
+            "household_size": int(field.example),
+            "user_name": by_name("user_name").example,  # type: ignore[union-attr]
+            "bank_name": by_name("bank_name").example,  # type: ignore[union-attr]
+        }),
+        ctx, "just the two of us",
+    )
+    assert merged == {}
+
+
+def test_the_buyer_prompt_carries_todays_date_not_a_frozen_one() -> None:
+    """Baked into an import-time f-string, the date froze at whatever day the
+    literal was written — and the model handed it back as the move date."""
+    from datetime import date
+
+    from app.personas import BUYER_PROMPT_BODY, buyer_system_prompt
+
+    assert "Today is" not in BUYER_PROMPT_BODY
+    assert f"Today is {date.today().isoformat()}." in buyer_system_prompt()

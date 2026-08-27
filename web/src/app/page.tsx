@@ -12,8 +12,8 @@ import { SwarmStage } from "@/components/SwarmStage";
 import { discoverLiveApi, publicWsUrl } from "@/lib/live-config";
 import { isPlaceholderWsUrl, useDashboardWS } from "@/lib/ws-client";
 import { resolveWsToken } from "@/lib/ws-token";
-import type { DashboardConnection } from "@/lib/dashboard-state";
-import { ALL_AGENTS } from "@/lib/types";
+import { replayAgeLabel, type DashboardConnection } from "@/lib/dashboard-state";
+import { ALL_AGENTS, isPreparedOutcome } from "@/lib/types";
 
 // Build-time socket: the authenticated /ws/dashboard for local runs (run.sh
 // hands the token over in the URL hash). Public builds set it to "" so the
@@ -101,20 +101,36 @@ export default function Page() {
   }, []);
 
   const dispatchedCount = Object.keys(s.agentStates).filter((id) => id !== "buyer").length;
-  const submittedCount =
-    typeof s.finalSummary?.submitted_count === "number" ? s.finalSummary.submitted_count : 0;
   const failedCount =
     typeof s.finalSummary?.failed_count === "number" ? s.finalSummary.failed_count : 0;
 
+  // Prepared work never reached a provider, so it gets its own figure rather
+  // than inflating the submitted one.
   const terminalCounts = Object.values(s.agentStates).reduce(
     (counts, agent) => {
-      if (agent.state === "submitted") counts.submitted += 1;
+      const prepared = isPreparedOutcome(
+        agent.state, agent.terminalOutcome, agent.demoRouting,
+      );
+      if (prepared) counts.prepared += 1;
+      if (!prepared && agent.state === "submitted") counts.submitted += 1;
       if (agent.state === "needs-user-action") counts.action += 1;
       if (agent.state === "failed" || agent.state === "error") counts.failed += 1;
       return counts;
     },
-    { submitted: 0, action: 0, failed: 0 },
+    { submitted: 0, prepared: 0, action: 0, failed: 0 },
   );
+
+  // A stage built only from the server's subscribe-time replay is showing a
+  // finished move, not traffic happening now. It receives no further events,
+  // so the age caption needs its own heartbeat — a frozen "2m ago" would be
+  // its own small untruth.
+  const replayedAt = s.replayedAt;
+  const [nowSeconds, setNowSeconds] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    if (replayedAt === null) return;
+    const timer = setInterval(() => setNowSeconds(Math.floor(Date.now() / 1000)), 30_000);
+    return () => clearInterval(timer);
+  }, [replayedAt]);
 
   return (
     <>
@@ -236,7 +252,10 @@ export default function Page() {
               role="status"
               aria-live="polite"
             >
-              {dispatchedCount} specialist{dispatchedCount === 1 ? "" : "s"} dispatched · {submittedCount} submitted
+              {/* The finalized summary's submitted_count folds prepared work in
+                  with real submissions, so the banner reports the split the
+                  feed itself proves instead. */}
+              {dispatchedCount} specialist{dispatchedCount === 1 ? "" : "s"} dispatched · {terminalCounts.submitted} submitted · {terminalCounts.prepared} prepared
               {failedCount > 0 ? ` · ${failedCount} failed` : ""}.
             </p>
           )}
@@ -247,11 +266,14 @@ export default function Page() {
                 <span><b>{linkStatus(s.connection)}</b></span>
                 {s.eventId && (
                   <span className="hidden sm:inline">
-                    {s.routingDecisionCount} dec · {terminalCounts.submitted} sub · {terminalCounts.action} act · {terminalCounts.failed} fail
+                    {s.routingDecisionCount} dec · {terminalCounts.submitted} sub · {terminalCounts.prepared} prep · {terminalCounts.action} act · {terminalCounts.failed} fail
                   </span>
                 )}
+                {replayedAt !== null && (
+                  <span>last completed move · {replayAgeLabel(replayedAt, nowSeconds)}</span>
+                )}
               </div>
-              <ModeTag connection={s.connection} />
+              <ModeTag connection={s.connection} replaying={replayedAt !== null} />
             </div>
             <div className="stage-body">
               <div className="grid grid-cols-12 gap-4">
@@ -525,9 +547,25 @@ function linkStatus(connection: DashboardConnection): string {
 
 /**
  * The single run-mode marker on the page. SIMULATION when the dashboard is
- * replaying synthetic data; LIVE when the orchestrator feed is connected.
+ * replaying synthetic data; LIVE when the orchestrator feed is connected and
+ * actually carrying traffic. A stage built from the server's subscribe-time
+ * replay is neither: the socket is up, but nothing on screen is happening
+ * now, and calling that "Live" is the screen disagreeing with the system.
  */
-function ModeTag({ connection }: { connection: DashboardConnection }) {
+function ModeTag({
+  connection,
+  replaying = false,
+}: {
+  connection: DashboardConnection;
+  replaying?: boolean;
+}) {
+  if (connection === "live" && replaying) {
+    return (
+      <span className="sim-tag" role="status">
+        Replay
+      </span>
+    );
+  }
   if (connection === "live") {
     return (
       <span className="sim-tag sim-tag--live" role="status">

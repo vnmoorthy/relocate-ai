@@ -2,13 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AgentCell, type CellDensity } from "@/components/AgentCell";
-import { ALL_AGENTS, type PavoTier } from "@/lib/types";
+import { ALL_AGENTS, isPreparedOutcome, type PavoTier } from "@/lib/types";
 import { tierMeta } from "@/lib/tiers";
 import type { DashboardConnection } from "@/lib/dashboard-state";
 
 interface AgentState {
   state: string;
   sinceTs: number;
+  terminalOutcome: string | null;
+  demoRouting: boolean;
 }
 
 interface RoutingDecision {
@@ -333,15 +335,21 @@ export function SwarmStage({
     ? Math.round(((tierCounts["gemma-local"] ?? 0) / totalDecisions) * 100)
     : 0;
 
+  // Prepared work is counted on its own: folding it into "submitted" would
+  // credit the swarm with requests no provider ever received.
   const terminalCounts = Object.values(agentStates).reduce(
     (counts, agent) => {
-      if (agent.state === "submitted") counts.submitted += 1;
+      const prepared = isPreparedOutcome(
+        agent.state, agent.terminalOutcome, agent.demoRouting,
+      );
+      if (prepared) counts.prepared += 1;
+      if (!prepared && agent.state === "submitted") counts.submitted += 1;
       if (agent.state === "succeeded") counts.succeeded += 1;
       if (agent.state === "needs-user-action") counts.action += 1;
       if (agent.state === "failed" || agent.state === "error") counts.failed += 1;
       return counts;
     },
-    { submitted: 0, succeeded: 0, action: 0, failed: 0 },
+    { submitted: 0, prepared: 0, succeeded: 0, action: 0, failed: 0 },
   );
 
   // The orbit renders only when the solver proved a collision-free layout for
@@ -388,7 +396,7 @@ export function SwarmStage({
           {callStarted && (
             <>
               <p className="mb-3 text-center tm-label text-[var(--ink-500)]" aria-live="polite">
-                {totalDecisions} decisions · {terminalCounts.submitted} submitted · {terminalCounts.succeeded} succeeded · {terminalCounts.action} need action · {terminalCounts.failed} failed
+                {totalDecisions} decisions · {terminalCounts.submitted} submitted · {terminalCounts.prepared} prepared · {terminalCounts.succeeded} succeeded · {terminalCounts.action} need action · {terminalCounts.failed} failed
               </p>
             <div className="swarm-grid grid grid-cols-2 md:grid-cols-3 gap-2">
               {ALL_AGENTS.map((agent) => (
@@ -398,6 +406,8 @@ export function SwarmStage({
                     name={agent.name}
                     category={agent.category}
                     state={agentStates[agent.id]?.state}
+                    terminalOutcome={agentStates[agent.id]?.terminalOutcome}
+                    demoRouting={agentStates[agent.id]?.demoRouting}
                     sinceTs={agentStates[agent.id]?.sinceTs}
                     transcript={transcripts[agent.id] ?? []}
                     demoMode={demoMode}
@@ -681,11 +691,18 @@ export function SwarmStage({
               </span>
               <span className="core-divider" aria-hidden="true" />
               <span className="tm-label text-[var(--ink-300)]">
-                {terminalCounts.submitted} submitted · {terminalCounts.succeeded} succeeded
+                {terminalCounts.submitted} submitted · {terminalCounts.prepared} prepared
               </span>
               <span className="tm-label text-[var(--ink-300)] mt-1">
                 {terminalCounts.action} action · {terminalCounts.failed} failed
               </span>
+              {/* The core disc holds two lines comfortably; a third only
+                  appears when there is actually a confirmed completion. */}
+              {terminalCounts.succeeded > 0 && (
+                <span className="tm-label text-[var(--ink-300)] mt-1">
+                  {terminalCounts.succeeded} succeeded
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -720,6 +737,8 @@ export function SwarmStage({
                 name={agent.name}
                 category={agent.category}
                 state={agentStates[agent.id]?.state}
+                terminalOutcome={agentStates[agent.id]?.terminalOutcome}
+                demoRouting={agentStates[agent.id]?.demoRouting}
                 sinceTs={agentStates[agent.id]?.sinceTs}
                 transcript={transcripts[agent.id] ?? []}
                 demoMode={demoMode}

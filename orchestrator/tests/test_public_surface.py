@@ -224,7 +224,7 @@ def test_snapshot_replies_expose_domain_and_time_only(
 
     assert body["replies"] == [{
         "from_domain": "uhaul.com", "received_at": 1_700_000_000.0,
-        "agent_id": None, "quote": None,
+        "agent_id": None, "self_routed": False, "quote": None,
     }]
     dumped = str(body)
     assert "quotes@" not in dumped and "2,850" not in dumped and "msg_1" not in dumped
@@ -376,3 +376,30 @@ def test_details_endpoint_rejects_junk_and_unknown_moves(
     assert client.post(
         "/api/public/move/mkt_empty/details", json={"geico_password": "hunter2"},
     ).status_code == 400
+
+
+def test_a_caller_cannot_mint_rate_limit_buckets_from_a_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """X-Forwarded-For is caller-controlled up to the trusted proxy.
+
+    Cloudflare APPENDS the true visitor address, so the leftmost entry is
+    whatever the client sent — reading it let one actor reset every per-IP
+    limit at will simply by changing a header.
+    """
+    from app.config import settings
+    from tests.test_loop1_backend_core import _request
+
+    monkeypatch.setattr(settings, "trust_proxy_headers", True)
+
+    spoofed = _request(b"{}", {"x-forwarded-for": "203.0.113.7, 9.9.9.9"})
+    assert main._client_ip(spoofed) == "9.9.9.9"
+
+    # Cloudflare overwrites this one on every request, so it wins outright.
+    both = _request(b"{}", {
+        "x-forwarded-for": "203.0.113.7", "cf-connecting-ip": "9.9.9.9",
+    })
+    assert main._client_ip(both) == "9.9.9.9"
+
+    monkeypatch.setattr(settings, "trust_proxy_headers", False)
+    assert main._client_ip(spoofed) != "203.0.113.7"

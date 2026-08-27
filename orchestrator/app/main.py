@@ -30,9 +30,9 @@ from .marketplace import (
     finalize_event,
     resume_ready_specialists,
 )
-from .pavo_client import pavo_chat
+from .pavo_client import PavoReply, PavoUnavailableError, pavo_chat
 from .persistence import persistence
-from .personas import by_id, buyer_persona
+from .personas import by_id, buyer_system_prompt
 from .demo_auth import (
     enabled as demo_enabled,
     issue_token,
@@ -206,11 +206,76 @@ async def _process_agentphone_webhook(
 
 
 _QUESTION_RE = re.compile(r"[^.!?]*\?")
+# Distinctive enough that ordinary acknowledgement never trips it, and it
+# survives the model paraphrasing the rest of the closing.
+_CLOSING_TELL = "tracking link"
 _CLOSING = (
     "On it. You'll get an email with a live tracking link in a minute — "
     "there's a spot on that page to add your account numbers if you want "
     "those cancelled too. Hang up whenever."
 )
+
+
+_MONTH_NAMES = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+# "Austin, TX 78751" -> the city is the last part that is not a state+ZIP tail.
+_STATE_ZIP_RE = re.compile(r"^[A-Z]{2}(\s+\d{5}(-\d{4})?)?$")
+
+
+def _city_of(address: str) -> str | None:
+    """The city a caller would recognise, or None rather than a wrong guess."""
+    parts = [p.strip() for p in address.split(",")[1:] if p.strip()]
+    for part in reversed(parts):
+        if not _STATE_ZIP_RE.match(part):
+            return part
+    return None
+
+
+def _route_ack(collected: dict[str, Any]) -> str:
+    """Echo the route back, because hearing it repeated is what tells a caller
+    they were understood. Anything we cannot say confidently we leave out — a
+    wrong city read back is worse than a plain acknowledgement."""
+    origin = _city_of(str(collected.get("origin_address", "")))
+    dest = _city_of(str(collected.get("destination_address", "")))
+    when = ""
+    raw = str(collected.get("move_date", ""))
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", raw)
+    if m:
+        when = f", {_MONTH_NAMES[int(m.group(2)) - 1]} {int(m.group(3))}"
+    if origin and dest:
+        return f"{origin} to {dest}{when}. Got it."
+    return "Got it."
+
+
+def _deterministic_turn(transcript: str, ctx: BuyerCallContext) -> PavoReply | None:
+    """A first turn the backstop can answer alone, or None to ask the model.
+
+    Returns a PavoReply carrying no content: every field is already recoverable
+    from the caller's own words, so _steer_reply supplies the closing and the
+    model has nothing left to contribute. The turn costs nothing and answers
+    immediately, which matters because this is the turn the caller is waiting
+    on. Restricted to the first turn on purpose — the backstop fills gaps and
+    never overrides, so a later correction ("no, make it the 22nd") must reach
+    the model.
+    """
+    from .buyer_schema import blocking_fields
+    from .transcript_extract import backstop_fields
+
+    if ctx.turn_count != 1 or ctx.dispatched or ctx.collected:
+        return None
+    probe = dict(ctx.collected)
+    probe.update(backstop_fields(transcript, probe))
+    if blocking_fields(probe):
+        return None
+    return PavoReply(
+        content=_route_ack(probe),
+        tier="deterministic",
+        cost_cents=0.0,
+        latency_ms=0,
+        decision_reason="every field recoverable from the caller's own words",
+    )
 
 
 def _steer_reply(voice_reply: str, ctx: BuyerCallContext) -> str:
@@ -232,6 +297,11 @@ def _steer_reply(voice_reply: str, ctx: BuyerCallContext) -> str:
         # Already-dispatched turns are ordinary conversation, not intake.
         if ctx.dispatched:
             return voice_reply
+        # The prompt teaches the model this closing, so on a one-breath brief
+        # it often says it unprompted. Appending ours then made the caller sit
+        # through the whole thing twice. If it already closed, let it stand.
+        if _CLOSING_TELL in ack.lower():
+            return ack
         return f"{ack} {_CLOSING}".strip()
     if not ack:
         return question
@@ -294,8 +364,7 @@ async def _run_buyer_turn(
         except Exception as e:
             log.warning("supermemory recall failed: %s", e)
 
-    buyer = buyer_persona()
-    system_prompt = buyer.system_prompt + recall_context
+    system_prompt = buyer_system_prompt() + recall_context
     messages = [{"role": "system", "content": system_prompt}]
     for h in history[-6:]:
         messages.append({
@@ -304,11 +373,35 @@ async def _run_buyer_turn(
         })
     messages.append({"role": "user", "content": transcript})
 
-    reply = await pavo_chat(
-        messages,
-        role_hint="buyer-extract" if not ctx.dispatched else "buyer",
-        max_tokens=300,
-    )
+    # A complete brief in one breath needs no model at all. The deterministic
+    # backstop already holds every field, so next_question() returns None and
+    # the spoken reply is fully determined before the model is asked anything.
+    # Calling a 2B model with a 15KB prompt to produce a line we already know
+    # cost ~13 seconds of silence at the exact moment the caller is waiting to
+    # hear that it worked. First turn only: a later turn may be a correction,
+    # and the backstop fills gaps rather than overriding, so only the model
+    # understands those.
+    reply = _deterministic_turn(transcript, ctx)
+    if reply is None:
+        try:
+            reply = await pavo_chat(
+                messages,
+                role_hint="buyer-extract" if not ctx.dispatched else "buyer",
+                max_tokens=300,
+            )
+        except PavoUnavailableError as e:
+            # Every completion provider is down. Say so: this turn was NOT
+            # recorded, and the buyer agent we announced as in-progress above
+            # has to reach a terminal state instead of sitting there looking
+            # alive.
+            log.warning("concierge turn abandoned, no completion provider: %s", e)
+            await ws_broker.broadcast({
+                "type": "agent_state", "event_id": ctx.event_id, "agent_id": "buyer",
+                "state": "failed", "terminal_outcome": "failed", "ts": time.time(),
+            })
+            raise HTTPException(
+                503, "the concierge is unavailable — this turn was not recorded"
+            ) from e
 
     # Cost ticker update.
     event = state.events[ctx.event_id]
@@ -329,7 +422,7 @@ async def _run_buyer_turn(
     # Every turn the buyer may emit a JSON block with any subset of the
     # full schema. We merge into ctx.collected, broadcast which fields
     # arrived this turn, and dispatch the moment all CORE fields are in.
-    new_fields = _extract_and_merge_fields(reply.content, ctx)
+    new_fields = _extract_and_merge_fields(reply.content, ctx, transcript)
     # Deterministic backstop: the 2B model drops fields stochastically, so
     # high-structure CORE values are also recovered verbatim from the
     # caller's own utterance — gaps only, the model's extraction wins.
@@ -527,8 +620,11 @@ def _merge_backstop_fields(transcript: str, ctx) -> dict:
     return merged
 
 
-def _extract_and_merge_fields(text: str, ctx) -> dict:
+def _extract_and_merge_fields(text: str, ctx, transcript: str) -> dict:
     """Validate and merge changed voice-safe fields, including corrections.
+
+    ``transcript`` is the caller's own utterance for this turn — the evidence
+    the model's emission is checked against.
 
     Guard against example regurgitation: small models sometimes copy the
     prompt's DISPATCH JSON SHAPE example wholesale, "collecting" values the
@@ -538,6 +634,7 @@ def _extract_and_merge_fields(text: str, ctx) -> dict:
     dog) still merges normally.
     """
     from .buyer_schema import by_name
+    from .transcript_extract import extract_household, mentions_a_time
     changed: dict = {}
     # Match every {...} block in the reply (buyer may emit one or several).
     for raw in re.findall(r"\{[^{}]+\}", text, re.DOTALL):
@@ -571,8 +668,10 @@ def _extract_and_merge_fields(text: str, ctx) -> dict:
 
         example_matches = {
             k for k, v, field in validated
-            if isinstance(v, str) and field.tier != "conditional"
-            and v.strip() == field.example
+            if field.tier != "conditional"
+            # str(): household_size arrives as an int and slipped a string-only
+            # comparison, so the example's "2" merged as a stated fact.
+            and str(v).strip().lower() == str(field.example).strip().lower()
         }
         # CORE values (route, date, email) are high-entropy: one exact match
         # against the prompt's example is regurgitation with near-certainty,
@@ -590,6 +689,25 @@ def _extract_and_merge_fields(text: str, ctx) -> dict:
                 len(dropped), sorted(dropped),
             )
             validated = [item for item in validated if item[0] not in dropped]
+
+        # Corroboration, not value-matching, is what separates a heard fact
+        # from an invented one. The prompt's household example (pets yes, kids
+        # no, car yes) is also the modal American household, so comparing
+        # against the example would drop the commonest truthful answer — while
+        # an unguarded boolean silently answers a question the concierge then
+        # never asks, and dispatches (or cancels) a real specialist on it.
+        said_about = extract_household(transcript)
+        uncorroborated = {
+            k for k, _v, field in validated
+            if (field.tier == "conditional" and k not in said_about)
+            or (k == "move_date" and not mentions_a_time(transcript))
+        }
+        if uncorroborated:
+            log.warning(
+                "dropping %d fields the caller did not mention this turn: %s",
+                len(uncorroborated), sorted(uncorroborated),
+            )
+            validated = [item for item in validated if item[0] not in uncorroborated]
 
         for k, v, _field in validated:
             previous = ctx.collected.get(k)
@@ -806,7 +924,9 @@ def _bootstrap_messages() -> list[dict[str, Any]]:
     msgs: list[dict[str, Any]] = [
         {
             "type": "agent_state", "event_id": event.id, "agent_id": agent_id,
-            "state": ctx.state, "ts": ctx.closed_at or ctx.started_at,
+            "state": ctx.state, "terminal_outcome": ctx.terminal_outcome,
+            "demo_routing": bool(settings.agentmail_demo_recipient_override.strip()),
+            "ts": ctx.closed_at or ctx.started_at,
             "bootstrap": True,
         }
         for agent_id, ctx in event.specialist_calls.items()
@@ -879,9 +999,18 @@ def _client_ip(request: Request) -> str:
     default assumption.
     """
     if settings.trust_proxy_headers:
+        # Cloudflare overwrites this on every request, so a caller cannot
+        # forge it through the edge.
+        connecting = request.headers.get("cf-connecting-ip", "").strip()
+        if connecting:
+            return connecting[:64]
         forwarded = request.headers.get("x-forwarded-for", "")
         if forwarded:
-            return forwarded.split(",")[0].strip()[:64]
+            # The RIGHTMOST entry is the one our own trusted proxy appended;
+            # everything left of it is whatever the caller sent. Reading the
+            # leftmost let one client mint a fresh rate-limit bucket per
+            # request simply by changing a header.
+            return forwarded.split(",")[-1].strip()[:64]
     return (request.client.host if request.client else "unknown")[:64]
 
 
@@ -1054,6 +1183,12 @@ async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str,
     event = state.events.get(event_id)
     if event is None:
         raise HTTPException(404, "unknown move")
+    # Demo routing rewrites every outbound recipient to the operator's own
+    # inbox (see config.agentmail_demo_recipient_override), so on such a
+    # deployment NO provider was contacted, however many messages went out.
+    # The tracker cannot infer that — it is told.
+    demo_routing = bool(settings.agentmail_demo_recipient_override.strip())
+
     def _portal_url(ctx) -> str | None:  # noqa: ANN001
         """Public portal page for a task the customer has to finish."""
         if ctx.state != "needs-user-action":
@@ -1078,9 +1213,25 @@ async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str,
             return "Prepared for you"
         intended = bid.get("intended")
         if isinstance(intended, int) and intended > 0:
+            # `intended` is how many counterparties the request was ADDRESSED
+            # to; `count` is how many messages actually left. Reporting intent
+            # as delivery credited providers nobody reached — a partially
+            # failed fan-out read exactly like a complete one.
+            sent = bid.get("count")
+            sent = sent if isinstance(sent, int) and sent > 0 else 0
+            if demo_routing:
+                return (
+                    f"Prepared for {intended} provider"
+                    + ("s" if intended > 1 else "")
+                    + " — demo routing, no provider was contacted"
+                )
             if ctx.agent_id in _SELF_DELIVERED_AGENTS:
-                return "Sent to your inbox"
-            return f"Requested from {intended} provider" + ("s" if intended > 1 else "")
+                return "Sent to your inbox" if sent else None
+            if not sent:
+                return None
+            if sent < intended:
+                return f"Requested from {sent} of {intended} providers"
+            return f"Requested from {sent} provider" + ("s" if sent > 1 else "")
         if bid.get("letter_id") or bid.get("tracking_number"):
             return "Certified letter created"
         return None
@@ -1108,19 +1259,43 @@ async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str,
             # Static per-agent title only — playbook BODIES carry the user's
             # own details and travel by email, never through this endpoint.
             "playbook_title": (ctx.playbook or {}).get("title"),
-            # Only true once the digest send returned a receipt — the tracker
-            # must not claim an inbox delivery that never happened.
+            # Only true once the digest actually reached the address the
+            # customer gave — the tracker must not claim an inbox delivery
+            # that never happened. Demo routing overrides the stored flag
+            # outright: every recipient was rewritten to the operator's inbox,
+            # so no digest can have reached the reader, and moves dispatched
+            # before that flag existed still carry playbook_digest_sent=True.
             "playbook_delivered": bool(
-                ctx.playbook and event.playbook_digest_sent
+                ctx.playbook and event.playbook_digest_sent and not demo_routing
+            ),
+            # Why it is not delivered, when it is not: "rerouted" is a send
+            # that succeeded to someone else (demo routing), which is neither
+            # a delivery nor a pending one.
+            "playbook_delivery": (
+                None if not ctx.playbook
+                else "rerouted" if (
+                    demo_routing
+                    or (event.playbook_digest_rerouted and not event.playbook_digest_sent)
+                )
+                else "delivered" if event.playbook_digest_sent
+                else "pending"
             ),
         }
         for agent_id, ctx in event.specialist_calls.items()
     ]
+    override_address = settings.agentmail_demo_recipient_override.strip().lower()
     replies = [
         {
             "from_domain": str(r.get("from_domain") or ""),
             "received_at": r.get("received_at"),
             "agent_id": r.get("agent_id"),
+            # A reply that came from the demo-routing inbox is this deployment
+            # answering itself. Badging it "LOWEST" beside a real quote would
+            # dress operator-written text up as a market.
+            "self_routed": bool(
+                override_address
+                and str(r.get("from") or "").strip().lower() == override_address
+            ),
             # Quote figures are the user's own marketplace data (no sender
             # PII); the raw reply body still never leaves the inbox.
             "quote": (
@@ -1135,8 +1310,11 @@ async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str,
         }
         for r in event.replies
     ]
-    outbound = sum(
-        int((c.bid or {}).get("intended") or 0)
+    # Headline proof of work, so it counts proof: messages that actually left,
+    # not recipients we addressed. Under demo routing none of them reached a
+    # provider at all, so the honest figure is zero and `demo_routing` says why.
+    outbound = 0 if demo_routing else sum(
+        int((c.bid or {}).get("count") or 0)
         for c in event.specialist_calls.values()
         if isinstance(c.bid, dict) and c.agent_id not in _SELF_DELIVERED_AGENTS
     )
@@ -1145,6 +1323,9 @@ async def api_public_move_snapshot(event_id: str, request: Request) -> dict[str,
         # Headline proof of work: requests that left the building, and answers
         # that came back.
         "outbound_requests": outbound,
+        # True when this deployment reroutes all outbound mail to the operator
+        # (see above). The tracker must not claim any provider was contacted.
+        "demo_routing": demo_routing,
         "replies_received": len(event.replies),
         # The live public feed emits this alias instead of the real id (which
         # is a capability — see public_feed.public_ref). A tracker page that
@@ -1395,6 +1576,11 @@ async def api_demo_moves(request: Request) -> dict[str, Any]:
     published to reviewers, so real callers' moves must never appear here.
     """
     _require_demo_token(request)
+    # Demo routing rewrites every outbound recipient to the operator's own
+    # inbox, so on such a deployment nothing was submitted to anybody — the
+    # same fact the tracker reports as demo_routing and as "no provider was
+    # contacted". The chip must not say otherwise.
+    demo_routing = bool(settings.agentmail_demo_recipient_override.strip())
     moves: list[dict[str, Any]] = []
     for event in state.events.values():
         if event.origin_channel != "demo":
@@ -1404,10 +1590,19 @@ async def api_demo_moves(request: Request) -> dict[str, Any]:
         # rows is noise, not history.
         if not event.specialist_calls:
             continue
-        counts = {"submitted": 0, "action": 0, "failed": 0, "working": 0, "done": 0}
+        # "prepared" is broken out of "submitted" on purpose: the workspace
+        # renders the submitted chip as provider acceptance, and a prepared
+        # artifact reached no counterparty at all.
+        counts = {
+            "submitted": 0, "prepared": 0, "action": 0,
+            "failed": 0, "working": 0, "done": 0,
+        }
         for ctx in event.specialist_calls.values():
             if ctx.state == "submitted":
-                counts["submitted"] += 1
+                if demo_routing or ctx.terminal_outcome == "prepared_for_user":
+                    counts["prepared"] += 1
+                else:
+                    counts["submitted"] += 1
             elif ctx.state == "succeeded":
                 counts["done"] += 1
             elif ctx.state == "needs-user-action":
